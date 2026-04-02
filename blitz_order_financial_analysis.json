@@ -1,0 +1,700 @@
+{
+  "csv_file": "C:\\dev\\PrepCenterNearMe_system\\orders_audit_financials_blitzzecommerce_export.csv",
+  "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+  "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+  "rows_ingested": 1589,
+  "inferred_mapping": {
+    "email": "email",
+    "orderId": "order_external_id",
+    "orderDate": "order_date",
+    "asin": "asin",
+    "title": "line_title",
+    "quantity": "quantity",
+    "revenue": "revenue_usd",
+    "marketplace_fees": "marketplace_fees_usd",
+    "prep_cost": "prep_cost_usd",
+    "inbound_cost": "inbound_cost_usd",
+    "product_cogs": "product_cogs_usd",
+    "total_fees": "total_fees_usd",
+    "profit": "profit_usd",
+    "shipTo_city": "ship_to_city",
+    "shipTo_state": "ship_to_state",
+    "shipTo_postal": "ship_to_postal",
+    "marketplace_fees_2026_adjusted": "marketplace_fees_2026_csv_usd",
+    "total_fees_2026_adjusted": "total_fees_2026_csv_usd",
+    "profit_2026_adjusted": "profit_2026_csv_usd",
+    "marketplace_fees_2026_prep_center_scenario": "marketplace_fees_2026_csv_usd",
+    "total_fees_2026_prep_center_scenario": "total_fees_2026_csv_usd",
+    "profit_2026_prep_center_scenario": "profit_2026_csv_usd"
+  },
+  "inference_notes": {
+    "unmapped_headers": [
+      "fulfillmentStatus",
+      "marketplace",
+      "currency",
+      "prep_and_inbound",
+      "profit_before_cogs",
+      "audit_range_start",
+      "audit_range_end",
+      "summary_total_fees_basis",
+      "fee_increase_2026_total"
+    ],
+    "ambiguous_headers": [
+      "marketplace_fees_2026_adjusted",
+      "marketplace_fees_2026_prep_center_scenario",
+      "profit_2026_adjusted",
+      "profit_2026_prep_center_scenario",
+      "total_fees_2026_adjusted",
+      "total_fees_2026_prep_center_scenario"
+    ],
+    "other_expense_column_candidates": []
+  },
+  "analysis": {
+    "row_count": 1589,
+    "totals": {
+      "revenue_usd": 27345.26,
+      "marketplace_fees_usd": 13608.27,
+      "other_expenses_usd": 0.0,
+      "total_fees_usd": 17339.67,
+      "profit_usd": 10005.59,
+      "prep_cost_usd": 1159.2,
+      "inbound_cost_usd": 676.2,
+      "referral_fees_modeled_usd": 4101.79,
+      "implied_non_referral_marketplace_usd": 9506.48,
+      "total_fees_2026_view_usd": 17042.54
+    },
+    "inflation_source_counts": {
+      "csv_2026_columns": 1589
+    },
+    "referral_fee_source_counts": {
+      "default": 1589
+    },
+    "per_asin": [
+      {
+        "asin": "B0CKBYBF5C",
+        "revenue_usd": 10008.27,
+        "other_expenses_usd": 0.0,
+        "profit_usd": 3954.33,
+        "units": 841.0
+      },
+      {
+        "asin": "B0D67X3KCB",
+        "revenue_usd": 7009.86,
+        "other_expenses_usd": 0.0,
+        "profit_usd": 4582.07,
+        "units": 218.0
+      },
+      {
+        "asin": "B0D67THFS5",
+        "revenue_usd": 3506.13,
+        "other_expenses_usd": 0.0,
+        "profit_usd": 1799.09,
+        "units": 188.0
+      },
+      {
+        "asin": "B0D572MW98",
+        "revenue_usd": 2714.43,
+        "other_expenses_usd": 0.0,
+        "profit_usd": 772.91,
+        "units": 192.0
+      },
+      {
+        "asin": "B0D3WKT4GP",
+        "revenue_usd": 2233.22,
+        "other_expenses_usd": 0.0,
+        "profit_usd": 702.88,
+        "units": 177.0
+      },
+      {
+        "asin": "B0CR1N73L8",
+        "revenue_usd": 1873.35,
+        "other_expenses_usd": 0.0,
+        "profit_usd": -1805.69,
+        "units": 316.0
+      }
+    ],
+    "by_ship_to_state": [
+      {
+        "ship_to_state": "CA",
+        "revenue_usd": 3303.17
+      },
+      {
+        "ship_to_state": "TX",
+        "revenue_usd": 2386.13
+      },
+      {
+        "ship_to_state": "FL",
+        "revenue_usd": 2211.88
+      },
+      {
+        "ship_to_state": "NY",
+        "revenue_usd": 1271.3
+      },
+      {
+        "ship_to_state": "WA",
+        "revenue_usd": 1191.69
+      },
+      {
+        "ship_to_state": "PA",
+        "revenue_usd": 1021.81
+      },
+      {
+        "ship_to_state": "NC",
+        "revenue_usd": 992.96
+      },
+      {
+        "ship_to_state": "IL",
+        "revenue_usd": 953.09
+      },
+      {
+        "ship_to_state": "VA",
+        "revenue_usd": 860.0
+      },
+      {
+        "ship_to_state": "GA",
+        "revenue_usd": 779.6
+      },
+      {
+        "ship_to_state": "OH",
+        "revenue_usd": 763.1
+      },
+      {
+        "ship_to_state": "TN",
+        "revenue_usd": 730.73
+      },
+      {
+        "ship_to_state": "MI",
+        "revenue_usd": 730.2
+      },
+      {
+        "ship_to_state": "AZ",
+        "revenue_usd": 728.75
+      },
+      {
+        "ship_to_state": "MO",
+        "revenue_usd": 713.88
+      },
+      {
+        "ship_to_state": "MA",
+        "revenue_usd": 675.78
+      },
+      {
+        "ship_to_state": "WI",
+        "revenue_usd": 602.42
+      },
+      {
+        "ship_to_state": "NJ",
+        "revenue_usd": 516.51
+      },
+      {
+        "ship_to_state": "CO",
+        "revenue_usd": 498.8
+      },
+      {
+        "ship_to_state": "OR",
+        "revenue_usd": 466.69
+      },
+      {
+        "ship_to_state": "IN",
+        "revenue_usd": 423.33
+      },
+      {
+        "ship_to_state": "UT",
+        "revenue_usd": 420.8
+      },
+      {
+        "ship_to_state": "LA",
+        "revenue_usd": 366.73
+      },
+      {
+        "ship_to_state": "MN",
+        "revenue_usd": 364.26
+      },
+      {
+        "ship_to_state": "WV",
+        "revenue_usd": 309.46
+      },
+      {
+        "ship_to_state": "MD",
+        "revenue_usd": 297.92
+      },
+      {
+        "ship_to_state": "IA",
+        "revenue_usd": 289.6
+      },
+      {
+        "ship_to_state": "ID",
+        "revenue_usd": 271.16
+      },
+      {
+        "ship_to_state": "AL",
+        "revenue_usd": 253.03
+      },
+      {
+        "ship_to_state": "KY",
+        "revenue_usd": 251.02
+      },
+      {
+        "ship_to_state": "CT",
+        "revenue_usd": 241.21
+      },
+      {
+        "ship_to_state": "SC",
+        "revenue_usd": 232.0
+      },
+      {
+        "ship_to_state": "KS",
+        "revenue_usd": 193.66
+      },
+      {
+        "ship_to_state": "NE",
+        "revenue_usd": 193.33
+      },
+      {
+        "ship_to_state": "NM",
+        "revenue_usd": 183.39
+      },
+      {
+        "ship_to_state": "OK",
+        "revenue_usd": 182.05
+      },
+      {
+        "ship_to_state": "NV",
+        "revenue_usd": 164.96
+      },
+      {
+        "ship_to_state": "AR",
+        "revenue_usd": 157.77
+      },
+      {
+        "ship_to_state": "NH",
+        "revenue_usd": 141.42
+      },
+      {
+        "ship_to_state": "MS",
+        "revenue_usd": 138.6
+      },
+      {
+        "ship_to_state": "PR",
+        "revenue_usd": 117.47
+      },
+      {
+        "ship_to_state": "ME",
+        "revenue_usd": 101.7
+      },
+      {
+        "ship_to_state": "Not filled",
+        "revenue_usd": 94.34
+      },
+      {
+        "ship_to_state": "DE",
+        "revenue_usd": 64.92
+      },
+      {
+        "ship_to_state": "SD",
+        "revenue_usd": 60.81
+      },
+      {
+        "ship_to_state": "Israel",
+        "revenue_usd": 51.69
+      },
+      {
+        "ship_to_state": "MT",
+        "revenue_usd": 50.41
+      },
+      {
+        "ship_to_state": "HI",
+        "revenue_usd": 46.48
+      },
+      {
+        "ship_to_state": "WY",
+        "revenue_usd": 42.83
+      },
+      {
+        "ship_to_state": "RI",
+        "revenue_usd": 38.09
+      },
+      {
+        "ship_to_state": "VT",
+        "revenue_usd": 29.84
+      },
+      {
+        "ship_to_state": "Puerto Rico",
+        "revenue_usd": 25.56
+      },
+      {
+        "ship_to_state": "BOGOTA",
+        "revenue_usd": 19.85
+      },
+      {
+        "ship_to_state": "West Bank",
+        "revenue_usd": 19.85
+      },
+      {
+        "ship_to_state": "Kingston 19",
+        "revenue_usd": 12.99
+      },
+      {
+        "ship_to_state": "AVCILAR",
+        "revenue_usd": 11.99
+      },
+      {
+        "ship_to_state": "San Martin",
+        "revenue_usd": 11.88
+      },
+      {
+        "ship_to_state": "Valle Del Cauca",
+        "revenue_usd": 10.99
+      },
+      {
+        "ship_to_state": "Eastern Province",
+        "revenue_usd": 10.99
+      },
+      {
+        "ship_to_state": "Malta",
+        "revenue_usd": 10.99
+      }
+    ],
+    "narrative_hints": [
+      "other_expenses_usd captures unmapped spend columns \u2014 compare to Cortex inbound/outbound defaults (not Amazon fees).",
+      "Sum other_expenses_usd=0.00 vs rough modeled 3PL handling (defaults) ~908.04 on 1589 rows."
+    ],
+    "economics_defaults_reference": {
+      "inbound_receiving_per_unit_usd": 0.35,
+      "outbound_handling_per_unit_usd": 0.12,
+      "storage_per_unit_month_usd": 0.02
+    }
+  },
+  "sample_facts": [
+    {
+      "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+      "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+      "tenant_id": null,
+      "warehouse_id": null,
+      "order_external_id": "113-4909987-2733045",
+      "order_date_iso": "2025-12-29T18:25:21.000Z",
+      "email": "blitzzecommerce@gmail.com",
+      "asin": "B0CKBYBF5C",
+      "sku": null,
+      "line_title": "ZYROXY Nano Tape Bubble Kit for Kids, Pack of 2 Transparent Double Sided Nano Tape with All Accessories in one Box, Nano Tape Bubble Kit Ideal Gift for Kids of All Ages.",
+      "revenue_usd": 19.99,
+      "marketplace_fees_usd": 7.84,
+      "product_cogs_usd": 0.0,
+      "prep_cost_usd": 0.6,
+      "inbound_cost_usd": 0.35,
+      "total_fees_usd": 8.79,
+      "profit_usd": 11.2,
+      "quantity": 1.0,
+      "other_expenses_usd": null,
+      "ship_to_city": "Dallas",
+      "ship_to_state": "TX",
+      "ship_to_postal": "75261-4034",
+      "ship_to_country": null,
+      "marketplace_fees_2026_csv_usd": 7.67,
+      "total_fees_2026_csv_usd": 8.62,
+      "profit_2026_csv_usd": 11.37,
+      "marketplace_fees_2026_synthetic_usd": null,
+      "total_fees_2026_synthetic_usd": null,
+      "profit_2026_synthetic_usd": null,
+      "inflation_source": "csv_2026_columns",
+      "assumptions_version": "amazon_fee_model_2026_v1",
+      "inflation_components": {
+        "note": "authoritative_precomputed_columns"
+      },
+      "referral_fees_modeled_usd": 2.9985,
+      "referral_fee_bucket": "default",
+      "referral_fee_source": "default",
+      "extra": {
+        "fee_model_meta": {
+          "version": "amazon_fee_model_2026_v1",
+          "fba_fee_increase_effective_date": "2026-01-15",
+          "fba_prep_services_us_end_date": "2026-01-01",
+          "payout_dd7_effective_date": "2026-03-12",
+          "default_size_tier_assumption": "small_standard",
+          "source_note": "seller_central_summary_2026",
+          "scope": "v1_fba_fulfillment_delta_plus_optional_inbound_placement",
+          "referral_fees_modeled_usd_row": 2.9985,
+          "referral_fee_model": {
+            "version": "amazon_referral_fees_2026_v1",
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": 1.8,
+            "individual_per_item_fee_usd": 0.99
+          }
+        },
+        "referral_rule_id": "referral_15pct_default",
+        "referral_classification_snippet": "",
+        "referral_components": {
+          "bucket": "default",
+          "quantity": 1.0,
+          "unit_price_basis": 19.99,
+          "referral_percent_components_usd": 2.9985,
+          "total_referral_and_program_usd": 2.9985
+        }
+      }
+    },
+    {
+      "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+      "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+      "tenant_id": null,
+      "warehouse_id": null,
+      "order_external_id": "112-5398518-9308268",
+      "order_date_iso": "2025-12-29T18:25:21.000Z",
+      "email": "blitzzecommerce@gmail.com",
+      "asin": "B0CKBYBF5C",
+      "sku": null,
+      "line_title": "ZYROXY Nano Tape Bubble Kit for Kids, Pack of 2 Transparent Double Sided Nano Tape with All Accessories in one Box, Nano Tape Bubble Kit Ideal Gift for Kids of All Ages.",
+      "revenue_usd": 19.99,
+      "marketplace_fees_usd": 7.84,
+      "product_cogs_usd": 0.0,
+      "prep_cost_usd": 0.6,
+      "inbound_cost_usd": 0.35,
+      "total_fees_usd": 8.79,
+      "profit_usd": 11.2,
+      "quantity": 1.0,
+      "other_expenses_usd": null,
+      "ship_to_city": "MOUNT HOLLY",
+      "ship_to_state": "NC",
+      "ship_to_postal": "28120-9643",
+      "ship_to_country": null,
+      "marketplace_fees_2026_csv_usd": 7.67,
+      "total_fees_2026_csv_usd": 8.62,
+      "profit_2026_csv_usd": 11.37,
+      "marketplace_fees_2026_synthetic_usd": null,
+      "total_fees_2026_synthetic_usd": null,
+      "profit_2026_synthetic_usd": null,
+      "inflation_source": "csv_2026_columns",
+      "assumptions_version": "amazon_fee_model_2026_v1",
+      "inflation_components": {
+        "note": "authoritative_precomputed_columns"
+      },
+      "referral_fees_modeled_usd": 2.9985,
+      "referral_fee_bucket": "default",
+      "referral_fee_source": "default",
+      "extra": {
+        "fee_model_meta": {
+          "version": "amazon_fee_model_2026_v1",
+          "fba_fee_increase_effective_date": "2026-01-15",
+          "fba_prep_services_us_end_date": "2026-01-01",
+          "payout_dd7_effective_date": "2026-03-12",
+          "default_size_tier_assumption": "small_standard",
+          "source_note": "seller_central_summary_2026",
+          "scope": "v1_fba_fulfillment_delta_plus_optional_inbound_placement",
+          "referral_fees_modeled_usd_row": 2.9985,
+          "referral_fee_model": {
+            "version": "amazon_referral_fees_2026_v1",
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": 1.8,
+            "individual_per_item_fee_usd": 0.99
+          }
+        },
+        "referral_rule_id": "referral_15pct_default",
+        "referral_classification_snippet": "",
+        "referral_components": {
+          "bucket": "default",
+          "quantity": 1.0,
+          "unit_price_basis": 19.99,
+          "referral_percent_components_usd": 2.9985,
+          "total_referral_and_program_usd": 2.9985
+        }
+      }
+    },
+    {
+      "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+      "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+      "tenant_id": null,
+      "warehouse_id": null,
+      "order_external_id": "113-5401769-0361011",
+      "order_date_iso": "2025-12-29T18:25:21.000Z",
+      "email": "blitzzecommerce@gmail.com",
+      "asin": "B0CKBYBF5C",
+      "sku": null,
+      "line_title": "ZYROXY Nano Tape Bubble Kit for Kids, Pack of 2 Transparent Double Sided Nano Tape with All Accessories in one Box, Nano Tape Bubble Kit Ideal Gift for Kids of All Ages.",
+      "revenue_usd": 21.26,
+      "marketplace_fees_usd": 5.44,
+      "product_cogs_usd": 0.0,
+      "prep_cost_usd": 0.6,
+      "inbound_cost_usd": 0.35,
+      "total_fees_usd": 6.39,
+      "profit_usd": 14.87,
+      "quantity": 1.0,
+      "other_expenses_usd": null,
+      "ship_to_city": "PLAINVILLE",
+      "ship_to_state": "CT",
+      "ship_to_postal": "06062-1210",
+      "ship_to_country": null,
+      "marketplace_fees_2026_csv_usd": 5.32,
+      "total_fees_2026_csv_usd": 6.27,
+      "profit_2026_csv_usd": 14.99,
+      "marketplace_fees_2026_synthetic_usd": null,
+      "total_fees_2026_synthetic_usd": null,
+      "profit_2026_synthetic_usd": null,
+      "inflation_source": "csv_2026_columns",
+      "assumptions_version": "amazon_fee_model_2026_v1",
+      "inflation_components": {
+        "note": "authoritative_precomputed_columns"
+      },
+      "referral_fees_modeled_usd": 3.189,
+      "referral_fee_bucket": "default",
+      "referral_fee_source": "default",
+      "extra": {
+        "fee_model_meta": {
+          "version": "amazon_fee_model_2026_v1",
+          "fba_fee_increase_effective_date": "2026-01-15",
+          "fba_prep_services_us_end_date": "2026-01-01",
+          "payout_dd7_effective_date": "2026-03-12",
+          "default_size_tier_assumption": "small_standard",
+          "source_note": "seller_central_summary_2026",
+          "scope": "v1_fba_fulfillment_delta_plus_optional_inbound_placement",
+          "referral_fees_modeled_usd_row": 3.189,
+          "referral_fee_model": {
+            "version": "amazon_referral_fees_2026_v1",
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": 1.8,
+            "individual_per_item_fee_usd": 0.99
+          }
+        },
+        "referral_rule_id": "referral_15pct_default",
+        "referral_classification_snippet": "",
+        "referral_components": {
+          "bucket": "default",
+          "quantity": 1.0,
+          "unit_price_basis": 21.26,
+          "referral_percent_components_usd": 3.189,
+          "total_referral_and_program_usd": 3.189
+        }
+      }
+    },
+    {
+      "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+      "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+      "tenant_id": null,
+      "warehouse_id": null,
+      "order_external_id": "111-6876848-6675405",
+      "order_date_iso": "2025-12-27T11:37:31.000Z",
+      "email": "blitzzecommerce@gmail.com",
+      "asin": "B0CKBYBF5C",
+      "sku": null,
+      "line_title": "ZYROXY Nano Tape Bubble Kit for Kids, Pack of 2 Transparent Double Sided Nano Tape with All Accessories in one Box, Ideal Gift for Kids of All Ages.",
+      "revenue_usd": 17.99,
+      "marketplace_fees_usd": 7.54,
+      "product_cogs_usd": 0.0,
+      "prep_cost_usd": 0.6,
+      "inbound_cost_usd": 0.35,
+      "total_fees_usd": 8.49,
+      "profit_usd": 9.5,
+      "quantity": 1.0,
+      "other_expenses_usd": null,
+      "ship_to_city": "NEW YORK",
+      "ship_to_state": "NY",
+      "ship_to_postal": "10007-2076",
+      "ship_to_country": null,
+      "marketplace_fees_2026_csv_usd": 7.38,
+      "total_fees_2026_csv_usd": 8.33,
+      "profit_2026_csv_usd": 9.66,
+      "marketplace_fees_2026_synthetic_usd": null,
+      "total_fees_2026_synthetic_usd": null,
+      "profit_2026_synthetic_usd": null,
+      "inflation_source": "csv_2026_columns",
+      "assumptions_version": "amazon_fee_model_2026_v1",
+      "inflation_components": {
+        "note": "authoritative_precomputed_columns"
+      },
+      "referral_fees_modeled_usd": 2.6985,
+      "referral_fee_bucket": "default",
+      "referral_fee_source": "default",
+      "extra": {
+        "fee_model_meta": {
+          "version": "amazon_fee_model_2026_v1",
+          "fba_fee_increase_effective_date": "2026-01-15",
+          "fba_prep_services_us_end_date": "2026-01-01",
+          "payout_dd7_effective_date": "2026-03-12",
+          "default_size_tier_assumption": "small_standard",
+          "source_note": "seller_central_summary_2026",
+          "scope": "v1_fba_fulfillment_delta_plus_optional_inbound_placement",
+          "referral_fees_modeled_usd_row": 2.6985,
+          "referral_fee_model": {
+            "version": "amazon_referral_fees_2026_v1",
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": 1.8,
+            "individual_per_item_fee_usd": 0.99
+          }
+        },
+        "referral_rule_id": "referral_15pct_default",
+        "referral_classification_snippet": "",
+        "referral_components": {
+          "bucket": "default",
+          "quantity": 1.0,
+          "unit_price_basis": 17.99,
+          "referral_percent_components_usd": 2.6985,
+          "total_referral_and_program_usd": 2.6985
+        }
+      }
+    },
+    {
+      "engagement_id": "868e7e28-9bdc-4e97-b1b4-c7ccb376807a",
+      "batch_id": "55639535-812b-4a9c-87dd-559773ede0ea",
+      "tenant_id": null,
+      "warehouse_id": null,
+      "order_external_id": "111-0018346-0883408",
+      "order_date_iso": "2025-12-26T12:35:39.000Z",
+      "email": "blitzzecommerce@gmail.com",
+      "asin": "B0CKBYBF5C",
+      "sku": null,
+      "line_title": "ZYROXY Nano Tape Bubble Kit for Kids, Pack of 2 Transparent Double Sided Nano Tape with All Accessories in one Box, Ideal Gift for Kids of All Ages.",
+      "revenue_usd": 17.99,
+      "marketplace_fees_usd": 7.54,
+      "product_cogs_usd": 0.0,
+      "prep_cost_usd": 0.6,
+      "inbound_cost_usd": 0.35,
+      "total_fees_usd": 8.49,
+      "profit_usd": 9.5,
+      "quantity": 1.0,
+      "other_expenses_usd": null,
+      "ship_to_city": "WESTON",
+      "ship_to_state": "FL",
+      "ship_to_postal": "33326-1360",
+      "ship_to_country": null,
+      "marketplace_fees_2026_csv_usd": 7.38,
+      "total_fees_2026_csv_usd": 8.33,
+      "profit_2026_csv_usd": 9.66,
+      "marketplace_fees_2026_synthetic_usd": null,
+      "total_fees_2026_synthetic_usd": null,
+      "profit_2026_synthetic_usd": null,
+      "inflation_source": "csv_2026_columns",
+      "assumptions_version": "amazon_fee_model_2026_v1",
+      "inflation_components": {
+        "note": "authoritative_precomputed_columns"
+      },
+      "referral_fees_modeled_usd": 2.6985,
+      "referral_fee_bucket": "default",
+      "referral_fee_source": "default",
+      "extra": {
+        "fee_model_meta": {
+          "version": "amazon_fee_model_2026_v1",
+          "fba_fee_increase_effective_date": "2026-01-15",
+          "fba_prep_services_us_end_date": "2026-01-01",
+          "payout_dd7_effective_date": "2026-03-12",
+          "default_size_tier_assumption": "small_standard",
+          "source_note": "seller_central_summary_2026",
+          "scope": "v1_fba_fulfillment_delta_plus_optional_inbound_placement",
+          "referral_fees_modeled_usd_row": 2.6985,
+          "referral_fee_model": {
+            "version": "amazon_referral_fees_2026_v1",
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": 1.8,
+            "individual_per_item_fee_usd": 0.99
+          }
+        },
+        "referral_rule_id": "referral_15pct_default",
+        "referral_classification_snippet": "",
+        "referral_components": {
+          "bucket": "default",
+          "quantity": 1.0,
+          "unit_price_basis": 17.99,
+          "referral_percent_components_usd": 2.6985,
+          "total_referral_and_program_usd": 2.6985
+        }
+      }
+    }
+  ]
+}

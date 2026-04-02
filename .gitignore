@@ -1,0 +1,21 @@
+.env
+.venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+uploads/
+*.db
+.idea/
+.vscode/
+dist/
+*.egg-info/
+
+# Vendored / generated (do not publish to GitHub)
+_keepa_src/
+portal/node_modules/
+.agent_dump/
+_tmp_*/
+*.log

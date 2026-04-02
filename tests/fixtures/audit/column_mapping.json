@@ -1,0 +1,69 @@
+{
+  "labels": {
+    "TrackId": "tracking_number",
+    "Carrier": "carrier",
+    "LabelChargeUsd": "label_amount_usd",
+    "WeightLb": "weight_lb",
+    "OriginZip": "origin_postal",
+    "DestZip": "dest_postal",
+    "ShipDate": "ship_date",
+    "Sku": "sku",
+    "Qty": "qty"
+  },
+  "tasks": {
+    "CompletedAt": "completed_at",
+    "ZoneCode": "zone",
+    "WorkerId": "operator_id",
+    "TaskType": "task_type",
+    "DurationSec": "duration_sec",
+    "Sku": "sku"
+  },
+  "order_financials": {
+    "amazon_order_id": "order_external_id",
+    "purchasedate": "order_date",
+    "seller_sku": "sku",
+    "item_price": "revenue_usd",
+    "referral_fee": "marketplace_fees_usd",
+    "cogs": "product_cogs_usd",
+    "order_profit": "profit_usd",
+    "qty_shipped": "quantity",
+    "dest_zip": "ship_to_postal"
+  },
+  "asn": {
+    "AsnLineId": "asn_line_id",
+    "PoId": "po_id",
+    "Sku": "sku",
+    "QtyExpected": "qty_expected",
+    "QtyReceived": "qty_received",
+    "ExpectedAt": "expected_at_iso",
+    "ReceivedAt": "received_at_iso",
+    "SupplierId": "supplier_id",
+    "DockZone": "dock_zone"
+  },
+  "order_lines": {
+    "OrderId": "order_external_id",
+    "LineId": "line_id",
+    "Sku": "sku",
+    "Qty": "quantity",
+    "OrderedAt": "ordered_at_iso",
+    "ShippedAt": "shipped_at_iso",
+    "DestZip": "ship_to_postal",
+    "Channel": "channel"
+  },
+  "billing": {
+    "InvoiceId": "invoice_id",
+    "LineId": "line_id",
+    "FeeCode": "fee_code",
+    "ServiceStart": "service_start_iso",
+    "ServiceEnd": "service_end_iso",
+    "AmountUsd": "amount_usd",
+    "Currency": "currency"
+  },
+  "employees": {
+    "EmployeeId": "employee_id",
+    "Role": "role",
+    "HireDate": "hire_date_iso",
+    "ShiftName": "shift_name",
+    "HourlyRateUsd": "hourly_rate_usd"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "payload": {
+    "FeesEstimateResult": {
+      "Status": "Success",
+      "FeesEstimateIdentifier": {
+        "MarketplaceId": "ATVPDKIKX0DER",
+        "IdType": "ASIN",
+        "SellerId": "A1",
+        "SellerInputIdentifier": "test",
+        "IsAmazonFulfilled": false,
+        "IdValue": "B00TEST123",
+        "PriceToEstimateFees": {
+          "ListingPrice": { "CurrencyCode": "USD", "Amount": 29.99 },
+          "Shipping": { "CurrencyCode": "USD", "Amount": 0.0 },
+          "Points": { "PointsNumber": 0 }
+        }
+      },
+      "FeesEstimate": {
+        "TimeOfFeesEstimation": "2024-01-01T00:00:00Z",
+        "TotalFeesEstimate": { "CurrencyCode": "USD", "Amount": 4.5 },
+        "FeeDetailList": [
+          {
+            "FeeType": "ReferralFee",
+            "FeeAmount": { "CurrencyCode": "USD", "Amount": 4.5 },
+            "FinalFee": { "CurrencyCode": "USD", "Amount": 4.5 }
+          }
+        ]
+      }
+    }
+  }
+}

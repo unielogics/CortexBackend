@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "tenantId": "demo-tenant",
+    "warehouseId": "wh-east-1",
+    "warehouseTimezone": "America/New_York"
+  },
+  "nowIso": "2026-03-28T13:00:00-04:00",
+  "pendingTaskCount": 240,
+  "employees": [
+    {
+      "employeeId": "emp-1",
+      "tasksPerHourHistorical": 38.5,
+      "hourlyPay": 22.5,
+      "currency": "USD",
+      "scheduledShiftEnd": "2026-03-28T18:00:00-04:00",
+      "checkInSessions": [
+        {
+          "platform": "kiosk",
+          "sessionStartedAt": "2026-03-28T08:55:00-04:00",
+          "sessionEndedAt": null
+        }
+      ]
+    },
+    {
+      "employeeId": "emp-2",
+      "tasksPerHourHistorical": 32.0,
+      "scheduledShiftEnd": "2026-03-28T17:30:00-04:00",
+      "checkInSessions": []
+    }
+  ],
+  "omsDemandHints": { "note": null, "projectedOrderRatePerHour": null }
+}

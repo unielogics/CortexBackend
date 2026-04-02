@@ -1,0 +1,360 @@
+{
+  "facility_freight_by_warehouse_id": {
+    "wh_east": {
+      "broker_card": {
+        "dropoff": {
+          "call_ahead_hours": 4.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "truck_trailer_accessible",
+            "box_truck_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "required_equipment_in_truck": [
+            "lift_gate",
+            "straps_tie_downs"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack"
+          ]
+        },
+        "pickup": {
+          "call_ahead_hours": 2.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "platform_dock_height",
+            "truck_trailer_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack",
+            "loading_ramp"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "other_notes": "Demo East Coast DC (NYC postal proxy).",
+          "required_equipment_in_truck": [
+            "straps_tie_downs",
+            "pallet_jack",
+            "wheel_chocks"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ]
+        },
+        "schema_version": 1
+      },
+      "profile": {
+        "dropoff": {
+          "call_ahead_hours": 4.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "truck_trailer_accessible",
+            "box_truck_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "required_equipment_in_truck": [
+            "lift_gate",
+            "straps_tie_downs"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack"
+          ]
+        },
+        "pickup": {
+          "call_ahead_hours": 2.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "platform_dock_height",
+            "truck_trailer_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack",
+            "loading_ramp"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "other_notes": "Demo East Coast DC (NYC postal proxy).",
+          "required_equipment_in_truck": [
+            "straps_tie_downs",
+            "pallet_jack",
+            "wheel_chocks"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ]
+        }
+      }
+    },
+    "wh_west": {
+      "broker_card": {
+        "dropoff": {
+          "call_ahead_hours": 4.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "truck_trailer_accessible",
+            "box_truck_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "required_equipment_in_truck": [
+            "lift_gate",
+            "straps_tie_downs"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack"
+          ]
+        },
+        "pickup": {
+          "call_ahead_hours": 24.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "platform_dock_height",
+            "truck_trailer_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack",
+            "loading_ramp"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "other_notes": "Mock CA node: longer call-ahead; peak congestion 06:00\u201309:00 local.",
+          "required_equipment_in_truck": [
+            "straps_tie_downs",
+            "load_bars",
+            "blankets"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ]
+        },
+        "schema_version": 1
+      },
+      "profile": {
+        "dropoff": {
+          "call_ahead_hours": 4.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "truck_trailer_accessible",
+            "box_truck_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "required_equipment_in_truck": [
+            "lift_gate",
+            "straps_tie_downs"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack"
+          ]
+        },
+        "pickup": {
+          "call_ahead_hours": 24.0,
+          "can_receive_truck_trailers": true,
+          "loading_dock_style": [
+            "platform_dock_height",
+            "truck_trailer_accessible"
+          ],
+          "loading_equipment": [
+            "forklift",
+            "dock_leveler",
+            "pallet_jack",
+            "loading_ramp"
+          ],
+          "max_trailer_length_ft": 53.0,
+          "other_notes": "Mock CA node: longer call-ahead; peak congestion 06:00\u201309:00 local.",
+          "required_equipment_in_truck": [
+            "straps_tie_downs",
+            "load_bars",
+            "blankets"
+          ],
+          "unloading_equipment": [
+            "forklift",
+            "pallet_jack"
+          ]
+        }
+      }
+    }
+  },
+  "meta": {
+    "operational_warehouse_id": "wh_east",
+    "script": "demo_item_intelligence_with_grids.py",
+    "sku": "S1",
+    "tenant_id": "demo_grid"
+  },
+  "product_research_fba_fbm": {
+    "amazon_fees_live": {
+      "message": "SP-API product fees not requested for this run.",
+      "status": "skipped"
+    },
+    "fba_prep_services_breakdown": {
+      "lines": [
+        {
+          "applies_by_default": true,
+          "code": "fnsku_label",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": true,
+          "label": "FNSKU labeling",
+          "tier": "base",
+          "usd_per_unit": 0.45
+        },
+        {
+          "applies_by_default": false,
+          "code": "poly_bag",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": false,
+          "label": "Poly bag / shrink wrap",
+          "tier": "premium",
+          "usd_per_unit": 0.25
+        },
+        {
+          "applies_by_default": false,
+          "code": "bubble_wrap",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": false,
+          "label": "Bubble wrap",
+          "tier": "premium",
+          "usd_per_unit": 0.25
+        },
+        {
+          "applies_by_default": false,
+          "code": "reboxing",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": false,
+          "label": "Reboxing",
+          "tier": "premium",
+          "usd_per_unit": 0.75
+        },
+        {
+          "applies_by_default": false,
+          "code": "bundling",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": false,
+          "label": "Bundling / multi-pack prep",
+          "tier": "premium",
+          "usd_per_unit": 0.35
+        },
+        {
+          "applies_by_default": false,
+          "code": "inbound_carton",
+          "data_source": "warehouse_rate_card",
+          "included_in_quote": false,
+          "label": "Inbound carton handling (est.)",
+          "tier": "premium",
+          "usd_per_unit": 0.35
+        }
+      ],
+      "network_model": "single_warehouse_operational",
+      "note": "FBA prep is modeled only at the operational warehouse; other nodes do not split prep.",
+      "prep_options_applied": [],
+      "pricing_profile_id": "profile_nj_v1",
+      "subtotal_prep_usd_per_unit": 0.45,
+      "warehouse_id": "wh_east"
+    },
+    "fbm_fulfillment_services_breakdown": {
+      "fully_loaded_usd_per_unit": 7.73346,
+      "lines": [
+        {
+          "amount_usd_per_unit": 6.976608,
+          "code": "outbound_carrier_mock_parcel",
+          "data_source": "carrier_estimate",
+          "label": "Outbound customer shipment (mock parcel benchmark)",
+          "pointer": "cost_detail_for_downstream_systems.outbound_customer_shipment"
+        },
+        {
+          "amount_usd_per_unit": 0.294259,
+          "code": "inbound_receiving_network",
+          "data_source": "warehouse_rate_card",
+          "label": "Inbound receiving to network",
+          "pointer": "cost_detail_for_downstream_systems.inbound_to_network"
+        },
+        {
+          "amount_usd_per_unit": 0.136111,
+          "code": "inter_warehouse_transfer",
+          "data_source": "allocation_model",
+          "label": "Inter-warehouse transfer (linehaul model)",
+          "pointer": "cost_detail_for_downstream_systems.inter_warehouse_positioning"
+        },
+        {
+          "amount_usd_per_unit": 0.12,
+          "code": "outbound_handling",
+          "data_source": "warehouse_rate_card",
+          "label": "Outbound handling / pick-pack",
+          "pointer": "cost_detail_for_downstream_systems.fulfillment_handling"
+        },
+        {
+          "amount_usd_per_unit": 0.03,
+          "code": "storage_amortized",
+          "data_source": "warehouse_rate_card",
+          "label": "Storage rent amortized per unit sold",
+          "pointer": "cost_detail_for_downstream_systems.inventory_carry_storage_rent"
+        }
+      ],
+      "note": "FBM path uses multi-node allocation + economics from the same run as landed_cost_economics.",
+      "sku": "S1"
+    },
+    "scenarios_comparison": {
+      "asin": "B08FCRF2Q3",
+      "cogs_per_unit": null,
+      "fba_prep_only_path": {
+        "amazon_fees_estimate": null,
+        "amazon_fees_total_usd_per_unit": null,
+        "threepl_prep_usd_per_unit": 0.45
+      },
+      "fbm_network_fulfillment_path": {
+        "amazon_fees_estimate": null,
+        "amazon_fees_total_usd_per_unit": null,
+        "threepl_fully_loaded_usd_per_unit": 7.73346
+      },
+      "kpis": {
+        "gross_profit_per_unit_fba_path_usd": null,
+        "gross_profit_per_unit_fbm_path_usd": null,
+        "margin_on_listing_price_fba": null,
+        "margin_on_listing_price_fbm": null,
+        "note": "KPIs omitted when listing price, COGS, or Amazon fee estimate is missing (graceful partial)."
+      },
+      "listing_price_resolution": "keepa_listing_economics_reference",
+      "listing_price_usd": 9.99,
+      "sku": "S1"
+    },
+    "schema_version": "product_research_fba_fbm_slim_v1",
+    "sku": "S1"
+  },
+  "run_summary_bullets": [
+    "SKU S1: Allocated network saves ~$0.7043/unit vs shipping everything from wh_west alone.",
+    "S1: largest modeled cost bucket is mock_outbound_parcel_usd_per_unit (~$6.9766/unit).",
+    "S1 (beat single hub): Network split already matches or beats the cheapest single-DC strategy in this model \u2014 hold lane rates and placement.",
+    "Warehouse wh_east: ~2h carrier call-ahead on pickup (broker-facing card on file).",
+    "Warehouse wh_east: max trailer length ~53 ft at pickup \u2014 verify against assigned equipment.",
+    "Warehouse wh_west: ~24h carrier call-ahead on pickup (broker-facing card on file).",
+    "Warehouse wh_west: max trailer length ~53 ft at pickup \u2014 verify against assigned equipment."
+  ],
+  "schema_version": "item_intel_slim_v1"
+}

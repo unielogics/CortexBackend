@@ -1,0 +1,356 @@
+{
+  "meta": {
+    "schema_note": "Demo mirror of PrepCenterNearMe warehouse_rds exports. Replace this file by copying PrepCenterNearMeBackend/scripts/export/warehouse_rds/warehouses_flat.json (array) into the \"warehouses\" key, or merge rows. wOwners.ndjson and warehouse_owner_users.json shapes are mirrored under owners / warehouse_owner_users.",
+    "source_paths_hint": [
+      "PrepCenterNearMeBackend/scripts/export/warehouse_rds/warehouses_flat.json",
+      "PrepCenterNearMeBackend/scripts/export/warehouse_rds/wOwners.ndjson",
+      "PrepCenterNearMeBackend/scripts/export/warehouse_rds/warehouse_owner_users.json"
+    ]
+  },
+  "warehouses": [
+    {
+      "warehouse_id": "pcm-nj-ewr-01",
+      "name": "Prep Center North NJ",
+      "postal": "07001",
+      "city": "Avenel",
+      "state": "NJ",
+      "lat": 40.58,
+      "lon": -74.28,
+      "owner_id": "own-pcm-east",
+      "pricing_json": {
+        "profile_id": "profile_nj_v1",
+        "inbound_handling_per_lb": 0.11,
+        "storage_per_cuft_month_usd": 0.42,
+        "pick_pack_per_unit_usd": 1.85
+      },
+      "full_warehouse_json": {
+        "sqft": 185000,
+        "dock_doors": 12,
+        "ceiling_clear_ft": 32,
+        "wms": "demo_wms",
+        "ftl_spots": 8
+      }
+    },
+    {
+      "warehouse_id": "pcm-tx-dfw-01",
+      "name": "Prep Center Dallas Corridor",
+      "postal": "75201",
+      "city": "Dallas",
+      "state": "TX",
+      "lat": 32.78,
+      "lon": -96.8,
+      "owner_id": "own-pcm-central",
+      "pricing_json": {
+        "profile_id": "profile_tx_v1",
+        "inbound_handling_per_lb": 0.09,
+        "storage_per_cuft_month_usd": 0.38,
+        "pick_pack_per_unit_usd": 1.72
+      },
+      "full_warehouse_json": {
+        "sqft": 220000,
+        "dock_doors": 16,
+        "ceiling_clear_ft": 36,
+        "wms": "demo_wms",
+        "ftl_spots": 10
+      }
+    },
+    {
+      "warehouse_id": "pcm-fl-mia-01",
+      "name": "Prep Center South Florida",
+      "postal": "33101",
+      "city": "Miami",
+      "state": "FL",
+      "lat": 25.78,
+      "lon": -80.19,
+      "owner_id": "own-pcm-south",
+      "pricing_json": {
+        "profile_id": "profile_fl_v1",
+        "inbound_handling_per_lb": 0.1,
+        "storage_per_cuft_month_usd": 0.44,
+        "pick_pack_per_unit_usd": 1.79
+      },
+      "full_warehouse_json": {
+        "sqft": 142000,
+        "dock_doors": 9,
+        "ceiling_clear_ft": 30,
+        "wms": "demo_wms",
+        "ftl_spots": 6
+      }
+    },
+    {
+      "warehouse_id": "pcm-ca-lax-01",
+      "name": "Prep Center LA Basin",
+      "postal": "90001",
+      "city": "Los Angeles",
+      "state": "CA",
+      "lat": 34.05,
+      "lon": -118.25,
+      "owner_id": "own-pcm-west",
+      "pricing_json": {
+        "profile_id": "profile_ca_v1",
+        "inbound_handling_per_lb": 0.12,
+        "storage_per_cuft_month_usd": 0.48,
+        "pick_pack_per_unit_usd": 1.95
+      },
+      "full_warehouse_json": {
+        "sqft": 260000,
+        "dock_doors": 18,
+        "ceiling_clear_ft": 36,
+        "wms": "demo_wms",
+        "ftl_spots": 12
+      }
+    },
+    {
+      "warehouse_id": "pcm-ga-atl-01",
+      "name": "Prep Center Atlanta Hub",
+      "postal": "30309",
+      "city": "Atlanta",
+      "state": "GA",
+      "lat": 33.77,
+      "lon": -84.39,
+      "owner_id": "own-pcm-south",
+      "pricing_json": {
+        "profile_id": "profile_ga_v1",
+        "inbound_handling_per_lb": 0.095,
+        "storage_per_cuft_month_usd": 0.36,
+        "pick_pack_per_unit_usd": 1.68
+      },
+      "full_warehouse_json": {
+        "sqft": 198000,
+        "dock_doors": 14,
+        "ceiling_clear_ft": 34,
+        "wms": "demo_wms",
+        "ftl_spots": 9
+      }
+    },
+    {
+      "warehouse_id": "pcm-il-ord-01",
+      "name": "Prep Center Chicago Metro",
+      "postal": "60607",
+      "city": "Chicago",
+      "state": "IL",
+      "lat": 41.88,
+      "lon": -87.63,
+      "owner_id": "own-pcm-central",
+      "pricing_json": {
+        "profile_id": "profile_il_v1",
+        "inbound_handling_per_lb": 0.1,
+        "storage_per_cuft_month_usd": 0.4,
+        "pick_pack_per_unit_usd": 1.8
+      },
+      "full_warehouse_json": {
+        "sqft": 175000,
+        "dock_doors": 11,
+        "ceiling_clear_ft": 32,
+        "wms": "demo_wms",
+        "ftl_spots": 7
+      }
+    },
+    {
+      "warehouse_id": "pcm-pa-pit-01",
+      "name": "Prep Center Pittsburgh",
+      "postal": "15222",
+      "city": "Pittsburgh",
+      "state": "PA",
+      "lat": 40.44,
+      "lon": -79.99,
+      "owner_id": "own-pcm-east",
+      "pricing_json": {
+        "profile_id": "profile_pa_v1",
+        "inbound_handling_per_lb": 0.098,
+        "storage_per_cuft_month_usd": 0.37,
+        "pick_pack_per_unit_usd": 1.74
+      },
+      "full_warehouse_json": {
+        "sqft": 128000,
+        "dock_doors": 8,
+        "ceiling_clear_ft": 28,
+        "wms": "demo_wms",
+        "ftl_spots": 5
+      }
+    },
+    {
+      "warehouse_id": "pcm-wa-sea-01",
+      "name": "Prep Center Seattle-Tacoma",
+      "postal": "98101",
+      "city": "Seattle",
+      "state": "WA",
+      "lat": 47.61,
+      "lon": -122.33,
+      "owner_id": "own-pcm-west",
+      "pricing_json": {
+        "profile_id": "profile_wa_v1",
+        "inbound_handling_per_lb": 0.115,
+        "storage_per_cuft_month_usd": 0.46,
+        "pick_pack_per_unit_usd": 1.92
+      },
+      "full_warehouse_json": {
+        "sqft": 155000,
+        "dock_doors": 10,
+        "ceiling_clear_ft": 32,
+        "wms": "demo_wms",
+        "ftl_spots": 7
+      }
+    },
+    {
+      "warehouse_id": "pcm-az-phx-01",
+      "name": "Prep Center Phoenix",
+      "postal": "85001",
+      "city": "Phoenix",
+      "state": "AZ",
+      "lat": 33.45,
+      "lon": -112.07,
+      "owner_id": "own-pcm-west",
+      "pricing_json": {
+        "profile_id": "profile_az_v1",
+        "inbound_handling_per_lb": 0.088,
+        "storage_per_cuft_month_usd": 0.35,
+        "pick_pack_per_unit_usd": 1.65
+      },
+      "full_warehouse_json": {
+        "sqft": 168000,
+        "dock_doors": 10,
+        "ceiling_clear_ft": 32,
+        "wms": "demo_wms",
+        "ftl_spots": 8
+      }
+    },
+    {
+      "warehouse_id": "pcm-tn-mem-01",
+      "name": "Prep Center Memphis",
+      "postal": "38103",
+      "city": "Memphis",
+      "state": "TN",
+      "lat": 35.15,
+      "lon": -90.05,
+      "owner_id": "own-pcm-central",
+      "pricing_json": {
+        "profile_id": "profile_tn_v1",
+        "inbound_handling_per_lb": 0.087,
+        "storage_per_cuft_month_usd": 0.33,
+        "pick_pack_per_unit_usd": 1.62
+      },
+      "full_warehouse_json": {
+        "sqft": 192000,
+        "dock_doors": 13,
+        "ceiling_clear_ft": 34,
+        "wms": "demo_wms",
+        "ftl_spots": 9
+      }
+    },
+    {
+      "warehouse_id": "pcm-mo-stl-01",
+      "name": "Prep Center St. Louis",
+      "postal": "63101",
+      "city": "St. Louis",
+      "state": "MO",
+      "lat": 38.63,
+      "lon": -90.2,
+      "owner_id": "own-pcm-central",
+      "pricing_json": {
+        "profile_id": "profile_mo_v1",
+        "inbound_handling_per_lb": 0.09,
+        "storage_per_cuft_month_usd": 0.34,
+        "pick_pack_per_unit_usd": 1.66
+      },
+      "full_warehouse_json": {
+        "sqft": 145000,
+        "dock_doors": 9,
+        "ceiling_clear_ft": 30,
+        "wms": "demo_wms",
+        "ftl_spots": 6
+      }
+    },
+    {
+      "warehouse_id": "pcm-nc-clt-01",
+      "name": "Prep Center Charlotte",
+      "postal": "28202",
+      "city": "Charlotte",
+      "state": "NC",
+      "lat": 35.23,
+      "lon": -80.84,
+      "owner_id": "own-pcm-south",
+      "pricing_json": {
+        "profile_id": "profile_nc_v1",
+        "inbound_handling_per_lb": 0.093,
+        "storage_per_cuft_month_usd": 0.36,
+        "pick_pack_per_unit_usd": 1.7
+      },
+      "full_warehouse_json": {
+        "sqft": 162000,
+        "dock_doors": 11,
+        "ceiling_clear_ft": 32,
+        "wms": "demo_wms",
+        "ftl_spots": 7
+      }
+    }
+  ],
+  "owners": [
+    {
+      "owner_id": "own-pcm-east",
+      "display_name": "PCM East Holdings",
+      "billing_email": "billing-east@prep-demo.local",
+      "region_focus": "Northeast / Mid-Atlantic"
+    },
+    {
+      "owner_id": "own-pcm-central",
+      "display_name": "PCM Central Network",
+      "billing_email": "billing-central@prep-demo.local",
+      "region_focus": "Central / Midwest"
+    },
+    {
+      "owner_id": "own-pcm-south",
+      "display_name": "PCM Southeast Ops",
+      "billing_email": "billing-south@prep-demo.local",
+      "region_focus": "Southeast"
+    },
+    {
+      "owner_id": "own-pcm-west",
+      "display_name": "PCM West Coast",
+      "billing_email": "billing-west@prep-demo.local",
+      "region_focus": "West / Mountain"
+    }
+  ],
+  "warehouse_owner_users": [
+    {
+      "user_id": "u-wh-mgr-nj-01",
+      "email": "manager.nj@prep-demo.local",
+      "role": "warehouse_manager",
+      "joinStrategy": "owner_id",
+      "joinValue": "own-pcm-east",
+      "warehouse_ids": ["pcm-nj-ewr-01", "pcm-pa-pit-01"]
+    },
+    {
+      "user_id": "u-wh-mgr-tx-01",
+      "email": "manager.tx@prep-demo.local",
+      "role": "warehouse_manager",
+      "joinStrategy": "owner_id",
+      "joinValue": "own-pcm-central",
+      "warehouse_ids": ["pcm-tx-dfw-01", "pcm-il-ord-01", "pcm-tn-mem-01", "pcm-mo-stl-01"]
+    },
+    {
+      "user_id": "u-ops-read-01",
+      "email": "ops.read@prep-demo.local",
+      "role": "network_readonly",
+      "joinStrategy": "tenant_scoped",
+      "joinValue": "prep_center_demo",
+      "warehouse_ids": []
+    },
+    {
+      "user_id": "u-owner-portal-south",
+      "email": "owner.south@prep-demo.local",
+      "role": "owner_portal",
+      "joinStrategy": "owner_id",
+      "joinValue": "own-pcm-south",
+      "warehouse_ids": ["pcm-fl-mia-01", "pcm-ga-atl-01", "pcm-nc-clt-01"]
+    },
+    {
+      "user_id": "u-owner-portal-west",
+      "email": "owner.west@prep-demo.local",
+      "role": "owner_portal",
+      "joinStrategy": "owner_id",
+      "joinValue": "own-pcm-west",
+      "warehouse_ids": ["pcm-ca-lax-01", "pcm-wa-sea-01", "pcm-az-phx-01"]
+    }
+  ]
+}

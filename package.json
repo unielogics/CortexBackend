@@ -1,0 +1,9 @@
+{
+  "name": "unie-cortex",
+  "private": true,
+  "description": "Convenience scripts; API is Python/FastAPI. Activate .venv first, then npm start.",
+  "scripts": {
+    "start": "python -m uvicorn unie_cortex.main:app --reload --host 127.0.0.1 --port 8080",
+    "api": "python -m uvicorn unie_cortex.main:app --reload --host 127.0.0.1 --port 8080"
+  }
+}

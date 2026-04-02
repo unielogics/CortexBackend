@@ -1,0 +1,10 @@
+{
+  "schema_version": "audit_benchmark_v1",
+  "profile_id": "default",
+  "label_spend_ratio_warn": 1.12,
+  "tier_rules": [],
+  "narrative_hints": [
+    "Compare label spend to heuristic benchmark; rate-shopping may reduce pass-through.",
+    "Zone concentration in tasks often correlates with slotting and labor balance."
+  ]
+}

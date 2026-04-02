@@ -1,0 +1,98 @@
+from collections.abc import AsyncGenerator
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+from unie_cortex.config import settings
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+engine = None
+SessionLocal = None
+
+if not settings.use_mongodb:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.unie_cortex_env == "development",
+    )
+    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _sqlite_add_label_fact_columns(conn) -> None:
+    """create_all does not ALTER existing tables; add columns from older DBs."""
+    if "sqlite" not in (settings.database_url or "").lower():
+        return
+    res = await conn.execute(text("PRAGMA table_info(label_facts)"))
+    existing = {row[1] for row in res.fetchall()}
+    alters: list[tuple[str, str]] = [
+        ("sku", "VARCHAR(128)"),
+        ("qty", "FLOAT"),
+        ("line_amount_usd", "FLOAT"),
+        ("extra", "JSON"),
+    ]
+    for col, typ in alters:
+        if col not in existing:
+            await conn.execute(text(f"ALTER TABLE label_facts ADD COLUMN {col} {typ}"))
+
+
+async def _sqlite_add_task_fact_columns(conn) -> None:
+    if "sqlite" not in (settings.database_url or "").lower():
+        return
+    res = await conn.execute(text("PRAGMA table_info(task_facts)"))
+    existing = {row[1] for row in res.fetchall()}
+    for col, typ in (("sku", "VARCHAR(128)"), ("extra", "JSON")):
+        if col not in existing:
+            await conn.execute(text(f"ALTER TABLE task_facts ADD COLUMN {col} {typ}"))
+
+
+async def _sqlite_add_engagement_network_context(conn) -> None:
+    if "sqlite" not in (settings.database_url or "").lower():
+        return
+    res = await conn.execute(text("PRAGMA table_info(engagements)"))
+    existing = {row[1] for row in res.fetchall()}
+    if "network_context" not in existing:
+        await conn.execute(text("ALTER TABLE engagements ADD COLUMN network_context JSON"))
+
+
+async def _sqlite_add_order_financial_fact_columns(conn) -> None:
+    if "sqlite" not in (settings.database_url or "").lower():
+        return
+    res = await conn.execute(text("PRAGMA table_info(order_financial_facts)"))
+    existing = {row[1] for row in res.fetchall()}
+    alters: list[tuple[str, str]] = [
+        ("referral_fees_modeled_usd", "FLOAT"),
+        ("referral_fee_bucket", "VARCHAR(64)"),
+        ("referral_fee_source", "VARCHAR(64)"),
+    ]
+    for col, typ in alters:
+        if col not in existing:
+            await conn.execute(text(f"ALTER TABLE order_financial_facts ADD COLUMN {col} {typ}"))
+
+
+async def init_sql_db() -> None:
+    if settings.use_mongodb or engine is None:
+        return
+    from unie_cortex.db import models  # noqa: F401
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await _sqlite_add_label_fact_columns(conn)
+        await _sqlite_add_task_fact_columns(conn)
+        await _sqlite_add_engagement_network_context(conn)
+        await _sqlite_add_order_financial_fact_columns(conn)
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    if SessionLocal is None:
+        raise RuntimeError("SQL backend disabled; set MONGODB_URI or use get_store()")
+    async with SessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

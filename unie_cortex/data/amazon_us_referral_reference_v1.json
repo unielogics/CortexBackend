@@ -1,0 +1,47 @@
+{
+  "schema_version": "amazon_us_referral_reference_v1",
+  "marketplace_code": "amazon_us",
+  "effective_note": "Illustrative referral-style buckets aligned with Cortex order-financial modeling (Keepa/SP-API category → bucket). Verify against Seller Central before commercial use.",
+  "pick_pack_note": "FBA fulfillment and 3PL pick/pack are separate from referral % — see warehouse pricing profiles and amazon_fba_fulfillment_audit tables in the engine.",
+  "buckets": [
+    {
+      "bucket_id": "default",
+      "label": "Default / most categories",
+      "referral_pct": 15.0,
+      "referral_minimum_usd_per_item_applies": true,
+      "notes": "Typical US referral; $0.30/item minimum unless exempt bucket."
+    },
+    {
+      "bucket_id": "grocery_gourmet",
+      "label": "Grocery & gourmet",
+      "referral_pct": 8.0,
+      "referral_minimum_usd_per_item_applies": false,
+      "notes": "Often exempt from per-item referral minimum in Seller Central carve-outs."
+    },
+    {
+      "bucket_id": "media",
+      "label": "Media (closing fee path)",
+      "referral_pct": 15.0,
+      "referral_minimum_usd_per_item_applies": false,
+      "notes": "May include closing fee; % referral modeled separately in full audit."
+    },
+    {
+      "bucket_id": "electronics",
+      "label": "Consumer electronics",
+      "referral_pct": 8.0,
+      "referral_minimum_usd_per_item_applies": true,
+      "notes": "Common SP-API / Keepa bucket mapping."
+    },
+    {
+      "bucket_id": "home_garden",
+      "label": "Home & kitchen",
+      "referral_pct": 15.0,
+      "referral_minimum_usd_per_item_applies": true,
+      "notes": "Broad category defaulting to standard referral."
+    }
+  ],
+  "fba_fulfillment_reference": {
+    "schema": "amazon_fba_fulfillment_audit_us_2026_jan_v1",
+    "description": "Per-unit weight tiers for US non-apparel small/large standard — see amazon_fees_audit_us.py in CortexBackend."
+  }
+}

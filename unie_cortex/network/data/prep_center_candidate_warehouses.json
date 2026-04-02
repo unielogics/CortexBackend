@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "source": "prep_center_warehouse_rds_export",
+  "baseline_warehouse_id": "wh_6931c90170f902dcadb73d86",
+  "candidate_warehouses": [
+    {
+      "id": "wh_6931c90170f902dcadb73d86",
+      "postal": "78626",
+      "label": "Riteprepfulfillment, 3807 East University Avenue, Georgetown, TX, 78626",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6931c90170f902dcadb73d86",
+        "warehouse_id": "PUB-400072",
+        "unielogics_id": "XX696",
+        "owner_email": "info@riteprepfulfillment.com",
+        "mongo_owner_id": "6931c90170f902dcadb73d87"
+      },
+      "lat": 30.6440598,
+      "lon": -97.6281432
+    },
+    {
+      "id": "wh_6932829c70f902dcadb80d1c",
+      "postal": "75063",
+      "label": "Spantik Investments Inc, 8200 Springwood Drive suite 235, Irving, TX, 75063",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6932829c70f902dcadb80d1c",
+        "warehouse_id": "PUB-916378",
+        "unielogics_id": "XX637",
+        "owner_email": "naeem@spantikgroup.com",
+        "mongo_owner_id": "6932829c70f902dcadb80d1d"
+      },
+      "lat": 32.9178778,
+      "lon": -96.9863127
+    },
+    {
+      "id": "wh_6933369670f902dcadb8cf2c",
+      "postal": "49512",
+      "label": "Encore Business Group, 5505 Patterson Avenue Southeast Suite 200, Grand Rapids, MI, 49512",
+      "state": "MI",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6933369670f902dcadb8cf2c",
+        "warehouse_id": "PUB-988555",
+        "unielogics_id": "XX692",
+        "owner_email": "ryan@encorebusinessgroup.com",
+        "mongo_owner_id": "6933369670f902dcadb8cf2d"
+      },
+      "lat": 42.947026,
+      "lon": -85.550879
+    },
+    {
+      "id": "wh_6935aa8a30966bc48bd53212",
+      "postal": "77034",
+      "label": "Asfar Distribution-Houston TX, 9100 Galveston Road, Houston, TX, 77034",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6935aa8a30966bc48bd53212",
+        "warehouse_id": "PUB-746498",
+        "unielogics_id": "XX425",
+        "owner_email": "khalil@asfardistribution.com",
+        "mongo_owner_id": "6935aa8a30966bc48bd53213"
+      },
+      "lat": 29.6311119,
+      "lon": -95.2062065
+    },
+    {
+      "id": "wh_6957f8937848d53a35b68897",
+      "postal": "32226",
+      "label": "On-demand Warehousing and Fulfillment, 4345 Perimeter Industrial Pkwy Suite 103, Jacksonville, FL, 32226",
+      "state": "FL",
+      "pricing_profile_id": "profile_fl_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6957f8937848d53a35b68897",
+        "warehouse_id": "PUB-946953",
+        "unielogics_id": "XX785",
+        "owner_email": "dustinbrearton@ondemandwf.com",
+        "mongo_owner_id": "6957f8937848d53a35b68898"
+      },
+      "lat": 30.376846313890688,
+      "lon": -81.7571702878444
+    },
+    {
+      "id": "wh_695bf7067848d53a35bb460a",
+      "postal": "32811",
+      "label": "Simba Dispatch Services LLC, 4502 35th Street Suite 700, Orlando, FL, 32811",
+      "state": "FL",
+      "pricing_profile_id": "profile_fl_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "695bf7067848d53a35bb460a",
+        "warehouse_id": "PUB-692789",
+        "unielogics_id": "XX669",
+        "owner_email": "simbadispatchservices@gmail.com",
+        "mongo_owner_id": "695bf7067848d53a35bb460b"
+      },
+      "lat": 28.503714,
+      "lon": -81.436413
+    },
+    {
+      "id": "wh_695ed57c7848d53a35bede86",
+      "postal": "77036",
+      "label": "AIK Global Inc., 9000 Southwest Freeway, Houston, TX, 77036",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "695ed57c7848d53a35bede86",
+        "warehouse_id": "PUB-716338",
+        "unielogics_id": "XX963",
+        "owner_email": "adil.ahsan@hotmail.com",
+        "mongo_owner_id": "695ed57c7848d53a35bede87"
+      },
+      "lat": 29.6863597,
+      "lon": -95.5333086
+    },
+    {
+      "id": "wh_6963bbbc7848d53a35c4fb0e",
+      "postal": "11236",
+      "label": "BoxHero Logistics Corp, 905 Remsen Avenue, Brooklyn, NY, 11236",
+      "state": "NY",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6963bbbc7848d53a35c4fb0e",
+        "warehouse_id": "PUB-804551",
+        "unielogics_id": "XX799",
+        "owner_email": "sergey@boxhero.com",
+        "mongo_owner_id": "6963bbbc7848d53a35c4fb0f"
+      },
+      "lat": 40.646249,
+      "lon": -73.9126304
+    },
+    {
+      "id": "wh_697229979283970e0cc9dac0",
+      "postal": "19406",
+      "label": "102 QUEENS DR, 102 QUEENS DR, KING OF PRUSSIA, PA, 19406",
+      "state": "PA",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697229979283970e0cc9dac0",
+        "warehouse_id": "PUB-430349",
+        "unielogics_id": "XX520",
+        "owner_email": "dave@theswifthouse.com",
+        "mongo_owner_id": "697229979283970e0cc9dac1"
+      },
+      "lat": 40.08511652485381,
+      "lon": -75.3553580469351
+    },
+    {
+      "id": "wh_69744f86d95d5b6df6800120",
+      "postal": "95212",
+      "label": "Cobros, 3672 Massimo Circle, Stockton, CA, 95212",
+      "state": "CA",
+      "pricing_profile_id": "profile_ca_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "69744f86d95d5b6df6800120",
+        "warehouse_id": "PUB-212830",
+        "unielogics_id": "XX486",
+        "owner_email": "cobros250@gmail.com",
+        "mongo_owner_id": "69744f86d95d5b6df6800121"
+      },
+      "lat": 38.0461749,
+      "lon": -121.2682536
+    },
+    {
+      "id": "wh_69745867d95d5b6df6800de2",
+      "postal": "06457",
+      "label": "Discount Warehouse, 2175 South Main Street, Middletown, CT, 06457",
+      "state": "CT",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "69745867d95d5b6df6800de2",
+        "warehouse_id": "PUB-486734",
+        "unielogics_id": "XX342",
+        "owner_email": "admin@discountwarehouseusa.com",
+        "mongo_owner_id": "69745867d95d5b6df6800de3"
+      },
+      "lat": 41.5001156,
+      "lon": -72.6777069
+    },
+    {
+      "id": "wh_69755a6cd95d5b6df6810f17",
+      "postal": "77498",
+      "label": "ASWT 3rd Party Logistics, 10055 Belknap Rd, Sugar Land, TX, 77498",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "69755a6cd95d5b6df6810f17",
+        "warehouse_id": "PUB-538173",
+        "unielogics_id": "XX239",
+        "owner_email": "aswtgroupllc@gmail.com",
+        "mongo_owner_id": "69755a6cd95d5b6df6810f18"
+      },
+      "lat": 29.6703702,
+      "lon": -95.6217831
+    },
+    {
+      "id": "wh_6976a92dd95d5b6df6826420",
+      "postal": "33065",
+      "label": "Ecom Auto Prep, 12466 Northwest 39th Street, Coral Springs, FL, 33065",
+      "state": "FL",
+      "pricing_profile_id": "profile_fl_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6976a92dd95d5b6df6826420",
+        "warehouse_id": "PUB-237712",
+        "unielogics_id": "XX547",
+        "owner_email": "ak@ecomautoprep.com",
+        "mongo_owner_id": "6976a92dd95d5b6df6826421"
+      },
+      "lat": 26.277676,
+      "lon": -80.2929973
+    },
+    {
+      "id": "wh_6976b380d95d5b6df6826f0e",
+      "postal": "59105",
+      "label": "406 Premier Prep, 1006 Toole Circle, Billings, MT, 59105",
+      "state": "MT",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6976b380d95d5b6df6826f0e",
+        "warehouse_id": "PUB-879278",
+        "unielogics_id": "XX285",
+        "owner_email": "orders@406premierprep.com",
+        "mongo_owner_id": "6976b380d95d5b6df6826f0f"
+      },
+      "lat": 45.8175263,
+      "lon": -108.4985309
+    },
+    {
+      "id": "wh_697728aad95d5b6df6833222",
+      "postal": "07206",
+      "label": "Ma dealers, 441 Schiller st Elizabeth New Jersey, Elizabeth, NJ, 07206",
+      "state": "NJ",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697728aad95d5b6df6833222",
+        "warehouse_id": "PUB-872272",
+        "unielogics_id": "XX482",
+        "owner_email": "madearlerscorp@gmail.com",
+        "mongo_owner_id": "697728aad95d5b6df6833223"
+      },
+      "lat": 40.6609858,
+      "lon": -74.1830633
+    },
+    {
+      "id": "wh_6977a55cd95d5b6df683b50c",
+      "postal": "80907",
+      "label": "Opened Box Returns, 3372 Adobe Court Unit 120, Colorado Springs, CO, 80907",
+      "state": "CO",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6977a55cd95d5b6df683b50c",
+        "warehouse_id": "PUB-795886",
+        "unielogics_id": "XX498",
+        "owner_email": "info@openedboxreturns.com",
+        "mongo_owner_id": "6977a55cd95d5b6df683b50d"
+      },
+      "lat": 38.88029909999999,
+      "lon": -104.8138357
+    },
+    {
+      "id": "wh_6977ba38d95d5b6df683ed57",
+      "postal": "23831",
+      "label": "West Coast Prep 3PL, 23831 Via Fabricante, Suite 302, Mission Viejo, CA, 23831",
+      "state": "CA",
+      "pricing_profile_id": "profile_ca_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6977ba38d95d5b6df683ed57",
+        "warehouse_id": "PUB-130036",
+        "unielogics_id": "XX219",
+        "owner_email": "ahmad@westcoastprep3pl.com",
+        "mongo_owner_id": "6977ba38d95d5b6df683ed58"
+      },
+      "lat": 33.61843812326853,
+      "lon": -117.68093210114803
+    },
+    {
+      "id": "wh_6977c4ecd95d5b6df684232b",
+      "postal": "92571",
+      "label": "Universal Shipping Inc, 131 Perry street Perris, CA, Perris, CA, 92571",
+      "state": "CA",
+      "pricing_profile_id": "profile_ca_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6977c4ecd95d5b6df684232b",
+        "warehouse_id": "PUB-871928",
+        "unielogics_id": "XX566",
+        "owner_email": "usi.trucking1@usiship.com",
+        "mongo_owner_id": "6977c4ecd95d5b6df684232c"
+      },
+      "lat": 33.8481372,
+      "lon": -117.228859
+    },
+    {
+      "id": "wh_6977cd2ad95d5b6df68430f6",
+      "postal": "59101",
+      "label": "Above All Prep and Ship, 2102 Old Hardin rd, Billings, MT, 59101",
+      "state": "MT",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6977cd2ad95d5b6df68430f6",
+        "warehouse_id": "PUB-985126",
+        "unielogics_id": "XX655",
+        "owner_email": "orders@aaprepandship.com",
+        "mongo_owner_id": "6977cd2ad95d5b6df68430f7"
+      },
+      "lat": 45.804975924819686,
+      "lon": -108.43111628901302
+    },
+    {
+      "id": "wh_697919f6d95d5b6df685b81e",
+      "postal": "97230",
+      "label": "Proven Prep Center, 17146 Northeast Sandy Boulevard, Portland, OR, 97230",
+      "state": "OR",
+      "pricing_profile_id": "profile_ca_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697919f6d95d5b6df685b81e",
+        "warehouse_id": "PUB-182485",
+        "unielogics_id": "XX522",
+        "owner_email": "kyle@provenprepcenter.com",
+        "mongo_owner_id": "697919f6d95d5b6df685b81f"
+      },
+      "lat": 45.54713599999999,
+      "lon": -122.4865152
+    },
+    {
+      "id": "wh_6979386ad95d5b6df685d55e",
+      "postal": "57104",
+      "label": "Weisser Distributing, 921 E Amidon St, Sioux Falls, SD, 57104",
+      "state": "SD",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6979386ad95d5b6df685d55e",
+        "warehouse_id": "PUB-977101",
+        "unielogics_id": "XX347",
+        "owner_email": "ann.traphagen@weisserdistributing.com",
+        "mongo_owner_id": "6979386ad95d5b6df685d55f"
+      },
+      "lat": 43.5755232,
+      "lon": -96.715727
+    },
+    {
+      "id": "wh_697b92e94de7b42aa2e3267d",
+      "postal": "77084",
+      "label": "SAB Fulfillment Inc, 5267 Barker Cypress Road, Houston, TX, 77084",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697b92e94de7b42aa2e3267d",
+        "warehouse_id": "PUB-216867",
+        "unielogics_id": "XX611",
+        "owner_email": "sabfulfillmentinc@gmail.com",
+        "mongo_owner_id": "697b92e94de7b42aa2e3267e"
+      },
+      "lat": 29.8510379,
+      "lon": -95.685316
+    },
+    {
+      "id": "wh_697b92f74de7b42aa2e32682",
+      "postal": "77084",
+      "label": "SAB Fulfillment Inc, 5267 Barker Cypress Road, Houston, TX, 77084",
+      "state": "TX",
+      "pricing_profile_id": "profile_tx_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697b92f74de7b42aa2e32682",
+        "warehouse_id": "PUB-231858",
+        "unielogics_id": "XX312",
+        "owner_email": "sabfulfillmentinc@gmail.com",
+        "mongo_owner_id": "697b92e94de7b42aa2e3267e"
+      },
+      "lat": 29.8510379,
+      "lon": -95.685316
+    },
+    {
+      "id": "wh_697cbb5f4de7b42aa2e4564a",
+      "postal": "48170",
+      "label": "Masterpax, 41980 East Ann Arbor Road, Plymouth, MI, 48170",
+      "state": "MI",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "697cbb5f4de7b42aa2e4564a",
+        "warehouse_id": "PUB-110813",
+        "unielogics_id": "XX750",
+        "owner_email": "masterpax3pl@gmail.com",
+        "mongo_owner_id": "697cbb5f4de7b42aa2e4564b"
+      },
+      "lat": 42.3596398,
+      "lon": -83.4334701
+    },
+    {
+      "id": "wh_69850c94abaad0f29e817e1b",
+      "postal": "18015",
+      "label": "Jie testing, 118 West Graham Place, Bethlehem, PA, 18015",
+      "state": "PA",
+      "pricing_profile_id": "profile_nj_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "69850c94abaad0f29e817e1b",
+        "warehouse_id": "PUB-190470",
+        "unielogics_id": "XX168",
+        "owner_email": "jigglyjie@gmail.com",
+        "mongo_owner_id": "69850c94abaad0f29e817e1c"
+      },
+      "lat": 40.6110766,
+      "lon": -75.38031629999999
+    },
+    {
+      "id": "wh_6991299cb75ae1033f789d5e",
+      "postal": "32257",
+      "label": "Scovia Fulfillment, 9512 Hood Road, Jacksonville, FL, 32257",
+      "state": "FL",
+      "pricing_profile_id": "profile_fl_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6991299cb75ae1033f789d5e",
+        "warehouse_id": "PUB-051767",
+        "unielogics_id": "XX105",
+        "owner_email": "admin@scoviafulfillment.com",
+        "mongo_owner_id": "6991299cb75ae1033f789d5f"
+      },
+      "lat": 30.20555389999999,
+      "lon": -81.5833883
+    },
+    {
+      "id": "wh_6996464e0ba3a22e1b0ce0be",
+      "postal": "97124",
+      "label": "McKenzie Services, 8220 Northeast Walker Road, Hillsboro, OR, 97124",
+      "state": "OR",
+      "pricing_profile_id": "profile_ca_v1",
+      "prep_center": {
+        "mongo_warehouse_subdoc_id": "6996464e0ba3a22e1b0ce0be",
+        "warehouse_id": "PUB-075459",
+        "unielogics_id": "XX586",
+        "owner_email": "accountmanager@mkzservices.com",
+        "mongo_owner_id": "6996464e0ba3a22e1b0ce0bf"
+      },
+      "lat": 45.536103,
+      "lon": -122.8948567
+    }
+  ]
+}

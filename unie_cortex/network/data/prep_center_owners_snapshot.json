@@ -1,0 +1,4393 @@
+{
+  "schema_version": 1,
+  "owners_ndjson": [
+    {
+      "_id": "6931c90170f902dcadb73d87",
+      "email": "info@riteprepfulfillment.com",
+      "warehouses": [
+        {
+          "_id": "6931c90170f902dcadb73d86",
+          "dateAdded": "2025-12-04T17:46:41.505Z",
+          "dateModified": "2025-12-09T22:09:50.848Z",
+          "name": "Daniyal Ibrahim",
+          "lobId": "PUB-400072",
+          "warehouseId": "PUB-400072",
+          "phoneNumber": "15123255157",
+          "llcName": "Riteprepfulfillment",
+          "businessName": "Riteprepfulfillment",
+          "website": "https://riteprepfulfillment.com/",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "3807 East University Avenue",
+            "state": "TX",
+            "city": "Georgetown",
+            "zipCode": "78626",
+            "country": "USA",
+            "lat": "30.6440598",
+            "long": "-97.6281432"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "15123255157",
+          "customerServiceEmailAddress": "info@riteprepfulfillment.com",
+          "labelingFees": "0.4",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 2,
+            "fba_fnsku": 0.4,
+            "fba_poly": 0.55,
+            "fba_bubble": 0.69,
+            "fba_bundle": 0.95,
+            "fba_rebox": 2,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 3,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0.66,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 20,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.75,
+            "fbm_palletStorage": 40,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 3,
+          "cubicFeetCapacity": 25000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "2",
+            "pickPackFees": "3",
+            "costPerAdditionalItem": "0.5",
+            "specialPackagingFees": "0.55",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "2",
+          "prepCostPerUnit": "0.55",
+          "storageCostPerUnitPerMonth": "0.75",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Daniyal Ibrahim (info@riteprepfulfillment.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2025-12-09T22:09:50.847Z",
+          "denialReason": null,
+          "unielogicsId": "XX696"
+        }
+      ],
+      "createdAt": "2025-12-04T17:46:41.513Z",
+      "updatedAt": "2025-12-09T22:09:50.848Z",
+      "__v": 0
+    },
+    {
+      "_id": "6932829c70f902dcadb80d1d",
+      "email": "naeem@spantikgroup.com",
+      "warehouses": [
+        {
+          "_id": "6932829c70f902dcadb80d1c",
+          "dateAdded": "2025-12-05T06:58:36.748Z",
+          "dateModified": "2025-12-09T17:34:59.777Z",
+          "name": "Uzair Akhtar ",
+          "lobId": "PUB-916378",
+          "warehouseId": "PUB-916378",
+          "phoneNumber": "4697451123",
+          "llcName": "Spantik Investments Inc",
+          "businessName": "Spantik Investments Inc",
+          "website": "www.spantikgroup.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "8200 Springwood Drive suite 235",
+            "state": "TX",
+            "city": "Irving",
+            "zipCode": "75063",
+            "country": "USA",
+            "lat": "32.9178778",
+            "long": "-96.9863127"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "4697451123",
+          "customerServiceEmailAddress": "naeem@spantikgroup.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.2,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.7,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 4000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Uzair Akhtar  (naeem@spantikgroup.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2025-12-09T17:34:59.775Z",
+          "denialReason": null,
+          "unielogicsId": "XX637"
+        }
+      ],
+      "createdAt": "2025-12-05T06:58:36.752Z",
+      "updatedAt": "2025-12-09T17:34:59.776Z",
+      "__v": 0
+    },
+    {
+      "_id": "6933369670f902dcadb8cf2d",
+      "email": "ryan@encorebusinessgroup.com",
+      "warehouses": [
+        {
+          "_id": "6933369670f902dcadb8cf2c",
+          "dateAdded": "2025-12-05T19:46:30.656Z",
+          "dateModified": "2025-12-09T17:35:02.684Z",
+          "name": "Ryan Walsh",
+          "lobId": "PUB-988555",
+          "warehouseId": "PUB-988555",
+          "phoneNumber": "6164373076",
+          "llcName": "Encore Business Group",
+          "businessName": "Encore Business Group",
+          "website": "encorebusinessgroup.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "5505 Patterson Avenue Southeast Suite 200",
+            "state": "MI",
+            "city": "Grand Rapids",
+            "zipCode": "49512",
+            "country": "USA",
+            "lat": "42.947026",
+            "long": "-85.550879"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "6164373076",
+          "customerServiceEmailAddress": "ryan@encorebusinessgroup.com",
+          "labelingFees": ".50",
+          "costPerBoxClosing": "1.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.5,
+            "fba_fnsku": 0.5,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.5,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 5,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 50,
+          "cubicFeetCapacity": 18000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.50",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": ".50",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.50",
+          "prepCostPerUnit": ".50",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Ryan Walsh (ryan@encorebusinessgroup.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2025-12-09T17:35:02.682Z",
+          "denialReason": null,
+          "unielogicsId": "XX692"
+        }
+      ],
+      "createdAt": "2025-12-05T19:46:30.660Z",
+      "updatedAt": "2025-12-09T17:35:02.684Z",
+      "__v": 0
+    },
+    {
+      "_id": "6935aa8a30966bc48bd53213",
+      "email": "khalil@asfardistribution.com",
+      "warehouses": [
+        {
+          "_id": "6935aa8a30966bc48bd53212",
+          "dateAdded": "2025-12-07T16:25:46.776Z",
+          "dateModified": "2025-12-09T17:34:57.017Z",
+          "name": "Khalil A",
+          "lobId": "PUB-746498",
+          "warehouseId": "PUB-746498",
+          "phoneNumber": "4127227354",
+          "llcName": "Asfar Distribution-Houston TX",
+          "businessName": "Asfar Distribution-Houston TX",
+          "website": "Asfardistribution.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "9100 Galveston Road",
+            "state": "TX",
+            "city": "Houston",
+            "zipCode": "77034",
+            "country": "USA",
+            "lat": "29.6311119",
+            "long": "-95.2062065"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "4127227354",
+          "customerServiceEmailAddress": "khalil@asfardistribution.com",
+          "labelingFees": "0.65",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.65,
+            "fba_poly": 0.3,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 500,
+          "cubicFeetCapacity": 40000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.3",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.3",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Khalil A (khalil@asfardistribution.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2025-12-09T17:34:57.012Z",
+          "denialReason": null,
+          "unielogicsId": "XX425"
+        }
+      ],
+      "createdAt": "2025-12-07T16:25:46.782Z",
+      "updatedAt": "2025-12-09T17:34:57.017Z",
+      "__v": 0
+    },
+    {
+      "_id": "6957f8937848d53a35b68898",
+      "email": "dustinbrearton@ondemandwf.com",
+      "warehouses": [
+        {
+          "fees": {
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            },
+            "receivingFees": "1.6",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.50"
+          },
+          "_id": "6957f8937848d53a35b68897",
+          "dateAdded": "2026-01-02T16:55:47.997Z",
+          "dateModified": "2026-01-12T21:18:17.330Z",
+          "name": "Dustin Brearton ",
+          "lobId": "PUB-946953",
+          "warehouseId": "PUB-946953",
+          "phoneNumber": "8594661698",
+          "llcName": "On-demand Warehousing and Fulfillment ",
+          "businessName": "On-demand Warehousing and Fulfillment ",
+          "website": "Https://ondemandwf.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "4345 Perimeter Industrial Pkwy Suite 103",
+            "state": "FL",
+            "city": "Jacksonville",
+            "zipCode": "32226",
+            "country": "USA",
+            "lat": "30.376846313890688 ",
+            "long": "-81.7571702878444"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "8594661698",
+          "customerServiceEmailAddress": "dustinbrearton@ondemandwf.com",
+          "labelingFees": "0.10",
+          "costPerBoxClosing": "0.75",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.6,
+            "fba_fnsku": 0.1,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.5,
+            "fba_bundle": 1,
+            "fba_rebox": 2,
+            "fba_boxAssembly": 0.75,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": null,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 10000,
+          "cubicFeetCapacity": 50000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "region": "",
+          "receivingCostPerUnit": "1.6",
+          "prepCostPerUnit": "0.50",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Dustin Brearton  (dustinbrearton@ondemandwf.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-05T14:22:58.476Z",
+          "denialReason": null,
+          "unielogicsId": "XX785"
+        }
+      ],
+      "createdAt": "2026-01-02T16:55:48.002Z",
+      "updatedAt": "2026-01-12T21:18:17.330Z",
+      "__v": 1
+    },
+    {
+      "_id": "695bf7067848d53a35bb460b",
+      "email": "simbadispatchservices@gmail.com",
+      "warehouses": [
+        {
+          "_id": "695bf7067848d53a35bb460a",
+          "dateAdded": "2026-01-05T17:38:14.898Z",
+          "dateModified": "2026-01-05T21:51:04.597Z",
+          "name": "Ahmed Chaudhry ",
+          "lobId": "PUB-692789",
+          "warehouseId": "PUB-692789",
+          "phoneNumber": "410-831-1883",
+          "llcName": "Simba Dispatch Services LLC",
+          "businessName": "Simba Dispatch Services LLC",
+          "website": "https://www.simbadispatchservices.com/",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "4502 35th Street Suite 700",
+            "state": "FL",
+            "city": "Orlando",
+            "zipCode": "32811",
+            "country": "USA",
+            "lat": "28.503714",
+            "long": "-81.436413"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "410-831-1883",
+          "customerServiceEmailAddress": "simbadispatchservices@gmail.com",
+          "labelingFees": "0.50",
+          "costPerBoxClosing": "2",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 2,
+            "fba_fnsku": 0.5,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 2,
+            "fba_boxAssembly": 2,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": null,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 1700,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "2",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "2",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Ahmed Chaudhry  (simbadispatchservices@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-05T21:51:04.596Z",
+          "denialReason": null,
+          "unielogicsId": "XX669"
+        }
+      ],
+      "createdAt": "2026-01-05T17:38:14.902Z",
+      "updatedAt": "2026-01-05T21:51:04.597Z",
+      "__v": 0
+    },
+    {
+      "_id": "695ed57c7848d53a35bede87",
+      "email": "adil.ahsan@hotmail.com",
+      "warehouses": [
+        {
+          "_id": "695ed57c7848d53a35bede86",
+          "dateAdded": "2026-01-07T21:51:56.056Z",
+          "dateModified": "2026-01-10T19:13:36.247Z",
+          "name": "Adil Ahsan",
+          "lobId": "PUB-716338",
+          "warehouseId": "PUB-716338",
+          "phoneNumber": "3463777873",
+          "llcName": "AIK Global Inc.",
+          "businessName": "AIK Global Inc.",
+          "website": "aik-global.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "9000 Southwest Freeway",
+            "state": "TX",
+            "city": "Houston",
+            "zipCode": "77036",
+            "country": "USA",
+            "lat": "29.6863597",
+            "long": "-95.5333086"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "3463777873",
+          "customerServiceEmailAddress": "adil.ahsan@hotmail.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.65,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.5,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.5,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.8,
+            "fbm_palletStorage": 20.06,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.1,
+            "oa_label": 0.15,
+            "oa_poly": 0.46,
+            "oa_bubble": 0.6,
+            "oa_rebox": 1.85,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 19
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 6,
+          "cubicFeetCapacity": 3000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.50",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.50",
+          "storageCostPerUnitPerMonth": "0.8",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Adil Ahsan (adil.ahsan@hotmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-10T19:13:36.246Z",
+          "denialReason": null,
+          "unielogicsId": "XX963"
+        }
+      ],
+      "createdAt": "2026-01-07T21:51:56.060Z",
+      "updatedAt": "2026-01-10T19:13:36.247Z",
+      "__v": 0
+    },
+    {
+      "_id": "6963bbbc7848d53a35c4fb0f",
+      "email": "sergey@boxhero.com",
+      "warehouses": [
+        {
+          "_id": "6963bbbc7848d53a35c4fb0e",
+          "dateAdded": "2026-01-11T15:03:24.719Z",
+          "dateModified": "2026-01-12T21:18:19.069Z",
+          "name": "Sergey Mak",
+          "lobId": "PUB-804551",
+          "warehouseId": "PUB-804551",
+          "phoneNumber": "9176818556",
+          "llcName": "BoxHero Logistics Corp",
+          "businessName": "BoxHero Logistics Corp",
+          "website": "www.BoxHero.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "905 Remsen Avenue",
+            "state": "NY",
+            "city": "Brooklyn",
+            "zipCode": "11236",
+            "country": "USA",
+            "lat": "40.646249",
+            "long": "-73.9126304"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "9176818556",
+          "customerServiceEmailAddress": "sergey@boxhero.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 8,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 100,
+          "cubicFeetCapacity": 8500,
+          "binCapacity": 0,
+          "servicesOffered": [
+            "Labelling (FNSKU, carton, shipping labels, etc.)",
+            "Polybagging",
+            "Bundling",
+            "Returns Processing"
+          ],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Sergey Mak (sergey@boxhero.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-12T21:18:19.066Z",
+          "denialReason": null,
+          "unielogicsId": "XX799"
+        }
+      ],
+      "createdAt": "2026-01-11T15:03:24.724Z",
+      "updatedAt": "2026-01-12T21:18:19.068Z",
+      "__v": 0
+    },
+    {
+      "_id": "697229979283970e0cc9dac1",
+      "email": "dave@theswifthouse.com",
+      "warehouses": [
+        {
+          "_id": "697229979283970e0cc9dac0",
+          "dateAdded": "2026-01-22T13:43:51.432Z",
+          "dateModified": "2026-01-23T18:16:50.579Z",
+          "name": "David Harriger",
+          "lobId": "PUB-430349",
+          "warehouseId": "PUB-430349",
+          "phoneNumber": "7172018067",
+          "llcName": "102 QUEENS DR",
+          "businessName": "102 QUEENS DR",
+          "website": "www.theSwifthouse.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "102 QUEENS DR",
+            "state": "PA",
+            "city": "KING OF PRUSSIA",
+            "zipCode": "19406",
+            "country": "USA",
+            "lat": "40.08511652485381",
+            "long": "-75.3553580469351"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "7172018067",
+          "customerServiceEmailAddress": "dave@theswifthouse.com",
+          "labelingFees": "0.00",
+          "costPerBoxClosing": "0.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 0.85,
+            "fba_fnsku": 0,
+            "fba_poly": 0,
+            "fba_bubble": 0.45,
+            "fba_bundle": 0.95,
+            "fba_rebox": 0.85,
+            "fba_boxAssembly": 0,
+            "fbm_pickPack": 2.25,
+            "fbm_addItem": 0.75,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 10,
+            "fbm_kitting": 0.75,
+            "fbm_storage": 0,
+            "fbm_palletStorage": 22,
+            "fbm_returns": 4,
+            "oa_receiving": 4,
+            "oa_label": 0,
+            "oa_poly": 0,
+            "oa_bubble": 0,
+            "oa_rebox": 0,
+            "oa_forward": 0,
+            "oa_hazmat": 0,
+            "oa_storage": 0,
+            "oa_palletStorage": 25
+          },
+          "zone": 8,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 250,
+          "cubicFeetCapacity": 13000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": ".85",
+            "pickPackFees": "2.25",
+            "costPerAdditionalItem": ".75",
+            "specialPackagingFees": "0.00",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": ".85",
+          "prepCostPerUnit": "0.00",
+          "storageCostPerUnitPerMonth": "0",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from David Harriger (dave@theSwifthouse.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-23T18:16:50.577Z",
+          "denialReason": null,
+          "unielogicsId": "XX520"
+        }
+      ],
+      "createdAt": "2026-01-22T13:43:51.439Z",
+      "updatedAt": "2026-01-23T18:16:50.579Z",
+      "__v": 0
+    },
+    {
+      "_id": "69744f86d95d5b6df6800121",
+      "email": "cobros250@gmail.com",
+      "warehouses": [
+        {
+          "_id": "69744f86d95d5b6df6800120",
+          "dateAdded": "2026-01-24T04:50:14.356Z",
+          "dateModified": "2026-01-26T19:14:18.340Z",
+          "name": "Muhammad s rafiq ",
+          "lobId": "PUB-212830",
+          "warehouseId": "PUB-212830",
+          "phoneNumber": "2095703253",
+          "llcName": "Cobros ",
+          "businessName": "Cobros ",
+          "website": "Www.cobrosstore.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "3672 Massimo Circle",
+            "state": "CA",
+            "city": "Stockton",
+            "zipCode": "95212",
+            "country": "USA",
+            "lat": "38.0461749",
+            "long": "-121.2682536"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "2095703253",
+          "customerServiceEmailAddress": "cobros250@gmail.com",
+          "labelingFees": "0.10",
+          "costPerBoxClosing": "0.50",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1,
+            "fba_fnsku": 0.1,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.5,
+            "fba_bundle": 0.8,
+            "fba_rebox": 1.44,
+            "fba_boxAssembly": 90,
+            "fbm_pickPack": 1.5,
+            "fbm_addItem": 0.25,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 10,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.5,
+            "fbm_palletStorage": 50,
+            "fbm_returns": 0.8,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 1,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 1500,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1",
+            "pickPackFees": "1.50",
+            "costPerAdditionalItem": "0.25",
+            "specialPackagingFees": "0.50",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1",
+          "prepCostPerUnit": "0.50",
+          "storageCostPerUnitPerMonth": "0.50",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Muhammad s rafiq  (cobros250@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T19:14:18.338Z",
+          "denialReason": null,
+          "unielogicsId": "XX486"
+        }
+      ],
+      "createdAt": "2026-01-24T04:50:14.364Z",
+      "updatedAt": "2026-01-26T19:14:18.339Z",
+      "__v": 0
+    },
+    {
+      "_id": "69745867d95d5b6df6800de3",
+      "email": "admin@discountwarehouseusa.com",
+      "warehouses": [
+        {
+          "_id": "69745867d95d5b6df6800de2",
+          "dateAdded": "2026-01-24T05:28:07.952Z",
+          "dateModified": "2026-01-24T21:43:41.918Z",
+          "name": "Haroon Chaudhry ",
+          "lobId": "PUB-486734",
+          "warehouseId": "PUB-486734",
+          "phoneNumber": "2034918055",
+          "llcName": "Discount Warehouse ",
+          "businessName": "Discount Warehouse ",
+          "website": "Www.DiscountWarehouseusa.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "2175 South Main Street",
+            "state": "CT",
+            "city": "Middletown",
+            "zipCode": "06457",
+            "country": "USA",
+            "lat": "41.5001156",
+            "long": "-72.6777069"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "2034918055",
+          "customerServiceEmailAddress": "admin@discountwarehouseusa.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.20",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.65,
+            "fba_bundle": 1.05,
+            "fba_rebox": 1.96,
+            "fba_boxAssembly": 1.2,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 8,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 2000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Haroon Chaudhry  (admin@discountwarehouseusa.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-24T21:43:41.917Z",
+          "denialReason": null,
+          "unielogicsId": "XX342"
+        }
+      ],
+      "createdAt": "2026-01-24T05:28:07.958Z",
+      "updatedAt": "2026-01-24T21:43:41.918Z",
+      "__v": 0
+    },
+    {
+      "_id": "69755a6cd95d5b6df6810f18",
+      "email": "aswtgroupllc@gmail.com",
+      "warehouses": [
+        {
+          "_id": "69755a6cd95d5b6df6810f17",
+          "dateAdded": "2026-01-24T23:49:00.066Z",
+          "dateModified": "2026-01-25T20:45:32.789Z",
+          "name": "Muhammad Jawed ",
+          "lobId": "PUB-538173",
+          "warehouseId": "PUB-538173",
+          "phoneNumber": "4157028865",
+          "llcName": "ASWT 3rd Party Logistics ",
+          "businessName": "ASWT 3rd Party Logistics ",
+          "website": "Stallion Restaurant Supplier https://share.google/jKTDixrJ4h1LH73zk",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "10055 Belknap Rd",
+            "state": "TX",
+            "city": "Sugar Land",
+            "zipCode": "77498",
+            "country": "USA",
+            "lat": "29.6703702",
+            "long": "-95.6217831"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "4157028865",
+          "customerServiceEmailAddress": "aswtgroupllc@gmail.com",
+          "labelingFees": ".50",
+          "costPerBoxClosing": "1",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 0.5,
+            "fba_fnsku": 0.5,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.5,
+            "fba_bundle": 1,
+            "fba_rebox": 1.5,
+            "fba_boxAssembly": 1,
+            "fbm_pickPack": 0.5,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0.75,
+            "fbm_packaging": 0.5,
+            "fbm_label": 0.5,
+            "fbm_palletAssembly": 9.5,
+            "fbm_kitting": 1.25,
+            "fbm_storage": 0.75,
+            "fbm_palletStorage": 15,
+            "fbm_returns": 1,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 50,
+          "cubicFeetCapacity": 1800,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "0.5",
+            "pickPackFees": ".50",
+            "costPerAdditionalItem": ".5",
+            "specialPackagingFees": ".50",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "0.5",
+          "prepCostPerUnit": ".50",
+          "storageCostPerUnitPerMonth": "0.75",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Muhammad Jawed  (aswtgroupllc@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-25T20:45:32.788Z",
+          "denialReason": null,
+          "unielogicsId": "XX239"
+        }
+      ],
+      "createdAt": "2026-01-24T23:49:00.072Z",
+      "updatedAt": "2026-01-25T20:45:32.789Z",
+      "__v": 0
+    },
+    {
+      "_id": "6976a92dd95d5b6df6826421",
+      "email": "ak@ecomautoprep.com",
+      "warehouses": [
+        {
+          "_id": "6976a92dd95d5b6df6826420",
+          "dateAdded": "2026-01-25T23:37:17.911Z",
+          "dateModified": "2026-01-26T15:54:39.793Z",
+          "name": "Anton Kashirin",
+          "lobId": "PUB-237712",
+          "warehouseId": "PUB-237712",
+          "phoneNumber": "7862707715",
+          "llcName": "Ecom Auto Prep",
+          "businessName": "Ecom Auto Prep",
+          "website": "Ecomautoprep.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "12466 Northwest 39th Street",
+            "state": "FL",
+            "city": "Coral Springs",
+            "zipCode": "33065",
+            "country": "USA",
+            "lat": "26.277676",
+            "long": "-80.2929973"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "7862707715",
+          "customerServiceEmailAddress": "ak@ecomautoprep.com",
+          "labelingFees": "0.4",
+          "costPerBoxClosing": "1.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1,
+            "fba_fnsku": 0.4,
+            "fba_poly": 0.4,
+            "fba_bubble": 0.5,
+            "fba_bundle": 0.8,
+            "fba_rebox": 1.5,
+            "fba_boxAssembly": 1,
+            "fbm_pickPack": 1.5,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0.6,
+            "fbm_packaging": 0.6,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 15,
+            "fbm_kitting": 1.5,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 25,
+            "fbm_returns": 1,
+            "oa_receiving": 3,
+            "oa_label": 3,
+            "oa_poly": 1,
+            "oa_bubble": 2,
+            "oa_rebox": 3,
+            "oa_forward": 5,
+            "oa_hazmat": 5,
+            "oa_storage": 0.9,
+            "oa_palletStorage": 30
+          },
+          "zone": null,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 1500,
+          "cubicFeetCapacity": 20000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking"
+          ],
+          "fees": {
+            "receivingFees": "1",
+            "pickPackFees": "1.5",
+            "costPerAdditionalItem": "0.5",
+            "specialPackagingFees": "0.4",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1",
+          "prepCostPerUnit": "0.4",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Anton Kashirin (ak@ecomautoprep.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T15:54:39.792Z",
+          "denialReason": null,
+          "unielogicsId": "XX547"
+        }
+      ],
+      "createdAt": "2026-01-25T23:37:17.916Z",
+      "updatedAt": "2026-01-26T15:54:39.793Z",
+      "__v": 0
+    },
+    {
+      "_id": "6976b380d95d5b6df6826f0f",
+      "email": "orders@406premierprep.com",
+      "warehouses": [
+        {
+          "_id": "6976b380d95d5b6df6826f0e",
+          "dateAdded": "2026-01-26T00:21:20.123Z",
+          "dateModified": "2026-01-26T15:55:00.342Z",
+          "name": "David Inman",
+          "lobId": "PUB-879278",
+          "warehouseId": "PUB-879278",
+          "phoneNumber": "4063500887",
+          "llcName": "406 Premier Prep",
+          "businessName": "406 Premier Prep",
+          "website": "Https://www.406premierprep.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "1006 Toole Circle",
+            "state": "MT",
+            "city": "Billings",
+            "zipCode": "59105",
+            "country": "USA",
+            "lat": "45.8175263",
+            "long": "-108.4985309"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "4063500887",
+          "customerServiceEmailAddress": "orders@406premierprep.com",
+          "labelingFees": "0.00",
+          "costPerBoxClosing": "0.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1,
+            "fba_fnsku": 0,
+            "fba_poly": 0.2,
+            "fba_bubble": 0.5,
+            "fba_bundle": 1.75,
+            "fba_rebox": 3,
+            "fba_boxAssembly": 0,
+            "fbm_pickPack": 3,
+            "fbm_addItem": 0,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 0,
+            "fbm_kitting": 0,
+            "fbm_storage": 0,
+            "fbm_palletStorage": 0,
+            "fbm_returns": 0.5,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 2,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 1600,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1.00",
+            "pickPackFees": "3.00",
+            "costPerAdditionalItem": "0.00",
+            "specialPackagingFees": "0.20",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.00",
+          "prepCostPerUnit": "0.20",
+          "storageCostPerUnitPerMonth": "0.00",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from David Inman (orders@406premierprep.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T15:55:00.337Z",
+          "denialReason": null,
+          "unielogicsId": "XX285"
+        }
+      ],
+      "createdAt": "2026-01-26T00:21:20.127Z",
+      "updatedAt": "2026-01-26T15:55:00.342Z",
+      "__v": 0
+    },
+    {
+      "_id": "697728aad95d5b6df6833223",
+      "email": "madearlerscorp@gmail.com",
+      "warehouses": [
+        {
+          "_id": "697728aad95d5b6df6833222",
+          "dateAdded": "2026-01-26T08:41:14.901Z",
+          "dateModified": "2026-01-26T15:54:49.260Z",
+          "name": "Itfaq",
+          "lobId": "PUB-872272",
+          "warehouseId": "PUB-872272",
+          "phoneNumber": "+1 929 272 4222",
+          "llcName": "Ma dealers ",
+          "businessName": "Ma dealers ",
+          "website": "madealerscorp.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "441 Schiller st Elizabeth New Jersey",
+            "state": "NJ",
+            "city": "Elizabeth",
+            "zipCode": "07206",
+            "country": "USA",
+            "lat": "40.6609858",
+            "long": "-74.1830633"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "+1 929 272 4222",
+          "customerServiceEmailAddress": "madearlerscorp@gmail.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 8,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 100,
+          "cubicFeetCapacity": 8000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Itfaq (madearlerscorp@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T15:54:49.259Z",
+          "denialReason": null,
+          "unielogicsId": "XX482"
+        }
+      ],
+      "createdAt": "2026-01-26T08:41:14.905Z",
+      "updatedAt": "2026-01-26T15:54:49.259Z",
+      "__v": 0
+    },
+    {
+      "_id": "6977a55cd95d5b6df683b50d",
+      "email": "info@openedboxreturns.com",
+      "warehouses": [
+        {
+          "_id": "6977a55cd95d5b6df683b50c",
+          "dateAdded": "2026-01-26T17:33:16.288Z",
+          "dateModified": "2026-01-26T17:52:54.277Z",
+          "name": "Mehal Jivan",
+          "lobId": "PUB-795886",
+          "warehouseId": "PUB-795886",
+          "phoneNumber": "7192975490",
+          "llcName": "Opened Box Returns ",
+          "businessName": "Opened Box Returns ",
+          "website": "openedboxreturns.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "3372 Adobe Court Unit 120",
+            "state": "CO",
+            "city": "Colorado Springs",
+            "zipCode": "80907",
+            "country": "USA",
+            "lat": "38.88029909999999",
+            "long": "-104.8138357"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "7192975490",
+          "customerServiceEmailAddress": "info@openedboxreturns.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 2,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 30,
+          "cubicFeetCapacity": 5000,
+          "binCapacity": 0,
+          "servicesOffered": [
+            "Labelling (FNSKU, carton, shipping labels, etc.)",
+            "Polybagging",
+            "Bundling",
+            "Returns Processing",
+            "Short-Term Storage",
+            "2-Step Dropshipping",
+            "Kitting / Subscription Boxes",
+            "Overstock Resale"
+          ],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Mehal Jivan (info@openedboxreturns.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T17:52:54.276Z",
+          "denialReason": null,
+          "unielogicsId": "XX498"
+        }
+      ],
+      "createdAt": "2026-01-26T17:33:16.293Z",
+      "updatedAt": "2026-01-26T17:52:54.277Z",
+      "__v": 0
+    },
+    {
+      "_id": "6977ba38d95d5b6df683ed58",
+      "email": "ahmad@westcoastprep3pl.com",
+      "warehouses": [
+        {
+          "_id": "6977ba38d95d5b6df683ed57",
+          "dateAdded": "2026-01-26T19:02:16.318Z",
+          "dateModified": "2026-01-26T19:06:07.107Z",
+          "name": "Ahmad Noory",
+          "lobId": "PUB-130036",
+          "warehouseId": "PUB-130036",
+          "phoneNumber": "7143567915",
+          "llcName": "West Coast Prep 3PL",
+          "businessName": "West Coast Prep 3PL",
+          "website": "www.westcoastprep3pl.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "23831 Via Fabricante, Suite 302",
+            "state": "CA",
+            "city": "Mission Viejo",
+            "zipCode": "23831",
+            "country": "USA",
+            "lat": "33.61843812326853",
+            "long": "-117.68093210114803"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "7143567915",
+          "customerServiceEmailAddress": "ahmad@westcoastprep3pl.com",
+          "labelingFees": "0.75",
+          "costPerBoxClosing": "1.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.5,
+            "fba_fnsku": 0.75,
+            "fba_poly": 0.3,
+            "fba_bubble": 0.3,
+            "fba_bundle": 1.79,
+            "fba_rebox": 3.5,
+            "fba_boxAssembly": 1,
+            "fbm_pickPack": 1.5,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0.47,
+            "fbm_packaging": 0.5,
+            "fbm_label": 0.27,
+            "fbm_palletAssembly": 25,
+            "fbm_kitting": 1.5,
+            "fbm_storage": 0.8,
+            "fbm_palletStorage": 25,
+            "fbm_returns": 1,
+            "oa_receiving": 1.5,
+            "oa_label": 0.75,
+            "oa_poly": 0.3,
+            "oa_bubble": 0.3,
+            "oa_rebox": 3.5,
+            "oa_forward": 5,
+            "oa_hazmat": 3,
+            "oa_storage": 0.77,
+            "oa_palletStorage": 25
+          },
+          "zone": 1,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 200,
+          "cubicFeetCapacity": 6000,
+          "binCapacity": 0,
+          "servicesOffered": [
+            "Labelling (FNSKU, carton, shipping labels, etc.)",
+            "Polybagging",
+            "Bundling",
+            "2-Step Dropshipping",
+            "Short-Term Storage",
+            "Long-Term Storage",
+            "Returns Processing",
+            "Kitting / Subscription Boxes"
+          ],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.50",
+            "pickPackFees": "1.50",
+            "costPerAdditionalItem": "0.50",
+            "specialPackagingFees": "0.30",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.50",
+          "prepCostPerUnit": "0.30",
+          "storageCostPerUnitPerMonth": "0.80",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Ahmad Noory (ahmad@westcoastprep3pl.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T19:06:07.105Z",
+          "denialReason": null,
+          "unielogicsId": "XX219"
+        }
+      ],
+      "createdAt": "2026-01-26T19:02:16.323Z",
+      "updatedAt": "2026-01-26T19:06:07.106Z",
+      "__v": 0
+    },
+    {
+      "_id": "6977c4ecd95d5b6df684232c",
+      "email": "usi.trucking1@usiship.com",
+      "warehouses": [
+        {
+          "_id": "6977c4ecd95d5b6df684232b",
+          "dateAdded": "2026-01-26T19:47:56.745Z",
+          "dateModified": "2026-01-26T19:49:13.222Z",
+          "name": "Akbar Afzal",
+          "lobId": "PUB-871928",
+          "warehouseId": "PUB-871928",
+          "phoneNumber": "323 200 9845",
+          "llcName": "Universal Shipping Inc",
+          "businessName": "Universal Shipping Inc",
+          "website": "usiship.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "131 Perry street Perris, CA",
+            "state": "CA",
+            "city": "Perris",
+            "zipCode": "92571",
+            "country": "USA",
+            "lat": "33.8481372",
+            "long": "-117.228859"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "323 200 9845",
+          "customerServiceEmailAddress": "usi.trucking1@usiship.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 1,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 150000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Akbar Afzal (usi.trucking1@usiship.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-26T19:49:13.220Z",
+          "denialReason": null,
+          "unielogicsId": "XX566"
+        }
+      ],
+      "createdAt": "2026-01-26T19:47:56.748Z",
+      "updatedAt": "2026-01-26T19:49:13.221Z",
+      "__v": 0
+    },
+    {
+      "_id": "6977cd2ad95d5b6df68430f7",
+      "email": "orders@aaprepandship.com",
+      "warehouses": [
+        {
+          "_id": "6977cd2ad95d5b6df68430f6",
+          "dateAdded": "2026-01-26T20:23:06.254Z",
+          "dateModified": "2026-01-27T02:03:02.857Z",
+          "name": "Diane Stichman ",
+          "lobId": "PUB-985126",
+          "warehouseId": "PUB-985126",
+          "phoneNumber": "406-208-6041",
+          "llcName": "Above All Prep and Ship ",
+          "businessName": "Above All Prep and Ship ",
+          "website": "https://www.aaprepandship.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "2102 Old Hardin rd",
+            "state": "MT",
+            "city": "Billings",
+            "zipCode": "59101",
+            "country": "USA",
+            "lat": "45.804975924819686 ",
+            "long": "-108.43111628901302"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "406-208-6041",
+          "customerServiceEmailAddress": "orders@aaprepandship.com",
+          "labelingFees": "0",
+          "costPerBoxClosing": "0",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.1,
+            "fba_fnsku": 0,
+            "fba_poly": 0.2,
+            "fba_bubble": 0.5,
+            "fba_bundle": 0.75,
+            "fba_rebox": 0,
+            "fba_boxAssembly": 0,
+            "fbm_pickPack": 3,
+            "fbm_addItem": 0,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 0,
+            "fbm_kitting": 0,
+            "fbm_storage": 0,
+            "fbm_palletStorage": 0,
+            "fbm_returns": 1,
+            "oa_receiving": 1.1,
+            "oa_label": 0,
+            "oa_poly": 0.2,
+            "oa_bubble": 0.5,
+            "oa_rebox": 0,
+            "oa_forward": 0,
+            "oa_hazmat": 0,
+            "oa_storage": 0,
+            "oa_palletStorage": 0
+          },
+          "zone": 2,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 4800,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1.10",
+            "pickPackFees": "3",
+            "costPerAdditionalItem": "0",
+            "specialPackagingFees": "0.20",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.10",
+          "prepCostPerUnit": "0.20",
+          "storageCostPerUnitPerMonth": "0",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Diane Stichman  (orders@aaprepandship.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-27T02:03:02.855Z",
+          "denialReason": null,
+          "unielogicsId": "XX655"
+        }
+      ],
+      "createdAt": "2026-01-26T20:23:06.257Z",
+      "updatedAt": "2026-01-27T02:03:02.857Z",
+      "__v": 0
+    },
+    {
+      "_id": "697919f6d95d5b6df685b81f",
+      "email": "kyle@provenprepcenter.com",
+      "warehouses": [
+        {
+          "_id": "697919f6d95d5b6df685b81e",
+          "dateAdded": "2026-01-27T20:03:02.719Z",
+          "dateModified": "2026-01-27T22:47:51.774Z",
+          "name": "Kyle Curtis",
+          "lobId": "PUB-182485",
+          "warehouseId": "PUB-182485",
+          "phoneNumber": "5039878977",
+          "llcName": "Proven Prep Center",
+          "businessName": "Proven Prep Center",
+          "website": "www.provenprepcenter.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "17146 Northeast Sandy Boulevard",
+            "state": "OR",
+            "city": "Portland",
+            "zipCode": "97230",
+            "country": "USA",
+            "lat": "45.54713599999999",
+            "long": "-122.4865152"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "5039878977",
+          "customerServiceEmailAddress": "kyle@provenprepcenter.com",
+          "labelingFees": ".45",
+          "costPerBoxClosing": "1.25",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 3,
+            "fba_fnsku": 0.45,
+            "fba_poly": 0.15,
+            "fba_bubble": 0.15,
+            "fba_bundle": 0.2,
+            "fba_rebox": 3,
+            "fba_boxAssembly": 1.25,
+            "fbm_pickPack": 2,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 15,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.9,
+            "fbm_palletStorage": 40,
+            "fbm_returns": 3,
+            "oa_receiving": 1.25,
+            "oa_label": 0,
+            "oa_poly": 0,
+            "oa_bubble": 0.15,
+            "oa_rebox": 0,
+            "oa_forward": 3,
+            "oa_hazmat": 0,
+            "oa_storage": 0,
+            "oa_palletStorage": 40
+          },
+          "zone": 1,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 450,
+          "cubicFeetCapacity": 20000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "3.00",
+            "pickPackFees": "2.00",
+            "costPerAdditionalItem": ".50",
+            "specialPackagingFees": ".15",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "3.00",
+          "prepCostPerUnit": ".15",
+          "storageCostPerUnitPerMonth": ".90",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Kyle Curtis (Kyle@provenprepcenter.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-27T22:47:51.772Z",
+          "denialReason": null,
+          "unielogicsId": "XX522"
+        }
+      ],
+      "createdAt": "2026-01-27T20:03:02.723Z",
+      "updatedAt": "2026-01-27T22:47:51.774Z",
+      "__v": 0
+    },
+    {
+      "_id": "6979386ad95d5b6df685d55f",
+      "email": "ann.traphagen@weisserdistributing.com",
+      "warehouses": [
+        {
+          "_id": "6979386ad95d5b6df685d55e",
+          "dateAdded": "2026-01-27T22:12:58.035Z",
+          "dateModified": "2026-01-27T22:48:02.141Z",
+          "name": "Ann Traphagen",
+          "lobId": "PUB-977101",
+          "warehouseId": "PUB-977101",
+          "phoneNumber": "6059378728",
+          "llcName": "Weisser Distributing",
+          "businessName": "Weisser Distributing",
+          "website": "https://weisserdistributing.com/",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "921 E Amidon St",
+            "state": "SD",
+            "city": "Sioux Falls",
+            "zipCode": "57104",
+            "country": "USA",
+            "lat": "43.5755232",
+            "long": "-96.715727"
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "6059378728",
+          "customerServiceEmailAddress": "ann.traphagen@weisserdistributing.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": null,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 4940,
+          "cubicFeetCapacity": 69307,
+          "binCapacity": 0,
+          "servicesOffered": [
+            "Labelling (FNSKU, carton, shipping labels, etc.)",
+            "Polybagging",
+            "Bundling",
+            "Hazmat Handling",
+            "Returns Processing",
+            "Long-Term Storage",
+            "Short-Term Storage",
+            "2-Step Dropshipping",
+            "Liquidations",
+            "Overstock Resale",
+            "Kitting / Subscription Boxes"
+          ],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Ann Traphagen (ann.traphagen@weisserdistributing.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-27T22:48:02.140Z",
+          "denialReason": null,
+          "unielogicsId": "XX347"
+        }
+      ],
+      "createdAt": "2026-01-27T22:12:58.040Z",
+      "updatedAt": "2026-01-27T22:48:02.141Z",
+      "__v": 0
+    },
+    {
+      "_id": "697b92e94de7b42aa2e3267e",
+      "email": "sabfulfillmentinc@gmail.com",
+      "warehouses": [
+        {
+          "fees": {
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            },
+            "receivingFees": "1.50",
+            "pickPackFees": "2.00",
+            "costPerAdditionalItem": "0.21",
+            "specialPackagingFees": "0.55"
+          },
+          "_id": "697b92e94de7b42aa2e3267d",
+          "dateAdded": "2026-01-29T17:03:37.148Z",
+          "dateModified": "2026-02-16T23:43:37.601Z",
+          "name": "Arwa Mujtaba",
+          "lobId": "PUB-216867",
+          "warehouseId": "PUB-216867",
+          "phoneNumber": "3467552277",
+          "llcName": "SAB Fulfillment Inc",
+          "businessName": "SAB Fulfillment Inc",
+          "website": "sabfulfillmentinc.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "5267 Barker Cypress Road",
+            "address2": "",
+            "state": "TX",
+            "city": "Houston",
+            "zipCode": "77084",
+            "country": "USA",
+            "lat": "29.8510379",
+            "long": "-95.685316",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "3467552277",
+          "customerServiceEmailAddress": "sabfulfillmentinc@gmail.com",
+          "labelingFees": "0.21",
+          "costPerBoxClosing": "1.21",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.5,
+            "fba_fnsku": 0.21,
+            "fba_poly": 0.55,
+            "fba_bubble": 0.65,
+            "fba_bundle": 1.1,
+            "fba_rebox": 1.72,
+            "fba_boxAssembly": 1.21,
+            "fbm_pickPack": 2,
+            "fbm_addItem": 0.21,
+            "fbm_orderHandling": 0.25,
+            "fbm_packaging": 0.55,
+            "fbm_label": 0.21,
+            "fbm_palletAssembly": 10,
+            "fbm_kitting": 1.5,
+            "fbm_storage": 0.89,
+            "fbm_palletStorage": 25.01,
+            "fbm_returns": 1.5,
+            "oa_receiving": 1.5,
+            "oa_label": 0.15,
+            "oa_poly": 0.53,
+            "oa_bubble": 0.75,
+            "oa_rebox": 1.5,
+            "oa_forward": 1.5,
+            "oa_hazmat": 1.62,
+            "oa_storage": 1,
+            "oa_palletStorage": 25
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 300,
+          "cubicFeetCapacity": 8500,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "region": "",
+          "receivingCostPerUnit": "1.50",
+          "prepCostPerUnit": "0.55",
+          "storageCostPerUnitPerMonth": "0.89",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Arwa Mujtaba (sabfulfillmentinc@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-02-16T15:39:31.443Z",
+          "denialReason": null,
+          "unielogicsId": "XX611"
+        },
+        {
+          "_id": "697b92f74de7b42aa2e32682",
+          "dateAdded": "2026-01-29T17:03:51.907Z",
+          "dateModified": "2026-02-16T23:43:37.601Z",
+          "name": "Arwa Mujtaba",
+          "lobId": "PUB-231858",
+          "warehouseId": "PUB-231858",
+          "phoneNumber": "3467552277",
+          "llcName": "SAB Fulfillment Inc",
+          "businessName": "SAB Fulfillment Inc",
+          "website": "sabfulfillmentinc.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "5267 Barker Cypress Road",
+            "address2": "",
+            "state": "TX",
+            "city": "Houston",
+            "zipCode": "77084",
+            "country": "USA",
+            "lat": "29.8510379",
+            "long": "-95.685316",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "3467552277",
+          "customerServiceEmailAddress": "sabfulfillmentinc@gmail.com",
+          "labelingFees": "0.21",
+          "costPerBoxClosing": "1.21",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.5,
+            "fba_fnsku": 0.21,
+            "fba_poly": 0.55,
+            "fba_bubble": 0.65,
+            "fba_bundle": 1.1,
+            "fba_rebox": 1.72,
+            "fba_boxAssembly": 1.21,
+            "fbm_pickPack": 2,
+            "fbm_addItem": 0.21,
+            "fbm_orderHandling": 0.25,
+            "fbm_packaging": 0.55,
+            "fbm_label": 0.21,
+            "fbm_palletAssembly": 10,
+            "fbm_kitting": 1.5,
+            "fbm_storage": 0.89,
+            "fbm_palletStorage": 25.01,
+            "fbm_returns": 1.5,
+            "oa_receiving": 1.5,
+            "oa_label": 0.15,
+            "oa_poly": 0.53,
+            "oa_bubble": 0.75,
+            "oa_rebox": 1.5,
+            "oa_forward": 1.5,
+            "oa_hazmat": 1.62,
+            "oa_storage": 1,
+            "oa_palletStorage": 25
+          },
+          "zone": 3,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 300,
+          "cubicFeetCapacity": 8500,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.50",
+            "pickPackFees": "2.00",
+            "costPerAdditionalItem": "0.21",
+            "specialPackagingFees": "0.55",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.50",
+          "prepCostPerUnit": "0.55",
+          "storageCostPerUnitPerMonth": "0.89",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Arwa Mujtaba (sabfulfillmentinc@gmail.com)",
+          "approvalStatus": "Pending",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": null,
+          "denialReason": null,
+          "unielogicsId": "XX312"
+        }
+      ],
+      "createdAt": "2026-01-29T17:03:37.156Z",
+      "updatedAt": "2026-02-16T23:43:37.601Z",
+      "__v": 1
+    },
+    {
+      "_id": "697cbb5f4de7b42aa2e4564b",
+      "email": "masterpax3pl@gmail.com",
+      "warehouses": [
+        {
+          "_id": "697cbb5f4de7b42aa2e4564a",
+          "dateAdded": "2026-01-30T14:08:31.105Z",
+          "dateModified": "2026-01-30T17:28:33.506Z",
+          "name": "Kevin",
+          "lobId": "PUB-110813",
+          "warehouseId": "PUB-110813",
+          "phoneNumber": "3137198081",
+          "llcName": "Masterpax ",
+          "businessName": "Masterpax ",
+          "website": "Www.masterpax3pl.com",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "41980 East Ann Arbor Road",
+            "address2": "",
+            "state": "MI",
+            "city": "Plymouth",
+            "zipCode": "48170",
+            "country": "USA",
+            "lat": "42.3596398",
+            "long": "-83.4334701",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "3137198081",
+          "customerServiceEmailAddress": "masterpax3pl@gmail.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 5,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 0,
+          "cubicFeetCapacity": 5000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Kevin (masterpax3pl@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-01-30T17:28:33.504Z",
+          "denialReason": null,
+          "unielogicsId": "XX750"
+        }
+      ],
+      "createdAt": "2026-01-30T14:08:31.110Z",
+      "updatedAt": "2026-01-30T17:28:33.506Z",
+      "__v": 0
+    },
+    {
+      "_id": "69850c94abaad0f29e817e1c",
+      "email": "jigglyjie@gmail.com",
+      "warehouses": [
+        {
+          "_id": "69850c94abaad0f29e817e1b",
+          "dateAdded": "2026-02-05T21:33:08.986Z",
+          "dateModified": "2026-02-05T21:43:59.495Z",
+          "name": "JieName",
+          "lobId": "PUB-190470",
+          "warehouseId": "PUB-190470",
+          "phoneNumber": "7854911150",
+          "llcName": "Jie testing",
+          "businessName": "Jie testing",
+          "website": "",
+          "climateControlled": "Yes",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "118 West Graham Place",
+            "address2": "",
+            "state": "PA",
+            "city": "Bethlehem",
+            "zipCode": "18015",
+            "country": "USA",
+            "lat": "40.6110766",
+            "long": "-75.38031629999999",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "7854911150",
+          "customerServiceEmailAddress": "jigglyjie@gmail.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.08",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.48,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.08,
+            "fbm_pickPack": 1.38,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.57,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.78,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 0.95,
+            "oa_receiving": 1.17,
+            "oa_label": 0.15,
+            "oa_poly": 0.52,
+            "oa_bubble": 0.57,
+            "oa_rebox": 1.81,
+            "oa_forward": 1.12,
+            "oa_hazmat": 1.62,
+            "oa_storage": 0.73,
+            "oa_palletStorage": 17.1
+          },
+          "zone": 8,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 3,
+          "cubicFeetCapacity": 6,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.38",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.48",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.48",
+          "storageCostPerUnitPerMonth": "0.78",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from JieName (jigglyjie@gmail.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-02-05T21:43:59.494Z",
+          "denialReason": null,
+          "unielogicsId": "XX168"
+        }
+      ],
+      "createdAt": "2026-02-05T21:33:08.994Z",
+      "updatedAt": "2026-02-05T21:43:59.495Z",
+      "__v": 0
+    },
+    {
+      "_id": "6991299cb75ae1033f789d5f",
+      "email": "admin@scoviafulfillment.com",
+      "warehouses": [
+        {
+          "_id": "6991299cb75ae1033f789d5e",
+          "dateAdded": "2026-02-15T02:04:12.142Z",
+          "dateModified": "2026-02-16T15:39:47.897Z",
+          "name": "Brendan Hobbs",
+          "lobId": "PUB-051767",
+          "warehouseId": "PUB-051767",
+          "phoneNumber": "9042573377",
+          "llcName": "Scovia Fulfillment",
+          "businessName": "Scovia Fulfillment",
+          "website": "https://scoviafulfillment.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "9512 Hood Road",
+            "address2": "",
+            "state": "FL",
+            "city": "Jacksonville",
+            "zipCode": "32257",
+            "country": "USA",
+            "lat": "30.20555389999999",
+            "long": "-81.5833883",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "9042573377",
+          "customerServiceEmailAddress": "admin@scoviafulfillment.com",
+          "labelingFees": "0.12",
+          "costPerBoxClosing": "1.15",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 1.42,
+            "fba_fnsku": 0.12,
+            "fba_poly": 0.5,
+            "fba_bubble": 0.59,
+            "fba_bundle": 0.95,
+            "fba_rebox": 1.71,
+            "fba_boxAssembly": 1.15,
+            "fbm_pickPack": 1.5,
+            "fbm_addItem": 0.38,
+            "fbm_orderHandling": 0.66,
+            "fbm_packaging": 0.6,
+            "fbm_label": 0.34,
+            "fbm_palletAssembly": 9.07,
+            "fbm_kitting": 1.29,
+            "fbm_storage": 0.8,
+            "fbm_palletStorage": 19,
+            "fbm_returns": 1,
+            "oa_receiving": 1.25,
+            "oa_label": 0.16,
+            "oa_poly": 0.55,
+            "oa_bubble": 0.6,
+            "oa_rebox": 1.9,
+            "oa_forward": 1.2,
+            "oa_hazmat": 1.75,
+            "oa_storage": 0.75,
+            "oa_palletStorage": 19
+          },
+          "zone": null,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 100,
+          "cubicFeetCapacity": 5000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "1.42",
+            "pickPackFees": "1.50",
+            "costPerAdditionalItem": "0.38",
+            "specialPackagingFees": "0.5",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "1.42",
+          "prepCostPerUnit": "0.5",
+          "storageCostPerUnitPerMonth": "0.8",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Brendan Hobbs (admin@scoviafulfillment.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-02-16T15:39:47.896Z",
+          "denialReason": null,
+          "unielogicsId": "XX105"
+        }
+      ],
+      "createdAt": "2026-02-15T02:04:12.149Z",
+      "updatedAt": "2026-02-16T15:39:47.897Z",
+      "__v": 0
+    },
+    {
+      "_id": "6996464e0ba3a22e1b0ce0bf",
+      "email": "accountmanager@mkzservices.com",
+      "warehouses": [
+        {
+          "_id": "6996464e0ba3a22e1b0ce0be",
+          "dateAdded": "2026-02-18T23:07:58.108Z",
+          "dateModified": "2026-02-25T00:06:37.411Z",
+          "name": "Hannah Moody, Nita Adam, Emily Gordon",
+          "lobId": "PUB-075459",
+          "warehouseId": "PUB-075459",
+          "phoneNumber": "503-718-3215",
+          "llcName": "McKenzie Services",
+          "businessName": "McKenzie Services",
+          "website": "McKenzieServices.com",
+          "climateControlled": "No",
+          "dockDoors": 0,
+          "businessAddress": {
+            "address": "8220 Northeast Walker Road",
+            "address2": "",
+            "state": "OR",
+            "city": "Hillsboro",
+            "zipCode": "97124",
+            "country": "USA",
+            "lat": "45.536103",
+            "long": "-122.8948567",
+            "placeId": ""
+          },
+          "itemCategories": [],
+          "itemSubCategories": [],
+          "businessPhoneNumber": "503-718-3215",
+          "customerServiceEmailAddress": "accountmanager@mkzservices.com",
+          "labelingFees": "1.30",
+          "costPerBoxClosing": "0.00",
+          "costPerBox": [
+            {
+              "type": "",
+              "name": "",
+              "size": {
+                "width": "",
+                "height": "",
+                "length": ""
+              },
+              "price": ""
+            }
+          ],
+          "handleShrink": {
+            "answer": "No",
+            "small": {
+              "price": ""
+            },
+            "medium": {
+              "price": ""
+            },
+            "large": {
+              "price": ""
+            }
+          },
+          "handleHazmat": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "bubbleWrapping": {
+            "answer": "No",
+            "pricePerItem": ""
+          },
+          "offerStorage": {
+            "answer": "No",
+            "pricePerPalet": "",
+            "pricePerCubicFeet": ""
+          },
+          "handlePallets": {
+            "answer": "No",
+            "priceToReceivePallet": "",
+            "priceToAssemblePallet": ""
+          },
+          "granularPricing": {
+            "fba_inboundBox": 3.25,
+            "fba_fnsku": 1.3,
+            "fba_poly": 0.15,
+            "fba_bubble": 0.7,
+            "fba_bundle": 0.55,
+            "fba_rebox": 0,
+            "fba_boxAssembly": 0,
+            "fbm_pickPack": 3,
+            "fbm_addItem": 0.5,
+            "fbm_orderHandling": 0,
+            "fbm_packaging": 0.25,
+            "fbm_label": 0,
+            "fbm_palletAssembly": 28,
+            "fbm_kitting": 0.55,
+            "fbm_storage": 1.73,
+            "fbm_palletStorage": 50,
+            "fbm_returns": 0.75,
+            "oa_receiving": 0,
+            "oa_label": 1.85,
+            "oa_poly": 0.15,
+            "oa_bubble": 0.7,
+            "oa_rebox": 0,
+            "oa_forward": 0,
+            "oa_hazmat": 0,
+            "oa_storage": 1.73,
+            "oa_palletStorage": 50
+          },
+          "zone": 1,
+          "category": "",
+          "orderPerDayVolume": 0,
+          "numberOfEmployees": 0,
+          "palletCapacity": 2500,
+          "cubicFeetCapacity": 21000,
+          "binCapacity": 0,
+          "servicesOffered": [],
+          "workflows": [
+            "FBA (Fulfillment by Amazon)",
+            "FBM (Fulfillment by Merchant)",
+            "Cross-Docking",
+            "All Services"
+          ],
+          "fees": {
+            "receivingFees": "3.25",
+            "pickPackFees": "3.00",
+            "costPerAdditionalItem": "0.50",
+            "specialPackagingFees": "0.15",
+            "otherFees": {
+              "amount": "0",
+              "description": "Public form submission"
+            }
+          },
+          "region": "",
+          "receivingCostPerUnit": "3.25",
+          "prepCostPerUnit": "0.15",
+          "storageCostPerUnitPerMonth": "1.73",
+          "shipmentCostPerUnit": "0",
+          "minMonthlyStorageFee": "0",
+          "notes": "Website submission from Hannah Moody, Nita Adam, Emily Gordon (accountmanager@mkzservices.com)",
+          "approvalStatus": "Approved",
+          "approvedBy": "franco@unielogics.com",
+          "approvedAt": "2026-02-25T00:06:37.409Z",
+          "denialReason": null,
+          "unielogicsId": "XX586"
+        }
+      ],
+      "createdAt": "2026-02-18T23:07:58.115Z",
+      "updatedAt": "2026-02-25T00:06:37.411Z",
+      "__v": 0
+    }
+  ],
+  "warehouse_owner_users": {
+    "exportedAt": "2026-03-31T23:02:28.213Z",
+    "joinStrategy": {
+      "warehouseOwnersCollection": "MongoDB wOwners documents use `email` as the owner key; exportWarehousesNdjson maps this to warehouse_owners.email.",
+      "linkUsersToWOwners": "Match warehouse_owners.email to users.warehouseOwnerEmail OR to users.email when role is warehouseOwner.",
+      "rdsForeignKeys": "Optional: add users_warehouse_owners(user_id, warehouse_owner_id) after you import users into RDS; not included in warehouse_rds_schema.sql."
+    },
+    "count": 29,
+    "users": [
+      {
+        "email": "3pl@unielogics.com",
+        "firstName": "Jonathan",
+        "lastName": "Franco",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "3pl@unielogics.com",
+        "phoneNumber": "5514049732",
+        "createdDate": "2025-11-30T22:45:15.217Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "support@unielogics.com",
+        "firstName": "Jonathan",
+        "lastName": "Franco",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "support@unielogics.com",
+        "phoneNumber": "5514049732",
+        "createdDate": "2025-12-01T01:10:54.028Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 30,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "unielogics@gmail.com",
+        "firstName": "Unie",
+        "lastName": "Logics",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": null,
+        "phoneNumber": null,
+        "createdDate": "2025-12-04T15:43:06.179Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 29,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "khalil@asfardistribution.com",
+        "firstName": "Khalil",
+        "lastName": "A",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "khalil@asfardistribution.com",
+        "phoneNumber": "4127227354",
+        "createdDate": "2025-12-09T17:34:57.111Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "naeem@spantikgroup.com",
+        "firstName": "Uzair",
+        "lastName": "Akhtar",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "naeem@spantikgroup.com",
+        "phoneNumber": "4697451123",
+        "createdDate": "2025-12-09T17:34:59.872Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 30,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "ryan@encorebusinessgroup.com",
+        "firstName": "Ryan",
+        "lastName": "Walsh",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "ryan@encorebusinessgroup.com",
+        "phoneNumber": "6164373076",
+        "createdDate": "2025-12-09T17:35:02.770Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "info@riteprepfulfillment.com",
+        "firstName": "Daniyal",
+        "lastName": "Ibrahim",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "info@riteprepfulfillment.com",
+        "phoneNumber": "15123255157",
+        "createdDate": "2025-12-09T17:35:05.047Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "dustinbrearton@ondemandwf.com",
+        "firstName": "Dustin",
+        "lastName": "Brearton",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "dustinbrearton@ondemandwf.com",
+        "phoneNumber": "8594661698",
+        "createdDate": "2026-01-05T14:22:58.489Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "simbadispatchservices@gmail.com",
+        "firstName": "Ahmed",
+        "lastName": "Chaudhry",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "simbadispatchservices@gmail.com",
+        "phoneNumber": "410-831-1883",
+        "createdDate": "2026-01-05T21:51:04.607Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "adil.ahsan@hotmail.com",
+        "firstName": "Adil",
+        "lastName": "Ahsan",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "adil.ahsan@hotmail.com",
+        "phoneNumber": "3463777873",
+        "createdDate": "2026-01-10T19:13:36.256Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "sergey@boxhero.com",
+        "firstName": "Sergey",
+        "lastName": "Mak",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "sergey@boxhero.com",
+        "phoneNumber": "9176818556",
+        "createdDate": "2026-01-12T21:18:19.122Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "jigglyjie@gmail.com",
+        "firstName": "Jiecheng",
+        "lastName": "Yao",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "jigglyjie@gmail.com",
+        "phoneNumber": "7854911150",
+        "createdDate": "2026-01-13T14:56:14.097Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 30,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "dave@theswifthouse.com",
+        "firstName": "David",
+        "lastName": "Harriger",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "dave@theswifthouse.com",
+        "phoneNumber": "7172018067",
+        "createdDate": "2026-01-23T18:16:50.590Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "admin@discountwarehouseusa.com",
+        "firstName": "Haroon",
+        "lastName": "Chaudhry",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "admin@discountwarehouseusa.com",
+        "phoneNumber": "2034918055",
+        "createdDate": "2026-01-24T21:43:41.930Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "aswtgroupllc@gmail.com",
+        "firstName": "Muhammad",
+        "lastName": "Jawed",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "aswtgroupllc@gmail.com",
+        "phoneNumber": "4157028865",
+        "createdDate": "2026-01-25T20:45:32.801Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "ak@ecomautoprep.com",
+        "firstName": "Anton",
+        "lastName": "Kashirin",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "ak@ecomautoprep.com",
+        "phoneNumber": "7862707715",
+        "createdDate": "2026-01-26T15:54:39.802Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "madearlerscorp@gmail.com",
+        "firstName": "Itfaq",
+        "lastName": "",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "madearlerscorp@gmail.com",
+        "phoneNumber": "+1 929 272 4222",
+        "createdDate": "2026-01-26T15:54:49.267Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "orders@406premierprep.com",
+        "firstName": "David",
+        "lastName": "Inman",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "orders@406premierprep.com",
+        "phoneNumber": "4063500887",
+        "createdDate": "2026-01-26T15:55:00.352Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "info@openedboxreturns.com",
+        "firstName": "Mehal",
+        "lastName": "Jivan",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "info@openedboxreturns.com",
+        "phoneNumber": "7192975490",
+        "createdDate": "2026-01-26T17:52:54.287Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "ahmad@westcoastprep3pl.com",
+        "firstName": "Ahmad",
+        "lastName": "Noory",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "ahmad@westcoastprep3pl.com",
+        "phoneNumber": "7143567915",
+        "createdDate": "2026-01-26T19:06:07.122Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "cobros250@gmail.com",
+        "firstName": "Muhammad",
+        "lastName": "s rafiq",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "cobros250@gmail.com",
+        "phoneNumber": "2095703253",
+        "createdDate": "2026-01-26T19:14:18.348Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "usi.trucking1@usiship.com",
+        "firstName": "Akbar",
+        "lastName": "Afzal",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "usi.trucking1@usiship.com",
+        "phoneNumber": "323 200 9845",
+        "createdDate": "2026-01-26T19:49:13.231Z",
+        "isActive": true,
+        "emailVerified": true,
+        "credits": {
+          "warehouseCredits": 30,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "orders@aaprepandship.com",
+        "firstName": "Diane",
+        "lastName": "Stichman",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "orders@aaprepandship.com",
+        "phoneNumber": "406-208-6041",
+        "createdDate": "2026-01-27T02:03:02.869Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "kyle@provenprepcenter.com",
+        "firstName": "Kyle",
+        "lastName": "Curtis",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "kyle@provenprepcenter.com",
+        "phoneNumber": "5039878977",
+        "createdDate": "2026-01-27T22:47:51.781Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "ann.traphagen@weisserdistributing.com",
+        "firstName": "Ann",
+        "lastName": "Traphagen",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "ann.traphagen@weisserdistributing.com",
+        "phoneNumber": "6059378728",
+        "createdDate": "2026-01-27T22:48:02.149Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "masterpax3pl@gmail.com",
+        "firstName": "Kevin",
+        "lastName": "",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "masterpax3pl@gmail.com",
+        "phoneNumber": "3137198081",
+        "createdDate": "2026-01-30T17:28:33.517Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "sabfulfillmentinc@gmail.com",
+        "firstName": "Arwa",
+        "lastName": "Mujtaba",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "sabfulfillmentinc@gmail.com",
+        "phoneNumber": "3467552277",
+        "createdDate": "2026-02-16T15:39:31.457Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      },
+      {
+        "email": "admin@scoviafulfillment.com",
+        "firstName": "Brendan",
+        "lastName": "Hobbs",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "admin@scoviafulfillment.com",
+        "phoneNumber": "9042573377",
+        "createdDate": "2026-02-16T15:39:47.905Z",
+        "isActive": true,
+        "emailVerified": true,
+        "credits": {
+          "warehouseCredits": 30,
+          "researchCredits": 500
+        },
+        "membershipBasePlan": "basic"
+      },
+      {
+        "email": "accountmanager@mkzservices.com",
+        "firstName": "Hannah",
+        "lastName": "Moody, Nita Adam, Emily Gordon",
+        "role": "warehouseOwner",
+        "warehouseOwnerEmail": "accountmanager@mkzservices.com",
+        "phoneNumber": "503-718-3215",
+        "createdDate": "2026-02-25T00:06:37.423Z",
+        "isActive": true,
+        "emailVerified": false,
+        "credits": {
+          "warehouseCredits": 0,
+          "researchCredits": 0
+        },
+        "membershipBasePlan": "none"
+      }
+    ]
+  }
+}

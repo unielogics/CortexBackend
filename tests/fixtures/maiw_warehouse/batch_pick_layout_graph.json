@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "tenantId": "demo-tenant",
+    "warehouseId": "wh-east-1",
+    "warehouseTimezone": "America/New_York"
+  },
+  "batchId": "BATCH-99",
+  "stops": [
+    { "stopId": "s1", "locationCode": "B-02-01", "orderId": "O1", "lineId": "L1" },
+    { "stopId": "s2", "locationCode": "A-01-03", "orderId": "O2", "lineId": "L2" },
+    { "stopId": "s3", "locationCode": "C-10-02", "orderId": "O1", "lineId": "L3" }
+  ],
+  "layout": {
+    "mode": "graph",
+    "graph": {
+      "nodes": [
+        { "id": "A-01-03", "zone": "A" },
+        { "id": "B-02-01", "zone": "B" },
+        { "id": "C-10-02", "zone": "C" }
+      ],
+      "edges": [
+        { "from": "A-01-03", "to": "B-02-01", "travelSec": 120 },
+        { "from": "B-02-01", "to": "C-10-02", "travelSec": 90 }
+      ]
+    }
+  },
+  "omsDemandHints": null
+}
