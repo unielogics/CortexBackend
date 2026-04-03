@@ -17,7 +17,7 @@ def build_inventory_placement_summary(
     title: str | None,
     product_origin_postal: str | None,
     monthly_units_est_mid: float | None,
-    target_days_cover: float = 30.0,
+    target_days_cover: float | None = None,
     suggested_min_active_warehouses: int = 1,
     warehouse_nodes: list[dict[str, Any]] | None = None,
     product_origin_city: str | None = None,
@@ -27,6 +27,10 @@ def build_inventory_placement_summary(
     ``warehouse_nodes``: optional ``[{ "warehouse_id": "NJ", "postal": "07001" }, ...]``.
     When empty, split uses generic placeholders (IDs supplied later from your network API).
     """
+    if target_days_cover is None:
+        from unie_cortex.config import settings
+
+        target_days_cover = float(getattr(settings, "planning_default_target_days_cover", 75.0) or 75.0)
     wh = warehouse_nodes or []
     n_nodes = max(1, int(suggested_min_active_warehouses), len(wh) or 1)
     mid = float(monthly_units_est_mid or 0.0)
@@ -88,7 +92,7 @@ def build_inventory_placement_summary(
             f"city/state hint: {', '.join(loc_bits)}."
         )
     vel_line = (
-        f"Keepa/marketplace velocity est. ~{mid:,.0f} units/month (~{daily:.2f}/day) — not your SKU history unless matched."
+        f"Seller-scoped planning velocity ~{mid:,.0f} units/month (~{daily:.2f}/day) — same basis as procurement and multi-node hints."
         if mid > 0
         else "Velocity unknown — size placement from your label history or ASIN demand when available."
     )

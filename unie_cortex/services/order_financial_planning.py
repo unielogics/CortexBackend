@@ -5,7 +5,9 @@ and baseline vs network comparison artifacts.
 
 from __future__ import annotations
 
+import math
 import re
+from collections import defaultdict
 from typing import Any
 
 from unie_cortex.config import Settings, settings as default_settings
@@ -16,6 +18,12 @@ from unie_cortex.network.scenario_vocabulary import (
     normalize_csv_baseline_fulfillment,
 )
 from unie_cortex.network.scenarios_integrated import compare_scenario_v2_integrated
+from unie_cortex.network.inbound_routing import closest_node_by_postal
+from unie_cortex.network.transport_geo import (
+    CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE,
+    compute_transport_miles_v1,
+    geodesic_miles_zip5,
+)
 from unie_cortex.services.order_financial_velocity import build_batch_velocity_enrichment
 from unie_cortex.services.smart_warehouse_network import recommend_warehouse_network
 
@@ -70,6 +78,113 @@ def _norm_postal_5(z: str) -> str:
     if d:
         return d.zfill(5)
     return "10001"
+
+
+def state_demand_weights_from_order_financial_rows(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """
+    48-state demand weights for ``build_warehouse_mock_placement_grids`` — blends order-financial
+    ship-to rollup (quantity) with the default contiguous-US prior (same idea as label blend).
+    """
+    from unie_cortex.network.demand_rollup import rollup_order_financial_demand
+    from unie_cortex.network.us_state_demand_share import contiguous_state_demand_shares_normalized
+
+    prior = contiguous_state_demand_shares_normalized()
+    r = rollup_order_financial_demand(rows, weight_mode="quantity")
+    if r.get("status") != "complete":
+        return prior
+    by_state = r.get("by_state") if isinstance(r.get("by_state"), dict) else {}
+    obs: dict[str, float] = {}
+    for st, info in by_state.items():
+        stu = str(st).upper().strip()
+        if len(stu) != 2 or stu not in prior:
+            continue
+        qw = float((info or {}).get("quantity_weight") or 0.0)
+        if qw > 0:
+            obs[stu] = obs.get(stu, 0.0) + qw
+    total_obs = sum(obs.values())
+    if total_obs <= 0:
+        return prior
+    cov = r.get("coverage") if isinstance(r.get("coverage"), dict) else {}
+    pct = float(cov.get("postal_coverage_pct") or 0.0)
+    lam = max(0.2, min(1.0, pct / 100.0))
+    blended: dict[str, float] = {}
+    for st, p0 in prior.items():
+        o_share = obs.get(st, 0.0) / total_obs
+        blended[st] = lam * o_share + (1.0 - lam) * p0
+    s = sum(blended.values())
+    if s <= 0:
+        return prior
+    return {k: v / s for k, v in blended.items()}
+
+
+def build_placement_mock_rate_grids_for_order_planning(
+    *,
+    warehouse_network: dict[str, Any] | None,
+    rows: list[dict[str, Any]],
+    weight_lb_per_unit: float,
+    length_in: float = 9.0,
+    width_in: float = 7.0,
+    height_in: float = 5.0,
+    cfg: Settings | None = None,
+) -> dict[str, Any] | None:
+    """
+    Product Research–compatible ``placement_mock_rate_grids`` for the recommended FBM nodes:
+    mock parcel quotes to 48 contiguous state hubs, demand-weighted primary DC per state.
+    """
+    from unie_cortex.services.warehouse_mock_rate_grid import build_warehouse_mock_placement_grids
+
+    cfg = cfg or default_settings
+    if not warehouse_network or not isinstance(warehouse_network, dict):
+        return None
+    sel = warehouse_network.get("selected_warehouses")
+    if not isinstance(sel, list) or not sel:
+        return None
+    nodes: list[dict[str, Any]] = []
+    for w in sel:
+        if not isinstance(w, dict):
+            continue
+        wid = str(w.get("id") or w.get("warehouse_id") or "").strip()
+        if not wid:
+            continue
+        po = _norm_postal_5(str(w.get("postal") or ""))
+        node: dict[str, Any] = {"id": wid, "postal": po}
+        for coord in ("lat", "lon"):
+            v = w.get(coord)
+            if v is not None:
+                try:
+                    node[coord] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        nodes.append(node)
+    if len(nodes) < 1:
+        return None
+
+    state_w = state_demand_weights_from_order_financial_rows(rows)
+    assign_mode = str(getattr(cfg, "placement_mock_state_primary_assignment", "min_mock_parcel") or "min_mock_parcel").strip().lower()
+    if assign_mode not in ("min_mock_parcel", "distance_tie_band"):
+        assign_mode = "min_mock_parcel"
+
+    grid = build_warehouse_mock_placement_grids(
+        nodes,
+        n_destinations_per_warehouse=48,
+        default_weight_lb=max(0.1, float(weight_lb_per_unit)),
+        default_length_in=float(length_in),
+        default_width_in=float(width_in),
+        default_height_in=float(height_in),
+        state_demand_weights=state_w,
+        state_primary_assignment=assign_mode,
+    )
+    if not isinstance(grid, dict):
+        return None
+    out = dict(grid)
+    out["seller_order_planning_source"] = {
+        "note": (
+            "Same placement_mock_rate_grids engine as Product Research: 48 contiguous state hub ZIPs, "
+            "mock parcel among carriers, demand mix from order-financial ship-to rollup blended with US prior."
+        ),
+        "state_demand_weighting": "order_financial_quantity_rollup_blended_with_prior",
+    }
+    return out
 
 
 def rows_for_velocity_enrichment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -135,6 +250,215 @@ def seed_warehouses_from_product_origins_by_sku(origins: dict[str, Any] | None) 
             }
         )
     return seeds
+
+
+def _postal5_from_origin_entry(o: dict[str, Any]) -> str | None:
+    po = str(o.get("source_postal") or o.get("product_origin_postal") or "").strip()
+    digits = re.sub(r"\D", "", po)
+    if len(digits) >= 5:
+        return digits[:5]
+    if digits:
+        return digits.zfill(5)
+    return None
+
+
+def supplier_anchor_postal_from_engagement(
+    product_origins_by_sku: dict[str, Any] | None,
+    rows: list[dict[str, Any]],
+) -> tuple[str | None, dict[str, Any]]:
+    """
+    Quantity-weighted dominant ZIP5: for each order-financial row, add row quantity to the ZIP
+    from ``product_origins_by_sku`` for that SKU (rollup key = stripped sku string).
+    """
+    if not product_origins_by_sku or not isinstance(product_origins_by_sku, dict):
+        return None, {"rule": "no_product_origins_by_sku"}
+    weights: dict[str, float] = {}
+    matched_rows = 0
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        sku = str(r.get("sku") or "").strip()
+        if not sku or sku not in product_origins_by_sku:
+            continue
+        o = product_origins_by_sku.get(sku)
+        if not isinstance(o, dict):
+            continue
+        po5 = _postal5_from_origin_entry(o)
+        if not po5:
+            continue
+        try:
+            q = float(r.get("quantity") or 0)
+        except (TypeError, ValueError):
+            q = 1.0
+        q = max(1.0, q)
+        weights[po5] = weights.get(po5, 0.0) + q
+        matched_rows += 1
+    if weights:
+        best_zip = max(weights.keys(), key=lambda z: (weights[z], z))
+        return best_zip, {
+            "rule": "quantity_weighted_dominant_zip5_from_product_origins_by_sku",
+            "weights_by_postal": {k: round(v, 4) for k, v in sorted(weights.items())},
+            "matched_order_rows": matched_rows,
+        }
+    # Fallback: any declared origin ZIP, stable order
+    for sku in sorted(product_origins_by_sku.keys()):
+        o = product_origins_by_sku.get(sku)
+        if not isinstance(o, dict):
+            continue
+        po5 = _postal5_from_origin_entry(o)
+        if po5:
+            return po5, {
+                "rule": "first_sorted_sku_with_valid_postal_no_row_match",
+                "sku": sku,
+            }
+    return None, {"rule": "no_valid_postal_in_product_origins_by_sku"}
+
+
+def _unique_user_origin_postals_for_receiving(
+    engagement_network_context: dict[str, Any] | None,
+    warehouse_network: dict[str, Any] | None,
+) -> list[tuple[str, str]]:
+    """Distinct (postal5, warehouse_id) for seller ship-from nodes (user-origin-*)."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    nc = engagement_network_context if isinstance(engagement_network_context, dict) else None
+    seeds = seed_warehouses_from_product_origins_by_sku(nc.get("product_origins_by_sku") if nc else None)
+    for s in seeds:
+        if not isinstance(s, dict):
+            continue
+        po = _norm_postal_5(str(s.get("postal") or ""))
+        wid = str(s.get("id") or f"user-origin-{po}").strip()
+        if len(po) == 5 and po not in seen:
+            seen.add(po)
+            out.append((po, wid))
+    wn = warehouse_network if isinstance(warehouse_network, dict) else None
+    for row in wn.get("selected_warehouses") or [] if wn else []:
+        if not isinstance(row, dict):
+            continue
+        wid = str(row.get("id") or row.get("warehouse_id") or "").strip()
+        if not wid.lower().startswith("user-origin"):
+            continue
+        po = _norm_postal_5(str(row.get("postal") or ""))
+        suffix = wid[12:] if wid.lower().startswith("user-origin-") and len(wid) > 12 else ""
+        if len(suffix) == 5 and suffix.isdigit():
+            po = po or suffix
+        if len(po) == 5 and po not in seen:
+            seen.add(po)
+            out.append((po, wid))
+    return out
+
+
+def _merged_receiving_candidate_pool(
+    engagement_network_context: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Engagement ``candidate_warehouses`` first, then default prep-center / regional archetypes (dedup by id)."""
+    from unie_cortex.services.smart_warehouse_network import default_us_candidate_warehouses
+
+    pool: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for w in candidate_pool_from_engagement_network(engagement_network_context) or []:
+        wid = str(w.get("id") or "")
+        if not wid or wid in seen_ids:
+            continue
+        seen_ids.add(wid)
+        pool.append(
+            {
+                "id": wid,
+                "postal": _norm_postal_5(str(w.get("postal") or "")),
+                "label": str(w.get("label") or wid)[:256],
+            }
+        )
+    for w in default_us_candidate_warehouses():
+        if not isinstance(w, dict):
+            continue
+        wid = str(w.get("id") or "")
+        if not wid or wid in seen_ids:
+            continue
+        seen_ids.add(wid)
+        po = _norm_postal_5(str(w.get("postal") or ""))
+        lab = w.get("label") or w.get("name") or wid
+        pool.append({"id": wid, "postal": po, "label": str(lab)[:256]})
+    return pool
+
+
+def build_receiving_facility_resolution_v1(
+    *,
+    engagement_network_context: dict[str, Any] | None,
+    warehouse_network: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    Map each user ship-from ZIP to the nearest Intelligence / default candidate facility
+    (geodesic ZIP-centroid miles, ZIP3 proxy fallback) for receiving-facility labeling in UI.
+    """
+    origins = _unique_user_origin_postals_for_receiving(engagement_network_context, warehouse_network)
+    if not origins:
+        return None
+    pool = _merged_receiving_candidate_pool(engagement_network_context)
+    if not pool:
+        return {
+            "schema_version": "receiving_facility_resolution_v1",
+            "distance_model": "none_no_candidate_pool",
+            "human_note": "No candidate facilities available to match against user ship-from ZIPs.",
+            "by_user_origin_postal": {},
+            "by_warehouse_id": {},
+        }
+
+    by_po: dict[str, Any] = {}
+    by_wid: dict[str, Any] = {}
+
+    for po5, u_wid in origins:
+        best_c: dict[str, Any] | None = None
+        best_m: float | None = None
+        for c in pool:
+            m = geodesic_miles_zip5(po5, c["postal"])
+            if m is None:
+                continue
+            if best_m is None or m < best_m:
+                best_m = m
+                best_c = c
+
+        method = "geodesic_zip_centroid_v1"
+        if best_c is None:
+            nodes = [{"warehouse_id": x["id"], "postal": x["postal"]} for x in pool]
+            zr = closest_node_by_postal(po5, nodes)
+            method = "zip3_proxy_v1"
+            best_m = None
+            if zr and isinstance(zr.get("closest"), dict):
+                cid = str(zr["closest"].get("warehouse_id") or "")
+                best_c = next((x for x in pool if x["id"] == cid), None)
+
+        entry: dict[str, Any] = {
+            "user_origin_postal": po5,
+            "user_origin_warehouse_id": u_wid,
+            "match_method": method,
+            "geodesic_miles_proxy": round(best_m, 4) if best_m is not None else None,
+        }
+        if best_c:
+            ml = str(best_c.get("label") or best_c["id"])
+            entry["matched_warehouse_id"] = best_c["id"]
+            entry["matched_label"] = ml
+            entry["matched_postal"] = best_c["postal"]
+            entry["display_label"] = f"{ml} (Receiving Warehouse near ZIP {po5})"
+        else:
+            entry["matched_warehouse_id"] = None
+            entry["matched_label"] = None
+            entry["matched_postal"] = None
+            entry["display_label"] = None
+
+        by_po[po5] = entry
+        by_wid[u_wid] = entry
+
+    return {
+        "schema_version": "receiving_facility_resolution_v1",
+        "distance_model": "geodesic_zip_centroid_v1",
+        "fallback_distance_model": "zip3_proxy_v1",
+        "human_note": (
+            "Nearest saved Intelligence candidate or default prep-center-style archetype to the seller ship-from ZIP; "
+            "great-circle ZIP-centroid distance with ZIP3 ordering fallback — not street-level routing."
+        ),
+        "by_user_origin_postal": by_po,
+        "by_warehouse_id": by_wid,
+    }
 
 
 def recommend_warehouse_network_for_order_financial_rows(
@@ -416,6 +740,12 @@ async def run_integrated_compare_for_order_planning(
     lh_mult = float(consolidated_linehaul_cost_multiplier) if consolidated_linehaul_cost_multiplier is not None else float(
         getattr(cfg, "network_consolidated_linehaul_cost_multiplier", 1.0) or 1.0
     )
+    po_map = po if isinstance(po, dict) else None
+    supplier_anchor, supplier_anchor_meta = supplier_anchor_postal_from_engagement(po_map, rows)
+    inbound_postal = supplier_anchor
+    bulk_origin_postal = supplier_anchor
+
+    seller_lh = bool(getattr(cfg, "seller_mixed_pallet_linehaul_enabled", True))
     result = await compare_scenario_v2_integrated(
         weight_lb_per_unit=base["weight_lb_per_unit"],
         length_in=base["length_in"],
@@ -433,10 +763,38 @@ async def run_integrated_compare_for_order_planning(
         consolidated_parcel_use_integrated=use_int,
         fulfillment_mode=fulfillment_mode,
         consolidated_linehaul_cost_multiplier=lh_mult,
+        inbound_receipt_postal=inbound_postal,
+        product_origin_postal=bulk_origin_postal,
+        seller_mixed_pallet_linehaul=seller_lh,
     )
     result = dict(result)
     result["warehouse_network"] = net
-    result["scenario_inputs"] = {**base, "parcel_integrated": use_int, "consolidated_linehaul_cost_multiplier": lh_mult}
+    result["scenario_inputs"] = {
+        **base,
+        "parcel_integrated": use_int,
+        "consolidated_linehaul_cost_multiplier": lh_mult,
+        "seller_mixed_pallet_linehaul": seller_lh,
+        "supplier_anchor_postal": supplier_anchor,
+        "supplier_anchor_meta": supplier_anchor_meta,
+    }
+    hub_wid = str(net.get("hub_warehouse_id") or "").strip() or None
+    result["network_topology_summary"] = {
+        "hub_warehouse_id": hub_wid,
+        "linehaul_origin_postal": base.get("linehaul_origin_postal"),
+        "supplier_anchor_postal": supplier_anchor,
+        "supplier_anchor_meta": supplier_anchor_meta,
+        "inbound_routing": result.get("inbound_routing"),
+        "bulk_origin_routing": result.get("bulk_origin_routing"),
+    }
+    if result.get("status") == "complete":
+        detour_m = float(getattr(cfg, "direct_parcel_network_detour_multiplier", 1.0) or 1.0)
+        tm = compute_transport_miles_v1(
+            result,
+            supplier_anchor_postal=supplier_anchor,
+            direct_parcel_network_detour_multiplier=detour_m,
+        )
+        if tm:
+            result["transport_miles_v1"] = tm
     meth = dict(result.get("methodology") or {})
     meth["linehaul_model"] = "mock LTL/FTL (contract LTL not wired)"
     meth["parcel_model"] = (
@@ -1233,12 +1591,12 @@ def build_planning_comparison_matrix_v1(
                 )
             leg1 = fba_inbound_economics.get("supplier_to_prep") or {}
             t1 = leg1.get("chosen_total_usd")
-            if t1 is not None:
+            if t1 is not None and isinstance(leg1, dict):
                 fba_lines.append(
                     _matrix_line(
                         "transport_supplier_to_prep",
                         "Transport: supplier → prep warehouse (free radius / threshold or min parcel vs LTL)",
-                        "transport_inbound",
+                        "transport_carrier",
                         float(t1),
                         qty,
                         source="fba_supplier_to_prep_leg_v1",
@@ -1247,12 +1605,12 @@ def build_planning_comparison_matrix_v1(
                 )
             leg2 = fba_inbound_economics.get("prep_to_amazon") or {}
             t2 = leg2.get("chosen_total_usd")
-            if t2 is not None:
+            if t2 is not None and isinstance(leg2, dict):
                 fba_lines.append(
                     _matrix_line(
                         "transport_prep_to_amazon",
                         "Transport: prep warehouse → Amazon FC (min parcel vs LTL mock)",
-                        "transport_inbound",
+                        "transport_carrier",
                         float(t2),
                         qty,
                         source="fba_prep_to_amazon_leg_v1",
@@ -1340,13 +1698,27 @@ def build_planning_comparison_matrix_v1(
         pkg = scen.get("fbm_full_financial_breakdown") or {}
         if multi:
             d = scen.get("direct") or {}
+            c_multi = scen.get("consolidated") or {}
+            chosen_raw = c_multi.get("chosen")
+            chosen_m = chosen_raw if isinstance(chosen_raw, dict) else {}
+            lh_inbound = float((chosen_m.get("linehaul_leg") or {}).get("total_usd") or 0)
             dpkg = pkg.get("direct") or {}
             wh = dpkg.get("warehouse_fbm_breakdown") or {}
             lines.append(
                 _matrix_line(
+                    "transport_linehaul_ltl_inbound_multi",
+                    "3PL inbound linehaul / LTL to receive DC (mock; same trunk as consolidated path)",
+                    "transport_warehouse_transfer",
+                    lh_inbound,
+                    qty,
+                    source="compare_v2_integrated",
+                )
+            )
+            lines.append(
+                _matrix_line(
                     "transport_parcel_multi_origin",
                     "3PL outbound: parcel (multi ship-from, best origin per destination)",
-                    "transport_outbound",
+                    "transport_carrier",
                     float(d.get("transport_parcel_total_usd") or 0),
                     qty,
                     source="compare_v2_integrated",
@@ -1385,7 +1757,7 @@ def build_planning_comparison_matrix_v1(
                 _matrix_line(
                     "transport_linehaul_to_hub",
                     "3PL inbound linehaul to receive DC (mock)",
-                    "transport_inbound",
+                    "transport_carrier",
                     lh,
                     qty,
                     source="compare_v2_integrated",
@@ -1395,7 +1767,7 @@ def build_planning_comparison_matrix_v1(
                 _matrix_line(
                     "transport_parcel_to_customer",
                     "3PL outbound parcel to customer",
-                    "transport_outbound",
+                    "transport_carrier",
                     par,
                     qty,
                     source="compare_v2_integrated",
@@ -1471,6 +1843,92 @@ def build_planning_comparison_matrix_v1(
             "scaled CSV marketplace fees only — fba_inbound_economics missing; add inbound_from_supplier + run planning-run API for full FBA path",
         ]
 
+    fba_ec_ok = bool(
+        fba_inbound_economics and fba_inbound_economics.get("schema_version") == "fba_inbound_economics_v1"
+    )
+    fba_complete = bool(scenario_fba and scenario_fba.get("status") == "complete")
+    fbm_ok = bool(scenario_fbm and scenario_fbm.get("status") == "complete")
+    csv_logistics = round(_scaled("prep_cost_usd") + _scaled("inbound_cost_usd"), 2)
+
+    comparison_parity_notes: list[dict[str, Any]] = []
+    if fba_complete and not fba_ec_ok:
+        comparison_parity_notes.append(
+            {
+                "code": "fba_inbound_economics_missing",
+                "severity": "warning",
+                "title": "FBA column omits modeled inbound path",
+                "detail": (
+                    "FBA grand total is scaled CSV marketplace fees only until inbound economics are computed. "
+                    "Current may still include CSV prep + inbound, so the two columns are not apples-to-apples. "
+                    "For a fair comparison, call planning-run with inbound_from_supplier, unit weight/dimensions, "
+                    "and optional fba_prep_line_items so supplier→prep and prep→Amazon legs populate."
+                ),
+            }
+        )
+    if csv_logistics < 0.02 and (fba_complete or fbm_ok):
+        comparison_parity_notes.append(
+            {
+                "code": "csv_prep_inbound_sparse",
+                "severity": "info",
+                "title": "CSV prep and inbound are near zero",
+                "detail": (
+                    "prep_cost_usd + inbound_cost_usd (scaled to scenario qty) are essentially empty. "
+                    "If you actually incur prep or inbound freight, add those columns to the file; otherwise Current "
+                    "understates logistics next to modeled FBA/FBM."
+                ),
+            }
+        )
+    if fbm_ok:
+        comparison_parity_notes.append(
+            {
+                "code": "fbm_model_uncertainty",
+                "severity": "info",
+                "title": "FBM single vs multi is harder to model than FBA",
+                "detail": (
+                    "FBM columns rely on integrated parcel/linehaul mocks and (for multi) origin allocation. "
+                    "Treat deltas vs FBA as directional. We prioritize improving FBA prep + inbound economics first "
+                    "for profitability intelligence."
+                ),
+            }
+        )
+
+    comparison_math_audit: dict[str, Any] = {
+        "schema": "comparison_math_audit_v1",
+        "current_grand_total": {
+            "components_scaled_csv_keys": ["marketplace_fees_usd", "prep_cost_usd", "inbound_cost_usd"],
+            "scale_rule": "Each value × (scenario_qty_units / full_financial_image.quantity_units_in_csv), min denom 1.",
+            "excluded_from_grand_total": [
+                "total_fees_usd (would double-count with marketplace + prep + inbound)",
+                "referral_fees_modeled_usd line item (informational; not added again to grand total)",
+                "retail_revenue_usd",
+                "product_cogs_usd",
+                "csv_reported_profit_usd",
+            ],
+        },
+        "fba_grand_total": {
+            "when_inbound_economics_present": (
+                "Same scaled marketplace_fees_usd as Current + user prep lines + optional FNSKU adder "
+                "+ supplier→prep transport + prep→Amazon FC transport (all include_in_grand_total unless noted)."
+            ),
+            "when_inbound_economics_missing": "Same scaled marketplace_fees_usd only — no modeled prep/inbound legs.",
+            "informational_excluded": [
+                "amazon_referral matrix line",
+                "informational_customer_outbound_* (scenario compare only; not FBA inbound to FC)",
+            ],
+        },
+        "fbm_grand_total": {
+            "basis": (
+                "FBM selling-fee basis from full_financial_image.fbm_planning_amazon_selling_fees_usd when set "
+                "(strips FBA fulfillment from CSV combined fees), else legacy full marketplace fees."
+            ),
+            "adds": "Modeled linehaul/parcel and warehouse receive + pick/pack per single vs multi path.",
+        },
+        "dollars_left_in_ui": (
+            "retail_per_unit − product_cogs_per_unit − column grand_total_per_unit_usd (same retail/COGS per unit "
+            "for all columns from Current matrix lines); scaled to dollars by × scenario_qty_units. Homogeneous batch."
+        ),
+    }
+
     return {
         "schema_version": "planning_comparison_matrix_v1",
         "seller_optimization_engine": seller_optimization_engine_identity(),
@@ -1519,7 +1977,8 @@ def build_planning_comparison_matrix_v1(
                 fbm_multi_lines,
                 grand_total_scope=(
                     "Sum of FBM Amazon selling-fee basis (strips FBA fulfillment when CSV is combined or uses split "
-                    "seller/FBA columns) plus multi-origin parcel transport and warehouse batch fees. "
+                    "seller/FBA columns) plus mock inbound linehaul/LTL to receive DC (same leg as consolidated path), "
+                    "multi-origin parcel transport, and warehouse batch fees. "
                     "Excludes modeled referral duplicate line (informational) and all-in subtotal."
                 ),
             ),
@@ -1530,4 +1989,326 @@ def build_planning_comparison_matrix_v1(
             "FBA column sums marketplace fees plus prep and supplier→prep / prep→Amazon when inbound economics exist; "
             "referral and customer-outbound compare rows are informational only."
         ),
+        "comparison_parity_notes": comparison_parity_notes,
+        "comparison_math_audit": comparison_math_audit,
+    }
+
+
+def build_seller_line_item_allocation_v1(
+    *,
+    sku_rollup: dict[str, Any],
+    planning_matrix: dict[str, Any],
+) -> dict[str, Any] | None:
+    """
+    Option A: split each matrix column's ``include_in_grand_total`` line items across SKU rollup rows
+    by ``quantity_total / sum(quantity_total)`` — batch planning dollars, not per-SKU quotes.
+    """
+    rows_in = sku_rollup.get("rows") if isinstance(sku_rollup, dict) else None
+    if not isinstance(rows_in, list) or not rows_in:
+        return None
+    cols = planning_matrix.get("columns") if isinstance(planning_matrix, dict) else None
+    if not isinstance(cols, dict):
+        return None
+
+    q_total = 0.0
+    for r in rows_in:
+        if not isinstance(r, dict):
+            continue
+        try:
+            q_total += max(float(r.get("quantity_total") or 0), 0.0)
+        except (TypeError, ValueError):
+            continue
+    if q_total <= 0:
+        return None
+
+    scenario_qty = max(1, int(planning_matrix.get("scenario_qty_units") or 1))
+    toggle_keys = ("amazon_fba", "amazon_fbm_single", "amazon_fbm_multi")
+
+    def line_items_for(col_key: str) -> list[dict[str, Any]]:
+        col = cols.get(col_key)
+        if not isinstance(col, dict):
+            return []
+        li = col.get("line_items")
+        return li if isinstance(li, list) else []
+
+    out_rows: list[dict[str, Any]] = []
+    for r in rows_in:
+        if not isinstance(r, dict):
+            continue
+        try:
+            qi = max(float(r.get("quantity_total") or 0), 0.0)
+        except (TypeError, ValueError):
+            qi = 0.0
+        w = qi / q_total
+        allocated: dict[str, Any] = {}
+        for col_key in toggle_keys:
+            by_cat: dict[str, float] = defaultdict(float)
+            grand = 0.0
+            for ln in line_items_for(col_key):
+                if not isinstance(ln, dict):
+                    continue
+                if not ln.get("include_in_grand_total", True):
+                    continue
+                t = ln.get("total_usd")
+                if t is None:
+                    continue
+                try:
+                    amt = float(t) * w
+                except (TypeError, ValueError):
+                    continue
+                cat = str(ln.get("category") or "other")
+                by_cat[cat] += amt
+                grand += amt
+            allocated[col_key] = {
+                "by_category": {k: round(v, 2) for k, v in sorted(by_cat.items())},
+                "grand_total_allocated_usd": round(grand, 2),
+            }
+        try:
+            rev = round(float(r.get("revenue_usd_total") or 0), 2)
+        except (TypeError, ValueError):
+            rev = 0.0
+        out_rows.append(
+            {
+                "identifier": r.get("identifier"),
+                "sku": r.get("sku"),
+                "asin": r.get("asin"),
+                "quantity_total": round(qi, 4),
+                "quantity_weight": round(w, 6),
+                "revenue_usd_total": rev,
+                "product_cogs_usd_total": r.get("product_cogs_usd_total"),
+                "allocated": allocated,
+            }
+        )
+
+    note_mismatch = None
+    if abs(q_total - float(scenario_qty)) > 0.5:
+        note_mismatch = (
+            f"Rollup quantity sum ({round(q_total, 2)}) differs from planning scenario_qty_units ({scenario_qty}); "
+            "matrix dollars stay on the scenario batch qty — each SKU still receives its rollup quantity share of those totals."
+        )
+
+    return {
+        "schema_version": "seller_line_item_allocation_v1",
+        "allocation_note": (
+            "Line items with include_in_grand_total are allocated by SKU quantity share on the CSV rollup — "
+            "not individually re-rated per SKU."
+        ),
+        "rollup_quantity_total": round(q_total, 4),
+        "scenario_qty_units": scenario_qty,
+        "qty_alignment_note": note_mismatch,
+        "column_labels": {k: str((cols.get(k) or {}).get("title") or k) for k in toggle_keys},
+        "rows": out_rows,
+    }
+
+
+def _destination_state_entropy_from_analysis(analysis: dict[str, Any] | None) -> dict[str, Any]:
+    out: dict[str, Any] = {"distinct_state_count": 0, "shannon_entropy_normalized_0_1": None}
+    if not analysis or not isinstance(analysis, dict):
+        return out
+    roll = analysis.get("by_ship_to_state")
+    if not isinstance(roll, list):
+        return out
+    weights: dict[str, float] = {}
+    for row in roll:
+        if not isinstance(row, dict):
+            continue
+        st = str(row.get("ship_to_state") or "").strip().upper()
+        if len(st) != 2:
+            continue
+        try:
+            w = float(row.get("revenue_usd") or 0)
+        except (TypeError, ValueError):
+            w = 0.0
+        if w > 0:
+            weights[st] = weights.get(st, 0.0) + w
+    if not weights:
+        return out
+    n = len(weights)
+    s = sum(weights.values())
+    h = 0.0
+    for v in weights.values():
+        p = v / s
+        if p > 0:
+            h -= p * math.log(p)
+    max_h = math.log(n) if n > 1 else 1.0
+    norm = round(h / max_h, 6) if max_h > 0 else 0.0
+    out["distinct_state_count"] = n
+    out["shannon_entropy_normalized_0_1"] = norm
+    out["note"] = "Weights = revenue_usd by ship_to_state from order-financial analyze."
+    return out
+
+
+def _parcel_pricing_mix_from_scenario(scenario: dict[str, Any] | None) -> dict[str, Any]:
+    if not scenario or scenario.get("status") != "complete":
+        return {
+            "direct_integrated_leg_count": 0,
+            "direct_mock_leg_count": 0,
+            "consolidated_parcel_pricing": None,
+            "consolidated_parcel_leg_count": 0,
+            "integrated_parcel_adoption_pct": None,
+        }
+    di, dm = 0, 0
+    for leg in (scenario.get("direct") or {}).get("legs") or []:
+        if not isinstance(leg, dict):
+            continue
+        pr = str(leg.get("pricing") or "").lower()
+        if pr == "integrated":
+            di += 1
+        else:
+            dm += 1
+    chosen = (scenario.get("consolidated") or {}).get("chosen") or {}
+    if not isinstance(chosen, dict):
+        chosen = {}
+    ppr = str(chosen.get("parcel_pricing") or "").lower()
+    plc = chosen.get("parcel_legs") if isinstance(chosen.get("parcel_legs"), list) else []
+    n_pl = len(plc)
+    ci, cm = 0, 0
+    if ppr == "integrated":
+        ci = n_pl
+    elif ppr == "mock":
+        cm = n_pl
+    else:
+        for pl in plc:
+            if not isinstance(pl, dict):
+                continue
+            src = str(pl.get("source") or "").lower()
+            if "mock" in src or src == "network_parcel_mock_v1":
+                cm += 1
+            else:
+                ci += 1
+    integ = di + ci
+    tot = integ + dm + cm
+    pct = round(100.0 * integ / tot, 2) if tot else None
+    return {
+        "direct_integrated_leg_count": di,
+        "direct_mock_leg_count": dm,
+        "consolidated_parcel_pricing": ppr or None,
+        "consolidated_parcel_leg_count": n_pl,
+        "consolidated_integrated_parcel_leg_count": ci,
+        "consolidated_mock_parcel_leg_count": cm,
+        "integrated_parcel_adoption_pct": pct,
+    }
+
+
+def build_planning_run_ai_metrics_payload(
+    planning_out: dict[str, Any],
+    *,
+    engagement_id: str,
+    analysis: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Slim, evolving snapshot for Kiosk + JSONL tuning file (``meta.ai_metrics`` on the client).
+    """
+    matrix = planning_out.get("planning_comparison_matrix") or {}
+    cols = matrix.get("columns") if isinstance(matrix.get("columns"), dict) else {}
+
+    def _gt(key: str) -> float | None:
+        c = cols.get(key)
+        if not isinstance(c, dict):
+            return None
+        try:
+            return round(float(c.get("grand_total_usd") or 0), 2)
+        except (TypeError, ValueError):
+            return None
+
+    scen_fbm = planning_out.get("scenario_integrated_fbm")
+    scen_fbm = scen_fbm if isinstance(scen_fbm, dict) else None
+    qty = max(1, int((scen_fbm or {}).get("qty") or 1))
+
+    rec = str((scen_fbm or {}).get("recommendation") or "") if scen_fbm else ""
+    consolidated_win = bool(scen_fbm and rec == "linehaul_then_parcel")
+
+    linehaul_per_unit: float | None = None
+    if scen_fbm and scen_fbm.get("status") == "complete":
+        chosen = (scen_fbm.get("consolidated") or {}).get("chosen") or {}
+        lh = float((chosen.get("linehaul_leg") or {}).get("total_usd") or 0)
+        linehaul_per_unit = round(lh / qty, 6) if qty else None
+
+    tm = scen_fbm.get("transport_miles_v1") if scen_fbm else None
+    tm_summary = None
+    if isinstance(tm, dict):
+        dtot = (tm.get("direct") or {}).get("total_geodesic_miles_times_units")
+        ctot = (tm.get("consolidated") or {}).get("total_geodesic_miles_proxy")
+        d_road = (tm.get("direct") or {}).get("total_road_miles_times_units")
+        c_road = (tm.get("consolidated") or {}).get("total_road_miles_proxy")
+        try:
+            d_float = float(dtot) if dtot is not None else 0.0
+        except (TypeError, ValueError):
+            d_float = 0.0
+        co2_note = "Illustrative only; not audited."
+        co2_kg = round(d_float * CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE, 6) if d_float else 0.0
+        co2_road = None
+        try:
+            if d_road is not None and c_road is not None:
+                dr, cr = float(d_road), float(c_road)
+                co2_road = {
+                    "direct_road_proxy_kg": round(dr * CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE, 6),
+                    "consolidated_road_proxy_kg": round(cr * CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE, 6),
+                    "delta_direct_minus_consolidated_kg": round(
+                        (dr - cr) * CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE, 6
+                    ),
+                }
+        except (TypeError, ValueError):
+            co2_road = None
+        tm_summary = {
+            "distance_model": tm.get("distance_model"),
+            "human_note": tm.get("human_note"),
+            "direct_total_geodesic_miles_times_units": dtot,
+            "consolidated_total_geodesic_miles_proxy": ctot,
+            "direct_total_road_miles_times_units": d_road,
+            "consolidated_total_road_miles_proxy": c_road,
+            "delta_multi_origin_minus_consolidated_proxy_miles": tm.get(
+                "delta_multi_origin_minus_consolidated_proxy_miles"
+            ),
+            "inbound": tm.get("inbound"),
+            "illustrative_co2e_kg": tm.get("illustrative_co2e_kg"),
+            "co2e_kg_proxy_illustrative_from_direct_miles": co2_kg,
+            "co2e_proxy_note": co2_note,
+            "co2e_kg_per_package_mile_constant": CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE,
+            "co2e_road_proxy_kg_breakdown": co2_road,
+        }
+
+    dest_m = _destination_state_entropy_from_analysis(analysis)
+    mix = _parcel_pricing_mix_from_scenario(scen_fbm)
+
+    gt_current = _gt("current")
+    gt_fba = _gt("amazon_fba")
+    gt_single = _gt("amazon_fbm_single")
+    gt_multi = _gt("amazon_fbm_multi")
+
+    fba_vs_current = None
+    if gt_fba is not None and gt_current is not None:
+        fba_vs_current = round(gt_fba - gt_current, 2)
+    multi_vs_single = None
+    if gt_multi is not None and gt_single is not None:
+        multi_vs_single = round(gt_multi - gt_single, 2)
+    savings_vs_csv_primary = None
+    if gt_current is not None and gt_multi is not None:
+        savings_vs_csv_primary = round(gt_current - gt_multi, 2)
+
+    topo = scen_fbm.get("network_topology_summary") if scen_fbm else None
+
+    return {
+        "schema_version": "ai_metrics_v1",
+        "engagement_id": engagement_id,
+        "scenario_qty": qty,
+        "integrated_rate_shopping_effective": bool(planning_out.get("integrated_rate_shopping_effective")),
+        "matrix_grand_totals_usd": {
+            "current": gt_current,
+            "amazon_fba": gt_fba,
+            "amazon_fbm_single": gt_single,
+            "amazon_fbm_multi": gt_multi,
+        },
+        "deltas_usd": {
+            "fba_minus_current": fba_vs_current,
+            "multi_fbm_minus_single_fbm": multi_vs_single,
+            "current_minus_multi_fbm_baseline_savings_hint": savings_vs_csv_primary,
+        },
+        "fbm_recommendation": rec or None,
+        "consolidated_linehaul_win": consolidated_win,
+        "linehaul_usd_per_unit_chosen_path": linehaul_per_unit,
+        "parcel_pricing_mix": mix,
+        "destination_footprint": dest_m,
+        "transport_miles_v1_summary": tm_summary,
+        "network_topology_summary": topo if isinstance(topo, dict) else None,
     }

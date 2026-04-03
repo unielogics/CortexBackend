@@ -7,6 +7,20 @@ REFERENCE_PALLET_LENGTH_IN = 48.0
 REFERENCE_PALLET_WIDTH_IN = 40.0
 REFERENCE_PALLET_HEIGHT_IN = 70.0
 
+# Optional display slot for UI (LTL dock / user reference); not used for mock tariff math.
+DISPLAY_PALLET_LENGTH_IN = 42.0
+DISPLAY_PALLET_WIDTH_IN = 40.0
+DISPLAY_PALLET_HEIGHT_IN = 76.0
+
+
+def display_pallet_cuft() -> float:
+    return (
+        DISPLAY_PALLET_LENGTH_IN
+        * DISPLAY_PALLET_WIDTH_IN
+        * DISPLAY_PALLET_HEIGHT_IN
+        / 1728.0
+    )
+
 
 def reference_pallet_cuft() -> float:
     return (

@@ -139,9 +139,16 @@ def build_fbm_consolidated_path_warehouse_breakdown(
         include_putaway=False,
     )
     outb = estimate_fbm_outbound_pick_pack_usd(prof, qty=max(1, int(qty)))
+    rc = prof.get("rate_card") if isinstance(prof.get("rate_card"), dict) else {}
+    pal = rc.get("pallets") or {}
+    per_pallet_assembly = float(pal.get("per_pallet_assembly_usd") or 0.0)
+    slot_share = float(recv.get("pallet_slot_share_est") or 0.0)
+    pallet_assembly_subtotal = (
+        round(per_pallet_assembly * slot_share, 2) if per_pallet_assembly > 0 and slot_share > 0 else 0.0
+    )
     recv_sub = float(recv.get("receive_subtotal_usd") or 0.0)
     out_sub = float(outb.get("total_outbound_handling_usd") or 0.0)
-    total = round(recv_sub + out_sub, 2)
+    total = round(recv_sub + out_sub + pallet_assembly_subtotal, 2)
     pid = receive_node.get("pricing_profile_id") or default_profile_id
     return {
         "path": "consolidated_linehaul_then_parcel_fbm",
@@ -151,9 +158,18 @@ def build_fbm_consolidated_path_warehouse_breakdown(
             "pricing_profile_id": pid,
         },
         "inbound_receive_fee": recv,
+        "pallet_assembly_fee": {
+            "per_pallet_assembly_usd": per_pallet_assembly,
+            "pallet_slot_share_est": round(slot_share, 6),
+            "pallet_assembly_subtotal_usd": pallet_assembly_subtotal,
+            "method": "rate_card_pallets_per_pallet_assembly_times_pallet_slot_share_est",
+        },
         "outbound_pick_pack": outb,
         "total_warehouse_fbm_usd": total,
-        "note": "Receive assumes inbound ASN + pallet share; outbound is pick/pack + one batch packaging block.",
+        "note": (
+            "Receive assumes inbound ASN + pallet share; pallet assembly uses same slot share as receiving; "
+            "outbound is pick/pack + one batch packaging block."
+        ),
     }
 
 

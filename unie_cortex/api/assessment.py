@@ -6,7 +6,7 @@ from typing import Any
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from unie_cortex.config import settings
@@ -27,6 +27,7 @@ from unie_cortex.spine.tier1_ingest import (
     ingest_employees_csv,
     ingest_order_lines_csv,
 )
+from unie_cortex.utils.identifiers import normalize_asin_filter_param, normalize_upc_filter_param
 from unie_cortex.services.synthetic_tasks import ensure_synthetic_tasks_from_tier1, rebuild_synthetic_tasks_from_tier1
 from unie_cortex.services.csv_column_inference import (
     infer_order_financial_mapping,
@@ -54,10 +55,15 @@ from unie_cortex.network.scenario_vocabulary import (
     csv_baseline_comparison_title,
     normalize_csv_baseline_fulfillment,
 )
+from unie_cortex.services.metrics_tuning_file import append_metrics_tuning_record
 from unie_cortex.services.order_financial_planning import (
     build_fulfillment_comparison,
     build_order_financial_planning_four_views,
+    build_placement_mock_rate_grids_for_order_planning,
     build_planning_comparison_matrix_v1,
+    build_planning_run_ai_metrics_payload,
+    build_receiving_facility_resolution_v1,
+    build_seller_line_item_allocation_v1,
     compute_fba_inbound_for_planning,
     integrated_rate_shopping_effective,
     run_integrated_compare_for_order_planning,
@@ -69,6 +75,10 @@ from unie_cortex.spine.order_financial_ingest import (
 from unie_cortex.services.tri_modal_envelope import build_tri_modal_block
 from unie_cortex.services.warehouse_rds_demo import get_warehouse_rds_demo_bundle
 from unie_cortex.integrations.keepa import KeepaService, slim_keepa_product_response
+from unie_cortex.integrations.keepa_demand import (
+    extract_demand_from_keepa_payload,
+    slim_keepa_planning_for_seller_ui,
+)
 from unie_cortex.network.us_state_demand_share import (
     contiguous_state_demand_shares_normalized,
     demand_share_metadata,
@@ -142,6 +152,18 @@ class EngagementNetworkContextBody(BaseModel):
         None,
         description="e.g. amazon_us — used for fee tables, Keepa domain hints, and results labeling.",
     )
+    marketplace_seller_id: str | None = Field(
+        None,
+        description="Amazon seller id — used for Keepa buy-box share matching in seller enrichment.",
+    )
+    seller_listing_star_rating: float | None = Field(
+        None, ge=0, le=5, description="1–5 stars; converted to 0–100 pct when rating_12m_pct omitted."
+    )
+    seller_listing_rating_12m_pct: float | None = Field(
+        None, ge=0, le=100, description="Listing rating 0–100 (overrides star_rating when both sent)."
+    )
+    seller_listing_review_count: float | None = Field(None, ge=0)
+    seller_listing_is_fba: bool | None = None
 
 
 class ColumnMappingIn(BaseModel):
@@ -259,6 +281,13 @@ class OrderFinancialPlanningRunBody(BaseModel):
 class SellerKeepaEnrichBody(BaseModel):
     max_asins: int = Field(40, ge=1, le=80)
     force_refresh: bool = False
+    marketplace_seller_id: str | None = Field(
+        None, description="Overrides engagement network_context.marketplace_seller_id for this batch."
+    )
+    seller_listing_star_rating: float | None = Field(None, ge=0, le=5)
+    seller_listing_rating_12m_pct: float | None = Field(None, ge=0, le=100)
+    seller_listing_review_count: float | None = Field(None, ge=0)
+    seller_listing_is_fba: bool | None = None
 
 
 @router.post("/engagements", response_model=EngagementOut)
@@ -345,6 +374,16 @@ async def put_engagement_network_context(
         patch["supplier_cost_by_sku"] = dict(body.supplier_cost_by_sku)
     if body.marketplace_code is not None:
         patch["marketplace_code"] = (body.marketplace_code or "").strip() or None
+    if body.marketplace_seller_id is not None:
+        patch["marketplace_seller_id"] = (body.marketplace_seller_id or "").strip() or None
+    if body.seller_listing_star_rating is not None:
+        patch["seller_listing_star_rating"] = body.seller_listing_star_rating
+    if body.seller_listing_rating_12m_pct is not None:
+        patch["seller_listing_rating_12m_pct"] = body.seller_listing_rating_12m_pct
+    if body.seller_listing_review_count is not None:
+        patch["seller_listing_review_count"] = body.seller_listing_review_count
+    if body.seller_listing_is_fba is not None:
+        patch["seller_listing_is_fba"] = body.seller_listing_is_fba
     await store.engagement_set_network_context(engagement_id, patch)
     e2 = await store.engagement_get(engagement_id)
     return {"engagement_id": engagement_id, "network_context": e2.get("network_context") if e2 else {}}
@@ -392,12 +431,15 @@ async def upload_csv(
     engagement_id: str,
     kind: str = "labels",
     file: UploadFile = File(...),
+    filter_asin: str | None = Query(None, description="When kind=order_lines, only ingest rows matching this ASIN."),
+    filter_upc: str | None = Query(None, description="When kind=order_lines, only ingest rows matching this UPC/EAN."),
     store: CortexStore = Depends(get_store),
 ):
     e = await store.engagement_get(engagement_id)
     if not e:
         raise HTTPException(404, "Engagement not found")
     raw = await file.read()
+    ol_stats: dict[str, int] | None = None
     m = await store.mapping_latest(engagement_id)
     ml, mt = parse_mapping_payload(m)
     m_asn, m_ol, m_bl, m_emp = parse_tier1_mapping_blocks(m)
@@ -435,8 +477,26 @@ async def upload_csv(
     elif kind == "order_lines":
         if not m_ol:
             raise HTTPException(400, "Map order_lines columns first")
-        batch_id, n = await ingest_order_lines_csv(
-            store, engagement_id, raw, file.filename or "order_lines.csv", m_ol
+        fa: str | None = None
+        fu: str | None = None
+        if (filter_asin or "").strip():
+            try:
+                fa = normalize_asin_filter_param(filter_asin or "")
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+        if (filter_upc or "").strip():
+            try:
+                fu = normalize_upc_filter_param(filter_upc or "")
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+        batch_id, n, ol_stats = await ingest_order_lines_csv(
+            store,
+            engagement_id,
+            raw,
+            file.filename or "order_lines.csv",
+            m_ol,
+            filter_asin=fa,
+            filter_upc=fu,
         )
     elif kind == "billing":
         if not m_bl:
@@ -460,7 +520,11 @@ async def upload_csv(
     root.mkdir(parents=True, exist_ok=True)
     fp = root / f"{batch_id}_{file.filename or 'data.csv'}"
     fp.write_bytes(raw)
-    return {"batch_id": batch_id, "kind": kind, "row_count": n}
+    out: dict[str, Any] = {"batch_id": batch_id, "kind": kind, "row_count": n}
+    if ol_stats is not None:
+        out["rows_read"] = ol_stats.get("rows_read", 0)
+        out["rows_skipped_identifier"] = ol_stats.get("rows_skipped_identifier", 0)
+    return out
 
 
 @router.post("/engagements/{engagement_id}/runs", response_model=AuditRunOut)
@@ -629,11 +693,71 @@ async def seller_keepa_enrichment(
     nc_ctx = e.get("network_context") if isinstance(e.get("network_context"), dict) else {}
     mp, domain = _seller_marketplace_code_and_keepa_domain(None, nc_ctx)
     tenant_id = (x_unie_tenant_id or "").strip() or "__default__"
+    sid = (b.marketplace_seller_id or "").strip() or None
+    if not sid:
+        sid = (str(nc_ctx.get("marketplace_seller_id") or "")).strip() or None
+
+    rating_pct: float | None = None
+    if b.seller_listing_rating_12m_pct is not None:
+        try:
+            rating_pct = float(b.seller_listing_rating_12m_pct)
+        except (TypeError, ValueError):
+            rating_pct = None
+    elif b.seller_listing_star_rating is not None:
+        try:
+            rating_pct = float(b.seller_listing_star_rating) * 20.0
+        except (TypeError, ValueError):
+            rating_pct = None
+    if rating_pct is None and nc_ctx.get("seller_listing_rating_12m_pct") is not None:
+        try:
+            rating_pct = float(nc_ctx["seller_listing_rating_12m_pct"])
+        except (TypeError, ValueError):
+            rating_pct = None
+    if rating_pct is None and nc_ctx.get("seller_listing_star_rating") is not None:
+        try:
+            rating_pct = float(nc_ctx["seller_listing_star_rating"]) * 20.0
+        except (TypeError, ValueError):
+            rating_pct = None
+
+    rev: float | None = None
+    if b.seller_listing_review_count is not None:
+        try:
+            rev = float(b.seller_listing_review_count)
+        except (TypeError, ValueError):
+            rev = None
+    elif nc_ctx.get("seller_listing_review_count") is not None:
+        try:
+            rev = float(nc_ctx["seller_listing_review_count"])
+        except (TypeError, ValueError):
+            rev = None
+
+    is_fba: bool | None = b.seller_listing_is_fba
+    if is_fba is None and nc_ctx.get("seller_listing_is_fba") is not None:
+        is_fba = bool(nc_ctx["seller_listing_is_fba"])
+
     svc = KeepaService(store=store)
     by_asin: dict[str, Any] = {}
     for asin in asins:
         raw = await svc.product(asin, domain=domain, tenant_id=tenant_id, force_refresh=b.force_refresh)
-        by_asin[asin] = slim_keepa_product_response(raw if isinstance(raw, dict) else None)
+        slim_cat = slim_keepa_product_response(raw if isinstance(raw, dict) else None)
+        planning_blob: dict[str, Any] | None = None
+        if isinstance(raw, dict) and raw.get("ok") and isinstance(raw.get("data"), dict):
+            data = raw["data"]
+            prods = data.get("products")
+            if isinstance(prods, list) and prods and isinstance(prods[0], dict):
+                demand = extract_demand_from_keepa_payload(
+                    {"products": [prods[0]]},
+                    marketplace_seller_id=sid,
+                    seller_listing_rating_12m_pct=rating_pct,
+                    seller_listing_review_count=rev,
+                    seller_listing_is_fba=is_fba,
+                )
+                planning_blob = slim_keepa_planning_for_seller_ui(
+                    demand, marketplace_seller_id=sid
+                )
+        if isinstance(slim_cat, dict):
+            slim_cat = {**slim_cat, "planning": planning_blob}
+        by_asin[asin] = slim_cat
         await asyncio.sleep(0.25)
     return {
         "engagement_id": engagement_id,
@@ -806,12 +930,45 @@ async def order_financial_planning_run_route(
         fba_inbound_economics=fba_inbound_fin,
         csv_baseline_fulfillment=csv_base,
     )
+    scen_fbm_for_recv = out.get("scenario_integrated_fbm")
+    wn_recv = (
+        scen_fbm_for_recv.get("warehouse_network")
+        if isinstance(scen_fbm_for_recv, dict)
+        else None
+    )
+    recv_res = build_receiving_facility_resolution_v1(
+        engagement_network_context=nc_ctx,
+        warehouse_network=wn_recv if isinstance(wn_recv, dict) else None,
+    )
+    if recv_res:
+        out["receiving_facility_resolution"] = recv_res
+    sku_rollup_plan = rollup_order_financial_facts_by_sku(rows)
+    line_alloc = build_seller_line_item_allocation_v1(
+        sku_rollup=sku_rollup_plan,
+        planning_matrix=out["planning_comparison_matrix"],
+    )
+    if line_alloc:
+        out["seller_line_item_allocation"] = line_alloc
     out["planning_four_views"] = build_order_financial_planning_four_views(
         analysis=analysis,
         scenario_fbm=out.get("scenario_integrated_fbm"),
         scenario_fba=out.get("scenario_integrated_fba"),
         csv_baseline_fulfillment=csv_base,
     )
+    scen_fbm_grid = out.get("scenario_integrated_fbm")
+    if isinstance(scen_fbm_grid, dict) and scen_fbm_grid.get("status") == "complete":
+        net_g = scen_fbm_grid.get("warehouse_network")
+        pmg = build_placement_mock_rate_grids_for_order_planning(
+            warehouse_network=net_g if isinstance(net_g, dict) else None,
+            rows=rows,
+            weight_lb_per_unit=float(b.weight_lb_per_unit),
+            length_in=float(b.length_in),
+            width_in=float(b.width_in),
+            height_in=float(b.height_in),
+            cfg=settings,
+        )
+        if pmg:
+            out["placement_mock_rate_grids"] = pmg
     out["tri_modal"] = build_tri_modal_block(
         original_input={
             "entry_mode": "direct_api",
@@ -823,6 +980,10 @@ async def order_financial_planning_run_route(
         baseline_unie=dict(out),
         nvidia_enhanced=None,
     )
+    out["ai_metrics"] = build_planning_run_ai_metrics_payload(
+        out, engagement_id=engagement_id, analysis=analysis
+    )
+    append_metrics_tuning_record(engagement_id=engagement_id, payload=out["ai_metrics"])
     return out
 
 @router.post("/multi-dc-preview")
@@ -939,6 +1100,7 @@ async def audit_synthesis_route(
         billing_rows=bl_rows,
         employee_rows=emp_rows,
         network_context=nc,
+        order_financial_rows=of_rows,
     )
     wh_intel["label_network_insights"] = build_label_network_insights(
         labels=labels,

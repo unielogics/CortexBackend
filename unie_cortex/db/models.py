@@ -505,3 +505,20 @@ class FacilityFreightProfileRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint("tenant_id", "location_id", name="uq_facility_freight_tenant_loc"),)
+
+
+class DistributionImpactRow(Base):
+    """PRO / item intelligence: estimated monthly units per warehouse or freight leg."""
+
+    __tablename__ = "distribution_impacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), index=True)
+    party_type: Mapped[str] = mapped_column(String(32), index=True)
+    party_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    party_name: Mapped[str] = mapped_column(String(512))
+    estimate_monthly_units: Mapped[float] = mapped_column(Float)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    operational_warehouse_id: Mapped[str] = mapped_column(String(64), index=True)
+    engagement_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

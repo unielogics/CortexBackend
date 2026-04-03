@@ -53,6 +53,11 @@ class Settings(BaseSettings):
         "./uploads",
         validation_alias=AliasChoices("UPLOAD_DIR", "upload_dir"),
     )
+    distribution_local_export_dir: str | None = Field(
+        None,
+        validation_alias=AliasChoices("DISTRIBUTION_LOCAL_EXPORT_DIR", "distribution_local_export_dir"),
+        description="When set, write distribution_{job_id}.json here after each PRO run (server filesystem).",
+    )
 
     rate_shopping_url: str | None = Field(
         None,
@@ -246,6 +251,28 @@ class Settings(BaseSettings):
         ),
         description="Hard cap on auto-expanded warehouse count (US regional archetypes)",
     )
+    smart_network_monthly_orders_per_additional_warehouse: float = Field(
+        1000.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MONTHLY_ORDERS_PER_ADDITIONAL_WAREHOUSE",
+            "smart_network_monthly_orders_per_additional_warehouse",
+        ),
+        ge=1.0,
+        description=(
+            "Multi-DC target count scales as min(max_warehouses, base_multi + floor(monthly_units / this)). "
+            "Example: 72/mo → 2 DCs; 1000/mo → 3 DCs."
+        ),
+    )
+    smart_network_min_multi_dc_warehouse_count: int = Field(
+        2,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MIN_MULTI_DC_WAREHOUSE_COUNT",
+            "smart_network_min_multi_dc_warehouse_count",
+        ),
+        ge=2,
+        le=6,
+        description="Minimum warehouses in the multi-DC recommendation option (before volume-based steps).",
+    )
     smart_network_default_lane_cost_per_lb: float = Field(
         0.15,
         validation_alias=AliasChoices(
@@ -253,6 +280,37 @@ class Settings(BaseSettings):
             "smart_network_default_lane_cost_per_lb",
         ),
         description="Star replenishment $/lb from hub to each spoke when auto-building lanes",
+    )
+    smart_network_auto_trim_client_warehouses: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_AUTO_TRIM_CLIENT_WAREHOUSES",
+            "smart_network_auto_trim_client_warehouses",
+        ),
+        description=(
+            "When auto_expand is off, trim client-supplied warehouses to MOQ/volume-feasible count "
+            "(same gates as smart network expand; does not add nodes outside the request)."
+        ),
+    )
+    planning_default_target_days_cover: float = Field(
+        75.0,
+        validation_alias=AliasChoices(
+            "PLANNING_DEFAULT_TARGET_DAYS_COVER",
+            "planning_default_target_days_cover",
+        ),
+        ge=1.0,
+        le=365.0,
+        description="Default ~60–90d stocking target for placement summaries and allocation baselines (units = daily × days).",
+    )
+    network_placement_adjustment_max_days_cover: float = Field(
+        90.0,
+        validation_alias=AliasChoices(
+            "NETWORK_PLACEMENT_ADJUSTMENT_MAX_DAYS_COVER",
+            "network_placement_adjustment_max_days_cover",
+        ),
+        ge=30.0,
+        le=365.0,
+        description="Cap extended cover in network_placement_adjustment (MOQ batch sizing) so planning does not imply multi-month buys.",
     )
     network_consolidated_linehaul_cost_multiplier: float = Field(
         0.62,
@@ -265,6 +323,17 @@ class Settings(BaseSettings):
         description=(
             "Scales mock LTL/FTL linehaul USD on the consolidated (hub→receive→parcel) path only; "
             "direct multi-origin parcel is unchanged. <1.0 reflects contracted lanes vs conservative mock."
+        ),
+    )
+    seller_mixed_pallet_linehaul_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SELLER_MIXED_PALLET_LINEHAUL_ENABLED",
+            "seller_mixed_pallet_linehaul_enabled",
+        ),
+        description=(
+            "When true, order-planning integrated compare uses mixed-pallet fraction linehaul on the consolidated leg "
+            "(HTTP /scenarios/compare-v2-integrated unchanged; default false there)."
         ),
     )
     us_state_demand_forecast_id: str = Field(
@@ -789,6 +858,19 @@ class Settings(BaseSettings):
         le=120.0,
         validation_alias=AliasChoices(
             "ROAD_MATRIX_REQUEST_TIMEOUT_SECONDS", "road_matrix_request_timeout_seconds"
+        ),
+    )
+    direct_parcel_network_detour_multiplier: float = Field(
+        1.0,
+        ge=1.0,
+        le=3.0,
+        validation_alias=AliasChoices(
+            "DIRECT_PARCEL_NETWORK_DETOUR_MULTIPLIER",
+            "direct_parcel_network_detour_multiplier",
+        ),
+        description=(
+            "Scales only direct multi-origin mile totals in transport_miles_v1 (geodesic + road proxy); "
+            "1.0 = off. Optional heuristic (~1.1–1.25) when direct O→D understates parcel hub circuit miles."
         ),
     )
 

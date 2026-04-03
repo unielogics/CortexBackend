@@ -335,6 +335,7 @@ def compare_scenario_v2(
         reason = f"Savings ${savings_vs_direct} below min_savings_usd ${min_savings_usd}; no adjustment"
 
     uc = sku_cube_cuft(length_in, width_in, height_in, 1)
+    slot_disp = pallet_defaults.display_pallet_cuft()
     cube_and_pallet = {
         "unit_cube_cuft": round(uc, 6),
         "reference_pallet_dims_in": {
@@ -345,6 +346,16 @@ def compare_scenario_v2(
         "reference_pallet_cuft": round(pallet_defaults.reference_pallet_cuft(), 4),
         "max_units_fit_reference_pallet_floor_est": pallet_defaults.max_units_on_reference_pallet(
             length_in, width_in, height_in
+        ),
+        "display_pallet_dims_in": {
+            "length": pallet_defaults.DISPLAY_PALLET_LENGTH_IN,
+            "width": pallet_defaults.DISPLAY_PALLET_WIDTH_IN,
+            "height": pallet_defaults.DISPLAY_PALLET_HEIGHT_IN,
+        },
+        "display_pallet_cuft": round(slot_disp, 4),
+        "unit_fraction_of_display_pallet_slot": round(
+            min(1.0, uc / slot_disp) if uc > 0 and slot_disp > 0 else 0.0,
+            6,
         ),
         "note": "Pallet is a reference slot for cube math; carrier rules vary.",
     }

@@ -45,6 +45,10 @@ def test_keepa_extract_monthly_sold():
     assert "listing_profile" in d
     assert "inventory_placement_summary" in d
     assert d["inventory_placement_summary"]["suggested_total_units_for_target_cover"] is not None
+    h6 = d.get("monthly_sales_history_6m")
+    assert isinstance(h6, dict)
+    assert h6.get("six_month_mean_units") == pytest.approx(20.0)
+    assert h6.get("scaling_basis") == "seller_planning_monthly_mid_x6"
 
 
 def test_keepa_monthly_sold_category_dampens_books():
@@ -194,6 +198,15 @@ def test_monthly_sales_6m_placeholder_without_csv():
     assert out["six_month_mean_units"] == pytest.approx(100.0)
 
 
+def test_monthly_sales_6m_placeholder_scaled_to_seller_planning_mid():
+    p = {"monthlySold": 600, "lastUpdate": 5_000_000}
+    out = extract_keepa_monthly_sales_history_6m(p, seller_monthly_units_mid=40.0)
+    assert out["status"] == "approximate"
+    assert out["scaling_basis"] == "seller_planning_monthly_mid_x6"
+    assert out["six_month_mean_units"] == pytest.approx(40.0)
+    assert all(m["units_est"] == pytest.approx(40.0) for m in out["months"])
+
+
 def test_peer_cohort_averages_tied_distances():
     rot = {
         "status": "complete",
@@ -334,6 +347,25 @@ def test_allocation_min_transfer_enriches_legs_and_adjusts_cover():
     npa = line["network_placement_adjustment"]
     assert npa["max_replenishment_months_applied"] == 2
     assert npa["adjusted_suggested_total_units_for_target_cover"] == 200
+    assert npa["baseline_target_days_cover"] == 75.0
+
+
+def test_allocation_min_transfer_caps_extended_cover_at_config_max():
+    """MOQ implies >90d of flow; stated adjusted cover must not exceed planning cap."""
+    out = allocate_skus(
+        [{"sku": "S1", "monthly_units": 100, "weight_lb": 2.0, "cube_cuft": 0.5}],
+        [{"id": "hub", "target_share_pct": 75}, {"id": "east", "target_share_pct": 25}],
+        [{"from_id": "hub", "to_id": "east", "cost_per_lb": 0.1}],
+        hub_id="hub",
+        min_inter_warehouse_transfer_units=100.0,
+        max_months_to_meet_min_transfer=12,
+    )
+    line = out["lines"][0]
+    npa = line["network_placement_adjustment"]
+    assert npa["max_replenishment_months_applied"] == 4
+    assert npa["adjusted_target_days_cover"] == 90.0
+    assert npa["raw_extended_target_days_cover_uncapped"] == 120.0
+    assert npa["adjusted_suggested_total_units_for_target_cover"] == 300
 
 
 def test_fulfillment_network_comparison_single_hub_has_zero_transfer():
@@ -350,6 +382,8 @@ def test_fulfillment_network_comparison_single_hub_has_zero_transfer():
     }
     cmp = build_fulfillment_network_comparison(alloc, grid, {}, [{"id": "hub"}, {"id": "east"}])
     assert cmp["status"] == "complete"
+    assert cmp.get("executed_warehouse_node_count") == 2
+    assert cmp.get("inter_warehouse_modeling_note") is None
     row = cmp["per_sku"][0]
     assert row["allocated_network"]["components_usd_per_unit"]["inter_warehouse_transfer_usd_per_unit"] > 0
     for sh in row["single_hub_scenarios"]:
@@ -366,6 +400,22 @@ def test_fulfillment_network_comparison_single_hub_has_zero_transfer():
     )
     assert xfer_row["single_hub_usd_per_unit"] == 0.0
     assert row["inter_warehouse_flow"]["legs"]
+
+
+def test_fulfillment_network_comparison_single_exec_node_sets_inter_warehouse_note():
+    alloc = allocate_skus(
+        [{"sku": "S1", "monthly_units": 100, "weight_lb": 2.0, "cube_cuft": 0.5}],
+        [{"id": "hub", "target_share_pct": 100.0}],
+        [],
+        hub_id="hub",
+    )
+    alloc["lines"][0]["weight_lb_for_economics"] = 2.0
+    grid = {"status": "complete", "mean_mock_parcel_usd_by_warehouse": {"hub": 10.0}}
+    cmp = build_fulfillment_network_comparison(alloc, grid, {}, [{"id": "hub"}])
+    assert cmp["status"] == "complete"
+    assert cmp.get("executed_warehouse_node_count") == 1
+    note = cmp.get("inter_warehouse_modeling_note")
+    assert isinstance(note, str) and "multi_dc_parallel_scenario" in note
 
 
 def test_derive_inventory_carry_sawtooth_and_cohort():

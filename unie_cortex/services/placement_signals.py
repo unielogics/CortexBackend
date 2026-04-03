@@ -16,6 +16,11 @@ def build_placement_hints(
     buybox_context: dict[str, Any] | None,
     high_velocity_threshold: float = 4000.0,
 ) -> dict[str, Any]:
+    """
+    ``monthly_units_est_mid`` must be **seller-scoped planning** mid (``monthly_units_est_mid`` from
+    Keepa extract after buy-box / cohort adjustment) — not raw ASIN ``monthlySold``. Thresholds gate
+    multi-node hints on that planning number.
+    """
     bb = buybox_context or {}
     mid = float(monthly_units_est_mid or 0.0)
     comp = (bb.get("competition_level") or "unknown").lower()
@@ -28,13 +33,16 @@ def build_placement_hints(
     if mid >= high_velocity_threshold:
         min_active_warehouses = max(min_active_warehouses, 2)
         reasons.append(
-            f"Estimated marketplace velocity (~{mid:,.0f} units/mo) supports multi-node stock for last-mile savings."
+            f"Seller-scoped planning velocity (~{mid:,.0f} units/mo) supports multi-node stock for last-mile savings."
         )
 
-    if comp in ("high", "medium"):
+    # Competition alone should not expand the network when seller-scoped planning volume is tiny.
+    competition_expand_floor = 150.0
+    if comp in ("high", "medium") and mid >= competition_expand_floor:
         min_active_warehouses = max(min_active_warehouses, 2)
         reasons.append(
-            "Elevated seller/offer competition on the listing — diversify geography to protect service levels."
+            "Elevated seller/offer competition on the listing — diversify geography to protect service levels "
+            f"(planning mid ≥ {competition_expand_floor:,.0f} units/mo)."
         )
 
     third_party_cautions = [

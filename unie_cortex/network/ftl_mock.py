@@ -44,6 +44,7 @@ def mock_ftl_quote_usd(
             "min_applied": total == min_charge_usd and subtotal < min_charge_usd,
         },
         "source": "network_ftl_mock_v1",
+        "display_carrier_name": "Unie mock FTL (deterministic — not carrier-rated)",
     }
 
 

@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from unie_cortex.db.store import CortexStore
-from unie_cortex.integrations.keepa_demand import extract_demand_from_keepa_payload, seller_inputs_from_catalog_row
+from unie_cortex.integrations.keepa_demand import extract_demand_from_keepa_payload
+from unie_cortex.services.planning_overrides import (
+    apply_planning_monthly_units_overrides,
+    merge_planning_seller_inputs,
+)
 from unie_cortex.integrations.keepa import KeepaService
 from unie_cortex.config import settings
 from unie_cortex.services.allocation_v1 import allocate_skus
+from unie_cortex.services.distribution_impact import (
+    build_distribution_envelope,
+    build_distribution_impact_rows,
+    write_distribution_local_file,
+)
 from unie_cortex.services.fulfillment_network_comparison import build_fulfillment_network_comparison
 from unie_cortex.services.item_intelligence_cuopt_overview import (
     build_item_intelligence_multi_dc_tri_modal,
@@ -31,7 +42,11 @@ from unie_cortex.network.us_state_demand_share import (
     build_blended_state_demand_weights_from_labels,
     demand_share_metadata,
 )
-from unie_cortex.services.smart_warehouse_network import recommend_warehouse_network
+from unie_cortex.services.smart_warehouse_network import (
+    build_warehouse_network_recommendation_options,
+    recommend_warehouse_network,
+    trim_client_warehouse_network_to_demand,
+)
 from unie_cortex.services.sku_intelligence_merge import (
     compute_own_shipping_stats,
     merge_shipping_intelligence,
@@ -107,7 +122,8 @@ def apply_product_origin_to_demand_by_sku(
         lp = dem.get("listing_profile") if isinstance(dem.get("listing_profile"), dict) else {}
         title = lp.get("title") or inv.get("title")
         title_s = str(title).strip() if title else None
-        t_cover = float(inv.get("target_days_cover") or 30.0)
+        default_td = float(getattr(settings, "planning_default_target_days_cover", 75.0) or 75.0)
+        t_cover = float(inv.get("target_days_cover") or default_td)
 
         inv_new = build_inventory_placement_summary(
             asin=asin_s,
@@ -121,6 +137,193 @@ def apply_product_origin_to_demand_by_sku(
             product_origin_region=p_region,
         )
         dem["inventory_placement_summary"] = inv_new
+
+
+def _multi_dc_option_from_wno(warehouse_network_recommendation_options: dict[str, Any]) -> dict[str, Any] | None:
+    opts = warehouse_network_recommendation_options.get("options")
+    if not isinstance(opts, list):
+        return None
+    for o in opts:
+        if isinstance(o, dict) and str(o.get("option_key") or "").strip() == "multi_dc":
+            return o
+    return None
+
+
+def _normalize_multi_dc_warehouse_rows(selected: list[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in selected:
+        if not isinstance(row, dict):
+            continue
+        wid = str(row.get("id") or "").strip()
+        if not wid:
+            continue
+        out.append(dict(row))
+    return out
+
+
+async def _build_multi_dc_parallel_scenario(
+    *,
+    store: CortexStore,
+    tenant_id: str,
+    warehouse_network_recommendation_options: dict[str, Any],
+    blended_state_weights: dict[str, float],
+    label_demand_weight_meta: dict[str, Any],
+    median_w: float,
+    n_mock: int,
+    tie: float,
+    assign_mode: str,
+    alloc_inputs: list[dict[str, Any]],
+    merged_intel_by_sku: dict[str, dict[str, Any]],
+    demand_by_sku: dict[str, dict[str, Any]],
+    catalog_by_sku: dict[str, Any],
+    flow_model: str,
+    default_pid: str,
+    fee_recv: float,
+    fee_out: float,
+    fee_stor: float,
+    min_xfer: float,
+    max_m_xfer: int,
+    seller_lh: bool,
+    lh_mult: float,
+    nexus_states: list[Any],
+) -> dict[str, Any]:
+    """
+    Second full pipeline branch for the multi-DC row in ``warehouse_network_recommendation_options``:
+    mock grids, allocation, landed economics, fulfillment comparison (non-zero inter-DC when ≥2 nodes).
+    """
+    base_skip: dict[str, Any] = {
+        "schema_version": "multi_dc_parallel_scenario_v1",
+        "status": "skipped",
+        "source_option_key": "multi_dc",
+    }
+    if str(warehouse_network_recommendation_options.get("status") or "") != "complete":
+        return {
+            **base_skip,
+            "reason": "warehouse_network_recommendation_options_not_complete",
+            "message": str(warehouse_network_recommendation_options.get("message") or ""),
+        }
+    opt = _multi_dc_option_from_wno(warehouse_network_recommendation_options)
+    if not opt:
+        return {**base_skip, "reason": "multi_dc_option_missing"}
+    raw_wh = opt.get("selected_warehouses")
+    if not isinstance(raw_wh, list):
+        return {**base_skip, "reason": "selected_warehouses_invalid"}
+    multi_wh = _normalize_multi_dc_warehouse_rows(raw_wh)
+    if len(multi_wh) < 2:
+        return {**base_skip, "reason": "fewer_than_two_warehouses", "applied_warehouse_count": len(multi_wh)}
+
+    lanes_m = [dict(ln) for ln in (opt.get("lanes") or []) if isinstance(ln, dict)]
+    hub_m = str(opt.get("hub_warehouse_id") or "").strip() or str(multi_wh[0].get("id") or "")
+
+    grids = build_warehouse_mock_placement_grids(
+        multi_wh,
+        n_destinations_per_warehouse=max(5, min(100, n_mock)),
+        relative_midpoint_tie_band=max(0.0, tie),
+        default_weight_lb=max(0.1, median_w),
+        state_demand_weights=blended_state_weights,
+        state_primary_assignment=assign_mode,
+    )
+    if grids.get("status") != "complete":
+        return {
+            **base_skip,
+            "reason": "placement_mock_rate_grids_incomplete",
+            "message": str(grids.get("message") or ""),
+            "placement_mock_rate_grids": grids,
+        }
+
+    dw_block = dict(grids.get("demand_weighting") or {})
+    grids = {**grids, "demand_weighting": {**label_demand_weight_meta, **dw_block}}
+    pa = grids.get("parcel_assumptions")
+    if isinstance(pa, dict):
+        pa = {**pa, "catalog_median_weight_lb": round(float(median_w), 4)}
+        grids = {**grids, "parcel_assumptions": pa}
+
+    wh_for_alloc, placement_share_src = merge_warehouse_target_shares_for_placement(
+        multi_wh,
+        grids,
+        preserve_request_shares=True,
+    )
+    alloc_positive = [x for x in alloc_inputs if float(x.get("monthly_units") or 0) > 0]
+    allocation_m = allocate_skus(
+        alloc_positive,
+        wh_for_alloc,
+        lanes_m,
+        hub_id=hub_m,
+        min_inter_warehouse_transfer_units=min_xfer if min_xfer > 0 else None,
+        max_months_to_meet_min_transfer=max(1, max_m_xfer),
+        seller_mixed_pallet_linehaul=seller_lh,
+        consolidated_linehaul_cost_multiplier=lh_mult,
+    )
+    weight_by_sku = {str(x["sku"]): float(x.get("weight_lb") or 0.0) for x in alloc_inputs if x.get("sku")}
+    for line in allocation_m.get("lines") or []:
+        sku = line.get("sku")
+        if sku:
+            line["weight_lb_for_economics"] = weight_by_sku.get(str(sku), 0.0)
+
+    economics_m = build_item_intelligence_economics(
+        allocation_m,
+        grids,
+        merged_intel_by_sku,
+        wh_for_alloc,
+        demand_by_sku=demand_by_sku,
+        default_inbound_receiving_per_unit_usd=fee_recv,
+        default_outbound_handling_per_unit_usd=fee_out,
+        default_storage_per_unit_month_usd=fee_stor,
+        inbound_flow_model=flow_model,
+        default_pricing_profile_id=default_pid,
+        catalog_by_sku=catalog_by_sku,
+    )
+    fnc_m = build_fulfillment_network_comparison(
+        allocation_m,
+        grids,
+        merged_intel_by_sku,
+        wh_for_alloc,
+        default_inbound_receiving_per_unit_usd=fee_recv,
+        default_outbound_handling_per_unit_usd=fee_out,
+        default_storage_per_unit_month_usd=fee_stor,
+        demand_by_sku=demand_by_sku,
+    )
+    dw_for_tax = grids.get("demand_weighting") if isinstance(grids.get("demand_weighting"), dict) else {}
+    tax_placement_extra = await enrich_sales_tax_modeling_for_placement(
+        store, tenant_id, dw_for_tax if isinstance(dw_for_tax, dict) else {}
+    )
+    fnc_m = {
+        **fnc_m,
+        "sales_tax_modeling": {
+            "tenant_nexus_states": nexus_states,
+            "tax_reference_scope": "__system__",
+            "endpoints": {
+                "sync": "POST /v1/integrations/tax/sync",
+                "tenant_nexus": "PUT /v1/integrations/tax/tenant-nexus",
+                "estimate": "POST /v1/integrations/tax/estimate",
+                "us_reference_rates": "GET /v1/integrations/tax/us-reference-rates",
+            },
+            "note": (
+                "Sales tax is an expense when nexus exists in the destination state; "
+                "configure nexus and run tax sync for rate tables."
+            ),
+            **tax_placement_extra,
+        },
+    }
+
+    return {
+        "schema_version": "multi_dc_parallel_scenario_v1",
+        "status": "complete",
+        "source_option_key": "multi_dc",
+        "note": (
+            "Parallel branch: same catalog demand and economics settings as the executed run, "
+            "but warehouses/lanes/hub taken from warehouse_network_recommendation_options.multi_dc. "
+            "Use for UI comparison vs root allocation / fulfillment_network_comparison."
+        ),
+        "warehouses": wh_for_alloc,
+        "lanes": lanes_m,
+        "hub_warehouse_id": hub_m,
+        "placement_mock_rate_grids": grids,
+        "placement_allocation_share_source": placement_share_src,
+        "allocation": allocation_m,
+        "landed_cost_economics": economics_m,
+        "fulfillment_network_comparison": fnc_m,
+    }
 
 
 async def run_item_intelligence(
@@ -151,7 +354,25 @@ async def run_item_intelligence(
     product_origin_postal: str | None = None,
     product_origin_city: str | None = None,
     product_origin_region: str | None = None,
+    job_id: str | None = None,
+    planning_monthly_units_override_by_sku: dict[str, float] | None = None,
+    planning_marketplace_seller_id_by_sku: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    jid = (job_id or "").strip() or str(uuid4())
+    planning_context: dict[str, Any] = {
+        "planning_marketplace_seller_id_by_sku_requested": dict(planning_marketplace_seller_id_by_sku)
+        if planning_marketplace_seller_id_by_sku
+        else {},
+        "planning_monthly_units_override_by_sku_requested": dict(planning_monthly_units_override_by_sku)
+        if planning_monthly_units_override_by_sku
+        else {},
+        "note": (
+            "planning_marketplace_seller_id_by_sku overrides catalog marketplace_seller_id for Keepa extract only on "
+            "this run (buy-box history / listing match). planning_monthly_units_override_by_sku replaces modeled "
+            "monthly_units_est_* after Keepa — allocation, network, LTL, and placement (after origin) follow the override."
+        ),
+    }
+    request_seed_warehouses = [dict(w) for w in warehouses if isinstance(w, dict)]
     catalog_raw = await store.sku_catalog_list(tenant_id, limit=2000)
     catalog = [attach_signature_to_catalog_row(dict(r)) for r in catalog_raw]
     if sku_filter:
@@ -201,7 +422,7 @@ async def run_item_intelligence(
                 tenant_id, asin, domain=domain, max_age_days=max(1, ttl)
             )
             if cached_snap and cached_snap.get("data"):
-                si = seller_inputs_from_catalog_row(row)
+                si = merge_planning_seller_inputs(row, sku, planning_marketplace_seller_id_by_sku)
                 derived = extract_demand_from_keepa_payload(
                     cached_snap["data"],
                     marketplace_seller_id=si["marketplace_seller_id"],
@@ -235,7 +456,7 @@ async def run_item_intelligence(
                 keepa_errors.append({"sku": sku, "asin": asin, "detail": kp})
             continue
         raw = kp.get("data") or {}
-        si = seller_inputs_from_catalog_row(row)
+        si = merge_planning_seller_inputs(row, sku, planning_marketplace_seller_id_by_sku)
         derived = extract_demand_from_keepa_payload(
             raw,
             marketplace_seller_id=si["marketplace_seller_id"],
@@ -247,6 +468,9 @@ async def run_item_intelligence(
             tenant_id, asin, domain, derived, sku=sku, method="keepa_v1"
         )
         demand_by_sku[sku] = {"sku": sku, "asin": asin, **derived, "from_store": False}
+
+    override_meta = apply_planning_monthly_units_overrides(demand_by_sku, planning_monthly_units_override_by_sku)
+    planning_context["planning_monthly_units_override_result"] = override_meta
 
     alloc_inputs = []
     for row in catalog:
@@ -283,7 +507,39 @@ async def run_item_intelligence(
     weights = [float(x.get("weight_lb") or 0) for x in alloc_inputs if float(x.get("weight_lb") or 0) > 0]
     median_w = sorted(weights)[len(weights) // 2] if weights else 2.0
 
+    monthly_total_for_network = sum(float(x.get("monthly_units") or 0) for x in alloc_inputs)
+    catalog_skus_for_network = {str(r["sku"]) for r in catalog if r.get("sku")}
+    min_xfer_pl = float(getattr(settings, "placement_min_inter_warehouse_transfer_units", 100.0) or 0.0)
+    max_m_xfer = int(getattr(settings, "placement_max_months_min_transfer_horizon", 12) or 12)
+    warehouse_network_recommendation_options = build_warehouse_network_recommendation_options(
+        monthly_total_demand_units=monthly_total_for_network,
+        seed_warehouses=request_seed_warehouses,
+        hub_warehouse_id=hub_warehouse_id,
+        labels=labels,
+        catalog_skus=catalog_skus_for_network,
+        weight_lb=max(0.1, float(median_w)),
+        min_units_per_warehouse_monthly_flow=float(
+            getattr(settings, "smart_network_min_units_per_warehouse_monthly_flow", 100.0) or 100.0
+        ),
+        min_units_per_warehouse_when_three_or_more_nodes=float(
+            getattr(
+                settings,
+                "smart_network_min_units_per_warehouse_when_three_or_more_nodes",
+                500.0,
+            )
+            or 500.0
+        ),
+        max_warehouses_cap=int(getattr(settings, "smart_network_max_warehouses", 6) or 6),
+        candidate_pool=warehouse_candidate_pool,
+        default_lane_cost_per_lb=float(
+            getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
+        ),
+        min_inter_warehouse_transfer_units=min_xfer_pl if min_xfer_pl > 0 else None,
+        max_months_to_meet_min_transfer=max_m_xfer,
+    )
+
     recommended_network: dict[str, Any] | None = None
+    client_warehouse_network_trim: dict[str, Any] | None = None
     preserve_shares_for_merge = preserve_warehouse_target_shares
     if auto_expand_warehouse_network:
         monthly_total = sum(float(x.get("monthly_units") or 0) for x in alloc_inputs)
@@ -320,6 +576,46 @@ async def run_item_intelligence(
         lanes = [dict(ln) for ln in (recommended_network.get("lanes") or [])]
         hub_warehouse_id = recommended_network.get("hub_warehouse_id") or hub_warehouse_id
         preserve_shares_for_merge = False
+    elif bool(getattr(settings, "smart_network_auto_trim_client_warehouses", True)):
+        wh_with_id = [
+            dict(w) for w in warehouses if isinstance(w, dict) and str(w.get("id") or "").strip()
+        ]
+        if len(wh_with_id) > 1:
+            monthly_total = sum(float(x.get("monthly_units") or 0) for x in alloc_inputs)
+            catalog_skus_trim = {str(r["sku"]) for r in catalog if r.get("sku")}
+            client_warehouse_network_trim = trim_client_warehouse_network_to_demand(
+                client_warehouses=wh_with_id,
+                hub_warehouse_id=hub_warehouse_id,
+                monthly_total_demand_units=monthly_total,
+                labels=labels,
+                catalog_skus=catalog_skus_trim,
+                weight_lb=max(0.1, float(median_w)),
+                min_monthly_units_to_expand_beyond_one=float(
+                    getattr(settings, "smart_network_min_monthly_units_to_expand_beyond_one", 250.0) or 250.0
+                ),
+                min_units_per_warehouse_monthly_flow=float(
+                    getattr(settings, "smart_network_min_units_per_warehouse_monthly_flow", 100.0) or 100.0
+                ),
+                min_units_per_warehouse_when_three_or_more_nodes=float(
+                    getattr(
+                        settings,
+                        "smart_network_min_units_per_warehouse_when_three_or_more_nodes",
+                        500.0,
+                    )
+                    or 500.0
+                ),
+                max_warehouses_cap=int(getattr(settings, "smart_network_max_warehouses", 6) or 6),
+                default_lane_cost_per_lb=float(
+                    getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
+                ),
+            )
+            if client_warehouse_network_trim.get("client_trim_applied"):
+                warehouses = [
+                    dict(w) for w in (client_warehouse_network_trim.get("selected_warehouses") or [])
+                ]
+                lanes = [dict(ln) for ln in (client_warehouse_network_trim.get("lanes") or [])]
+                hub_warehouse_id = client_warehouse_network_trim.get("hub_warehouse_id") or hub_warehouse_id
+                preserve_shares_for_merge = False
 
     catalog_by_sku_for_origin = {str(r["sku"]): r for r in catalog if r.get("sku")}
     wh_nodes: list[dict[str, Any]] = []
@@ -379,6 +675,8 @@ async def run_item_intelligence(
 
     min_xfer = float(getattr(settings, "placement_min_inter_warehouse_transfer_units", 100.0) or 0.0)
     max_m_xfer = int(getattr(settings, "placement_max_months_min_transfer_horizon", 12) or 12)
+    seller_lh = bool(getattr(settings, "seller_mixed_pallet_linehaul_enabled", True))
+    lh_mult = float(getattr(settings, "network_consolidated_linehaul_cost_multiplier", 1.0) or 1.0)
     allocation = allocate_skus(
         [x for x in alloc_inputs if x.get("monthly_units", 0) > 0],
         warehouses_for_alloc,
@@ -386,6 +684,8 @@ async def run_item_intelligence(
         hub_id=hub_warehouse_id,
         min_inter_warehouse_transfer_units=min_xfer if min_xfer > 0 else None,
         max_months_to_meet_min_transfer=max(1, max_m_xfer),
+        seller_mixed_pallet_linehaul=seller_lh,
+        consolidated_linehaul_cost_multiplier=lh_mult,
     )
 
     weight_by_sku = {str(x["sku"]): float(x.get("weight_lb") or 0.0) for x in alloc_inputs if x.get("sku")}
@@ -410,7 +710,8 @@ async def run_item_intelligence(
             continue
         inv2 = dict(inv)
         inv2["suggested_total_units_for_target_cover_baseline_30d"] = inv.get("suggested_total_units_for_target_cover")
-        inv2["target_days_cover_baseline"] = float(inv.get("target_days_cover") or 30.0)
+        _bd = float(getattr(settings, "planning_default_target_days_cover", 75.0) or 75.0)
+        inv2["target_days_cover_baseline"] = float(inv.get("target_days_cover") or _bd)
         inv2["suggested_total_units_for_target_cover"] = int(adj_cover)
         inv2["target_days_cover"] = float(adj_days)
         inv2["network_placement_adjustment"] = npa
@@ -484,6 +785,32 @@ async def run_item_intelligence(
             **tax_placement_extra,
         },
     }
+
+    multi_dc_parallel_scenario = await _build_multi_dc_parallel_scenario(
+        store=store,
+        tenant_id=tenant_id,
+        warehouse_network_recommendation_options=warehouse_network_recommendation_options,
+        blended_state_weights=blended_state_weights,
+        label_demand_weight_meta=label_demand_weight_meta,
+        median_w=median_w,
+        n_mock=n_mock,
+        tie=tie,
+        assign_mode=assign_mode,
+        alloc_inputs=alloc_inputs,
+        merged_intel_by_sku={m["sku"]: m for m in merged_intel},
+        demand_by_sku=demand_by_sku,
+        catalog_by_sku=catalog_by_sku,
+        flow_model=flow_model,
+        default_pid=default_pid,
+        fee_recv=fee_recv,
+        fee_out=fee_out,
+        fee_stor=fee_stor,
+        min_xfer=min_xfer,
+        max_m_xfer=max_m_xfer,
+        seller_lh=seller_lh,
+        lh_mult=lh_mult,
+        nexus_states=nexus_states,
+    )
 
     facility_freight_by_warehouse_id: dict[str, Any] = {}
     for w in warehouses:
@@ -569,6 +896,8 @@ async def run_item_intelligence(
             "product_origin_postal": (str(product_origin_postal).strip() if product_origin_postal else None),
             "product_origin_city": (str(product_origin_city).strip() if product_origin_city else None),
             "product_origin_region": (str(product_origin_region).strip() if product_origin_region else None),
+            "planning_monthly_units_override_by_sku": planning_monthly_units_override_by_sku or None,
+            "planning_marketplace_seller_id_by_sku": planning_marketplace_seller_id_by_sku or None,
         }
         product_research_economics = build_product_research_economics(
             tenant_id=tenant_id,
@@ -587,6 +916,36 @@ async def run_item_intelligence(
             product_research_core=pr_core,
             upc_catalog_search=upc_catalog_search,
         )
+
+    dist_rows = build_distribution_impact_rows(
+        job_id=jid,
+        allocation=allocation,
+        warehouses=warehouses_for_alloc,
+    )
+    await store.distribution_rows_insert_many(
+        job_id=jid,
+        tenant_id=tenant_id,
+        operational_warehouse_id=warehouse_id,
+        engagement_id=eid,
+        rows=dist_rows,
+    )
+    dist_envelope = build_distribution_envelope(
+        job_id=jid,
+        tenant_id=tenant_id,
+        operational_warehouse_id=warehouse_id,
+        engagement_id=eid,
+        rows=dist_rows,
+    )
+    saved_at_iso = datetime.now(timezone.utc).isoformat()
+    export_dir = getattr(settings, "distribution_local_export_dir", None)
+    local_export_path = write_distribution_local_file(
+        export_dir or "",
+        dist_envelope,
+        saved_at_iso=saved_at_iso,
+    )
+    distribution_block: dict[str, Any] = {**dist_envelope, "saved_at": saved_at_iso}
+    if local_export_path:
+        distribution_block["local_export_path"] = local_export_path
 
     out: dict[str, Any] = {
         "version": 1,
@@ -642,15 +1001,20 @@ async def run_item_intelligence(
         "placement_mock_rate_grids": placement_mock_rate_grids,
         "placement_allocation_share_source": placement_share_source,
         "recommended_warehouse_network": recommended_network,
+        "warehouse_network_recommendation_options": warehouse_network_recommendation_options,
+        "client_warehouse_network_trim": client_warehouse_network_trim,
         "allocation": allocation,
         "landed_cost_economics": economics,
         "fulfillment_network_comparison": fulfillment_compare,
         "item_intelligence_synthesis": synthesis,
         "facility_freight_by_warehouse_id": facility_freight_by_warehouse_id,
         "keepa_refresh_errors": keepa_errors,
+        "planning_context": planning_context,
         "us_state_demand_forecast": demand_share_metadata(),
         "multi_dc_placement_tri_modal": multi_dc_placement_tri_modal,
+        "multi_dc_parallel_scenario": multi_dc_parallel_scenario,
         "product_research_economics": product_research_economics,
+        "distribution": distribution_block,
     }
     attach_four_views_and_pipeline(out)
     return out

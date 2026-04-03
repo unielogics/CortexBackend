@@ -146,6 +146,11 @@ def test_planning_comparison_matrix_four_columns():
         "amazon_fbm_single",
         "amazon_fbm_multi",
     }
+    assert isinstance(m.get("comparison_parity_notes"), list)
+    assert isinstance(m.get("comparison_math_audit"), dict)
+    codes = {n.get("code") for n in m["comparison_parity_notes"]}
+    assert "fba_inbound_economics_missing" in codes
+    assert "fbm_model_uncertainty" in codes
     cur = m["columns"]["current"]["line_items"]
     assert any(x["id"] == "marketplace_fees" for x in cur)
 

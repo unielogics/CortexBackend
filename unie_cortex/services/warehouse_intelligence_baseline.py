@@ -6,6 +6,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
+from unie_cortex.services.period_cost_inference import build_period_billing_asn_inference
+
 # Typical pick/pack handle (excludes parcel) — anchor for spotting naive billing/line inflation.
 REFERENCE_TYPICAL_ORDER_HANDLE_USD = 3.0
 
@@ -46,30 +48,58 @@ def _task_observation_window_hours(tasks: list[dict[str, Any]]) -> float | None:
     return span if span > 1e-6 else None
 
 
+def _order_financial_row_date(row: dict[str, Any]) -> datetime | None:
+    raw = row.get("order_date_iso") or row.get("order_date")
+    if raw is None or str(raw).strip() == "":
+        return None
+    return _parse_ship_ts(str(raw).strip())
+
+
 def estimate_fulfillment_events(
     *,
     labels: list[dict[str, Any]],
     order_lines: list[dict[str, Any]],
+    order_financial_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Proxy for outbound / handling events in the assessment window.
     Uses max(labels, shipped order lines) so either feed can anchor the denominator.
-    Prefer distinct order count in economics (see volume_baseline); events here stay line-oriented for throughput.
+    When both are empty, falls back to dated order_financial rows (seller CSV) as a line-oriented proxy.
     """
     n_labels = len(labels)
     shipped = [r for r in order_lines if (r.get("shipped_at_iso") or "").strip()]
     n_shipped_lines = len(shipped)
     n_orders = len({r.get("order_external_id") for r in shipped if r.get("order_external_id")})
 
-    events = max(n_labels, n_shipped_lines, 1)
+    of_list = list(order_financial_rows or [])
+    dated_of = [r for r in of_list if _order_financial_row_date(r) is not None]
+    n_of_lines = len(dated_of)
+    n_of_distinct = len({r.get("order_external_id") for r in dated_of if r.get("order_external_id")})
+
+    primary = max(n_labels, n_shipped_lines)
+    if primary > 0:
+        events = max(primary, 1)
+        methodology = "max(label_rows, order_lines_with_shipped_at); min 1 to avoid divide-by-zero"
+    elif n_of_lines > 0:
+        events = max(n_of_lines, 1)
+        methodology = (
+            "order_financial rows with parseable order_date (seller CSV proxy) — no labels or WMS shipped lines; "
+            "line count anchors billing denominator"
+        )
+    else:
+        events = 1
+        methodology = "no labels, shipped order lines, or dated order_financial rows — default 1 to avoid divide-by-zero"
+
     return {
         "fulfillment_events_estimate": events,
         "components": {
             "label_rows": n_labels,
             "order_lines_shipped": n_shipped_lines,
             "distinct_orders_shipped": n_orders,
+            "order_financial_lines_dated": n_of_lines,
+            "order_financial_distinct_orders": n_of_distinct,
         },
-        "methodology": "max(label_rows, order_lines_with_shipped_at); min 1 to avoid divide-by-zero",
+        "methodology": methodology,
     }
 
 
@@ -169,13 +199,54 @@ def _volume_baseline_from_orders(order_lines: list[dict[str, Any]]) -> dict[str,
     orders_per_month = round(distinct_orders / months_frac, 2) if distinct_orders else None
     channel_mix = Counter((str(r.get("channel") or "").strip().upper() or "UNKNOWN") for r in shipped)
 
-    return {
+    out: dict[str, Any] = {
         "distinct_orders_in_window": distinct_orders,
         "shipped_order_lines_in_window": len(shipped),
         "months_with_ship_activity": n_months,
         "months_in_window_fractional": round(months_frac, 2),
         "orders_per_month_estimate": orders_per_month,
         "channel_mix_top": dict(channel_mix.most_common(6)),
+    }
+    if distinct_orders > 0:
+        out["source"] = "order_lines_wms"
+    return out
+
+
+def _volume_baseline_from_order_financials(order_financial_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Order cadence from seller / order-financial facts when WMS order_lines are absent or have no shipped_at.
+    Uses order_external_id + order_date_iso span (mirrors _volume_baseline_from_orders logic).
+    """
+    dated = [r for r in order_financial_rows if _order_financial_row_date(r) is not None]
+    order_ids = [r.get("order_external_id") for r in dated if r.get("order_external_id")]
+    distinct_orders = len(set(order_ids))
+    months_counter: Counter[str] = Counter()
+    for r in dated:
+        dt = _order_financial_row_date(r)
+        if dt:
+            months_counter[dt.strftime("%Y-%m")] += 1
+    n_months = len(months_counter)
+    if dated:
+        dates = [d for r in dated if (d := _order_financial_row_date(r))]
+        if len(dates) >= 2:
+            dates.sort()
+            span_days = max(1.0, (dates[-1] - dates[0]).days + 1)
+            months_frac = max(span_days / 30.44, n_months or 1.0)
+        else:
+            months_frac = max(n_months, 1.0)
+    else:
+        months_frac = 1.0
+
+    orders_per_month = round(distinct_orders / months_frac, 2) if distinct_orders else None
+
+    return {
+        "distinct_orders_in_window": distinct_orders,
+        "order_financial_lines_in_window": len(dated),
+        "months_with_order_activity": n_months,
+        "months_in_window_fractional": round(months_frac, 2),
+        "orders_per_month_estimate": orders_per_month,
+        "channel_mix_top": {},
+        "source": "order_financials_fallback",
     }
 
 
@@ -228,6 +299,7 @@ def build_warehouse_intelligence_baseline(
     billing_rows: list[dict[str, Any]],
     employee_rows: list[dict[str, Any]],
     network_context: dict[str, Any] | None = None,
+    order_financial_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     fp = dict(facility_profile) if isinstance(facility_profile, dict) else {}
     nc = network_context if isinstance(network_context, dict) else None
@@ -270,7 +342,12 @@ def build_warehouse_intelligence_baseline(
             "Set candidate_warehouses[].postal in network-context so regional and rate-shop logic anchor to your ship-from ZIP."
         )
 
-    fe = estimate_fulfillment_events(labels=labels, order_lines=order_lines)
+    of_for_baseline = list(order_financial_rows or [])
+    fe = estimate_fulfillment_events(
+        labels=labels,
+        order_lines=order_lines,
+        order_financial_rows=of_for_baseline,
+    )
     events = int(fe["fulfillment_events_estimate"])
     billing_total = _billing_total_usd(billing_rows)
     split = _billing_split(billing_rows)
@@ -367,7 +444,13 @@ def build_warehouse_intelligence_baseline(
     )
 
     volume_baseline = _volume_baseline_from_orders(order_lines)
+    wms_distinct = int(volume_baseline.get("distinct_orders_in_window") or 0)
+    wms_opm = volume_baseline.get("orders_per_month_estimate")
+    if (wms_distinct == 0 or wms_opm is None) and of_for_baseline:
+        volume_baseline = _volume_baseline_from_order_financials(of_for_baseline)
+
     labor_baseline = _labor_baseline_from_employees(employee_rows, headcount)
+    period_billing_asn_inference = build_period_billing_asn_inference(billing_rows, asn_rows)
 
     return {
         "schema_version": "warehouse_intelligence_v2",
@@ -402,6 +485,7 @@ def build_warehouse_intelligence_baseline(
         },
         "volume_baseline": volume_baseline,
         "labor_baseline": labor_baseline,
+        "period_billing_asn_inference": period_billing_asn_inference,
         "fulfillment_economics": fulfillment_economics,
         # Back-compat: same as fulfillment_economics.estimated_cost_per_fulfillment_usd
         "estimated_cost_per_fulfillment_usd": cost_per_fulfillment,

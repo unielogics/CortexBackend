@@ -9,14 +9,19 @@ from unie_cortex.services.order_financial_analysis import (
     analyze_order_financial_facts,
     apply_supplier_cost_overrides_to_order_financial_analysis,
     compute_fbm_planning_amazon_selling_fees_basis,
+    rollup_order_financial_facts_by_sku,
 )
 from unie_cortex.services.order_financial_planning import (
     build_fulfillment_comparison,
     build_order_financial_planning_four_views,
+    build_planning_run_ai_metrics_payload,
     candidate_pool_from_engagement_network,
     recommend_warehouse_network_for_order_financial_rows,
     run_integrated_compare_for_order_planning,
+    supplier_anchor_postal_from_engagement,
 )
+from unie_cortex.network.transport_geo import geodesic_miles_zip5, haversine_miles
+from unie_cortex.services.metrics_tuning_file import append_metrics_tuning_record
 from unie_cortex.services.order_financial_velocity import analyze_velocity_group, build_batch_velocity_enrichment
 
 
@@ -205,6 +210,65 @@ def test_fulfillment_comparison_deltas():
     assert fc["deltas"]["implied_non_referral_marketplace_usd_minus_consolidated_scenario_usd"] == 40.0
 
 
+def test_supplier_anchor_quantity_weighted():
+    po = {"A": {"source_postal": "07001"}, "B": {"source_postal": "30309"}}
+    rows = [
+        {"sku": "A", "quantity": 2},
+        {"sku": "B", "quantity": 100},
+    ]
+    z, meta = supplier_anchor_postal_from_engagement(po, rows)
+    assert z == "30309"
+    assert meta["rule"] == "quantity_weighted_dominant_zip5_from_product_origins_by_sku"
+
+
+def test_haversine_miles_known_short_hop():
+    # NYC-ish to Philly-ish (approx); exact value not asserted — sanity band
+    mi = haversine_miles(40.75, -73.99, 39.95, -75.16)
+    assert 50 < mi < 120
+
+
+def test_geodesic_same_zip5_small():
+    m = geodesic_miles_zip5("10001", "10001")
+    assert m is not None
+    assert m < 2.0
+
+
+def test_append_metrics_tuning_record_jsonl(tmp_path, monkeypatch):
+    p = tmp_path / "t.jsonl"
+    monkeypatch.setenv("UNIE_METRICS_TUNING_FILE", "1")
+    monkeypatch.setenv("UNIE_METRICS_TUNING_PATH", str(p))
+    append_metrics_tuning_record(engagement_id="eng-x", payload={"k": 1}, run_id="r1")
+    assert p.is_file()
+    line = p.read_text(encoding="utf-8").strip()
+    assert "eng-x" in line and '"k": 1' in line
+
+
+def test_build_planning_run_ai_metrics_payload_shape():
+    planning_out = {
+        "integrated_rate_shopping_effective": False,
+        "planning_comparison_matrix": {
+            "columns": {
+                "current": {"grand_total_usd": 10.0},
+                "amazon_fba": {"grand_total_usd": 20.0},
+                "amazon_fbm_single": {"grand_total_usd": 30.0},
+                "amazon_fbm_multi": {"grand_total_usd": 25.0},
+            }
+        },
+        "scenario_integrated_fbm": {
+            "status": "complete",
+            "qty": 10,
+            "recommendation": "noop",
+            "direct": {"legs": []},
+            "consolidated": {"chosen": {"parcel_legs": [], "linehaul_leg": {"total_usd": 0}, "parcel_total_usd": 0}},
+        },
+    }
+    analysis = {"by_ship_to_state": [{"ship_to_state": "NJ", "revenue_usd": 50}, {"ship_to_state": "CA", "revenue_usd": 50}]}
+    m = build_planning_run_ai_metrics_payload(planning_out, engagement_id="e1", analysis=analysis)
+    assert m["schema_version"] == "ai_metrics_v1"
+    assert m["matrix_grand_totals_usd"]["current"] == 10.0
+    assert m["destination_footprint"]["distinct_state_count"] == 2
+
+
 def test_run_integrated_compare_order_planning_smoke():
     rows = [
         {
@@ -229,9 +293,49 @@ def test_run_integrated_compare_order_planning_smoke():
     assert "direct" in out and "consolidated" in out
     assert "fulfillment_mode_warehouse_overlay" in out
     assert "management_escalation" in out
+    assert "network_topology_summary" in out
+    assert "transport_miles_v1" in out
+    tm = out["transport_miles_v1"]
+    assert tm.get("distance_model") == "geodesic_zip_centroid_v1"
+    assert "human_note" in tm
+    assert isinstance(tm.get("linehaul_lane"), dict)
+    assert "total_road_miles_times_units" in (tm.get("direct") or {})
+    assert isinstance(tm.get("illustrative_co2e_kg"), dict)
+    cpr = out.get("cube_and_pallet_reference") or {}
+    assert cpr.get("display_pallet_cuft") is not None
     me = out["management_escalation"]
     assert me["schema_version"] == "management_network_escalation_v1"
     assert "recommended_reductions_to_match_direct_total" in me
+
+
+def test_run_integrated_compare_inbound_when_product_origins_set():
+    rows = [
+        {
+            "order_date_iso": "2025-04-01",
+            "sku": "S1",
+            "quantity": 10,
+            "ship_to_postal": "10001",
+            "revenue_usd": 25.0,
+        }
+    ]
+    analysis = {"totals": {"marketplace_fees_usd": 10.0, "referral_fees_modeled_usd": 2.0}}
+    nc = {"product_origins_by_sku": {"S1": {"source_postal": "75201"}}}
+    out = asyncio.run(
+        run_integrated_compare_for_order_planning(
+            rows=rows,
+            fulfillment_mode="fbm",
+            max_scenario_qty=80,
+            analysis=analysis,
+            engagement_network_context=nc,
+        )
+    )
+    assert out.get("status") == "complete"
+    topo = out.get("network_topology_summary") or {}
+    assert topo.get("supplier_anchor_postal") == "75201"
+    assert out.get("inbound_routing") is not None
+    ib = (out.get("transport_miles_v1") or {}).get("inbound")
+    assert ib is not None
+    assert ib.get("supplier_anchor_postal") == "75201"
 
 
 def test_scale_consolidated_linehaul_leg():
@@ -441,3 +545,33 @@ def test_supplier_cogs_override_total_replaces_group():
     ov = {"K1": {"product_cogs_usd_total": 99.0, "cogs_input_mode": "total"}}
     adj = apply_supplier_cost_overrides_to_order_financial_analysis(base, rows, ov)
     assert adj["totals"]["product_cogs_usd"] == 99.0
+
+
+def test_rollup_asin_identifier_uppercase_matches_override():
+    rows = [
+        {"asin": "b0testasin1", "revenue_usd": 100.0, "product_cogs_usd": 10.0, "quantity": 2.0},
+    ]
+    rollup = rollup_order_financial_facts_by_sku(rows)
+    assert rollup["rows"][0]["identifier"] == "B0TESTASIN1"
+    assert rollup["rows"][0]["quantity_total"] == 2.0
+    base = analyze_order_financial_facts(rows)
+    ov = {"B0TESTASIN1": {"product_cogs_usd_total": 3.0, "cogs_input_mode": "per_unit"}}
+    adj = apply_supplier_cost_overrides_to_order_financial_analysis(base, rows, ov)
+    assert adj["totals"]["product_cogs_usd"] == 6.0
+    wrong_case = apply_supplier_cost_overrides_to_order_financial_analysis(
+        base, rows, {"b0testasin1": {"product_cogs_usd_total": 3.0, "cogs_input_mode": "per_unit"}}
+    )
+    assert wrong_case["totals"]["product_cogs_usd"] == 10.0
+
+
+def test_rollup_quantity_total_matches_override_q_group_for_small_quantities():
+    rows = [
+        {"asin": "B0001", "revenue_usd": 10.0, "product_cogs_usd": 1.0, "quantity": 0.5},
+        {"asin": "B0001", "revenue_usd": 10.0, "product_cogs_usd": 1.0, "quantity": 0.5},
+    ]
+    rollup = rollup_order_financial_facts_by_sku(rows)
+    assert rollup["rows"][0]["quantity_total"] == 2.0
+    base = analyze_order_financial_facts(rows)
+    ov = {"B0001": {"product_cogs_usd_total": 4.0, "cogs_input_mode": "per_unit"}}
+    adj = apply_supplier_cost_overrides_to_order_financial_analysis(base, rows, ov)
+    assert adj["totals"]["product_cogs_usd"] == 8.0

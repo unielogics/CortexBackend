@@ -16,6 +16,7 @@ from unie_cortex.db.models import (
     AuditRun,
     BillingLineFact,
     ColumnMapping,
+    DistributionImpactRow,
     EmployeeFact,
     Engagement,
     FacilityFreightProfileRow,
@@ -358,6 +359,17 @@ class CortexStore:
     async def facility_freight_profiles_list(
         self, tenant_id: str, limit: int = 500
     ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    async def distribution_rows_insert_many(
+        self,
+        *,
+        job_id: str,
+        tenant_id: str,
+        operational_warehouse_id: str,
+        engagement_id: str | None,
+        rows: list[dict[str, Any]],
+    ) -> None:
         raise NotImplementedError
 
 
@@ -1671,6 +1683,36 @@ class SqlCortexStore(CortexStore):
             )
         return out
 
+    async def distribution_rows_insert_many(
+        self,
+        *,
+        job_id: str,
+        tenant_id: str,
+        operational_warehouse_id: str,
+        engagement_id: str | None,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        if not rows:
+            return
+        now = _utc()
+        eid = (engagement_id or "").strip() or None
+        for d in rows:
+            self.s.add(
+                DistributionImpactRow(
+                    id=str(uuid4()),
+                    job_id=job_id,
+                    party_type=str(d.get("party_type") or ""),
+                    party_id=(str(d["party_id"]).strip() if d.get("party_id") is not None else None),
+                    party_name=str(d.get("party_name") or ""),
+                    estimate_monthly_units=float(d.get("estimate_monthly_units") or 0),
+                    tenant_id=tenant_id,
+                    operational_warehouse_id=operational_warehouse_id,
+                    engagement_id=eid,
+                    created_at=now,
+                )
+            )
+        await self.s.flush()
+
     async def templates_seed_default(self):
         r = await self.s.execute(select(MappingTemplate).limit(1))
         if r.scalar_one_or_none():
@@ -1745,6 +1787,7 @@ class MongoCortexStore(CortexStore):
         self.olnf = db["cortex_order_line_facts"]
         self.blf = db["cortex_billing_line_facts"]
         self.empf = db["cortex_employee_facts"]
+        self.dist = db["cortex_distribution"]
 
     async def engagement_create(self, eid, name, org_tenant_id, external_ref):
         await self.eng.insert_one(
@@ -2947,6 +2990,37 @@ class MongoCortexStore(CortexStore):
             )
         return out
 
+    async def distribution_rows_insert_many(
+        self,
+        *,
+        job_id: str,
+        tenant_id: str,
+        operational_warehouse_id: str,
+        engagement_id: str | None,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        if not rows:
+            return
+        now = _utc()
+        eid = (engagement_id or "").strip() or None
+        docs = []
+        for d in rows:
+            docs.append(
+                {
+                    "_id": str(uuid4()),
+                    "job_id": job_id,
+                    "party_type": str(d.get("party_type") or ""),
+                    "party_id": str(d["party_id"]).strip() if d.get("party_id") is not None else None,
+                    "party_name": str(d.get("party_name") or ""),
+                    "estimate_monthly_units": float(d.get("estimate_monthly_units") or 0),
+                    "tenant_id": tenant_id,
+                    "operational_warehouse_id": operational_warehouse_id,
+                    "engagement_id": eid,
+                    "created_at": now,
+                }
+            )
+        await self.dist.insert_many(docs)
+
     async def templates_seed_default(self):
         n = await self.tpl.count_documents({})
         if n:
@@ -3049,3 +3123,5 @@ async def ensure_mongo_indexes(db: Any) -> None:
     await db["cortex_tenant_sales_tax_nexus"].create_index([("tenant_id", 1)], unique=False)
     await db["cortex_ai_invocations"].create_index([("tenant_id", 1), ("created_at", -1)])
     await db["cortex_ai_invocations"].create_index([("capability", 1), ("created_at", -1)])
+    await db["cortex_distribution"].create_index([("job_id", 1)])
+    await db["cortex_distribution"].create_index([("tenant_id", 1), ("created_at", -1)])

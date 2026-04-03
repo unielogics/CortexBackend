@@ -8,12 +8,17 @@ End-to-end Blitz order-financial flow + network comparison (FBM vs FBA planning 
 4. ``POST .../order-financials/planning-run``: smart network + compare-v2-integrated when
    ``SHIPPO_API_KEY`` is set (parcel rate shopping); otherwise integrated path uses mock parcel legs.
    Linehaul remains mock. Fallback: legacy compare-v2 mock-only calls for the report.
+5. After ``POST .../runs``: ``POST .../audit-synthesis`` (same seller-optimization KPI / AI bundle as
+   Seller Flow; use ``--with-nim-ai`` to merge NVIDIA NIM ``ai_recommendations``).
 
 Usage:
   python scripts/run_blitz_full_pipeline.py
+  python scripts/run_blitz_full_pipeline.py --skip-prepare
+  python scripts/run_blitz_full_pipeline.py --with-nim-ai
 
 Env: set DATABASE_URL before import if you need a file DB; default uses in-memory SQLite
-via conftest-style env in this script's __main__ guard.
+via conftest-style env in this script's __main__ guard. Repo root is added to ``sys.path``
+so you can run from ``CortexBackend`` without setting PYTHONPATH.
 """
 
 from __future__ import annotations
@@ -121,6 +126,11 @@ def main() -> None:
         type=Path,
         default=root / "blitz_full_pipeline_report.json",
     )
+    ap.add_argument(
+        "--with-nim-ai",
+        action="store_true",
+        help="Pass with_ai_recommendations=true to audit-synthesis (NIM chat when configured).",
+    )
     args = ap.parse_args()
 
     if not args.skip_prepare:
@@ -133,6 +143,9 @@ def main() -> None:
 
     prepared_text = args.prepared.read_text(encoding="utf-8-sig")
     scenario_qty, destinations = _build_destinations_from_csv(prepared_text)
+
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
 
     from fastapi.testclient import TestClient
 
@@ -228,6 +241,18 @@ def main() -> None:
                 "status": rep.status_code,
                 "label_cost_status": (rep.json().get("label_cost") or {}).get("status") if rep.status_code == 200 else None,
             }
+            syn = client.post(
+                f"/v1/assessment/engagements/{eid}/audit-synthesis",
+                headers=ah,
+                json={
+                    "run_id": rid,
+                    "with_ai_recommendations": bool(args.with_nim_ai),
+                    "ai_detail": "brief",
+                },
+            )
+            report["audit_synthesis"] = (
+                syn.json() if syn.status_code == 200 else {"status": syn.status_code, "error": syn.text}
+            )
 
         mdc = client.post(
             "/v1/assessment/multi-dc-preview",

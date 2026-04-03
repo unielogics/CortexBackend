@@ -562,6 +562,15 @@ def build_fulfillment_network_comparison(
         }
         per_sku.append(sku_block)
 
+    n_exec_nodes = len(ids)
+    inter_note: str | None = None
+    if n_exec_nodes <= 1:
+        inter_note = (
+            "Executed network has only one stocking node — hub→spoke inter-DC linehaul is not modeled here "
+            "(transfer $/unit = 0). Use multi_dc_parallel_scenario.fulfillment_network_comparison in the same response "
+            "when the recommended multi-DC plan has two or more nodes."
+        )
+
     out: dict[str, Any] = {
         "status": "complete",
         "assumptions_version": "fulfillment_network_comparison_v5_single_outbound_ship_line",
@@ -572,6 +581,8 @@ def build_fulfillment_network_comparison(
             "label_usd_per_unit is zero when mock carries the total. "
             "Transfer $/unit is zero for single-hub columns. Multi-node uses share split + hub→node lane model."
         ),
+        "executed_warehouse_node_count": n_exec_nodes,
+        "inter_warehouse_modeling_note": inter_note,
         "coverage_vs_inventory_reconciliation": coverage_vs_inventory_reconciliation,
         "adjustable_model_inputs": _build_adjustable_model_inputs(),
         "per_sku": per_sku,

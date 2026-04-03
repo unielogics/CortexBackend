@@ -583,10 +583,21 @@ def _parse_keepa_csv_sections(csv_list: list[int]) -> dict[int, list[int]]:
     return sections
 
 
-def extract_keepa_monthly_sales_history_6m(p: dict[str, Any]) -> dict[str, Any]:
+def extract_keepa_monthly_sales_history_6m(
+    p: dict[str, Any],
+    *,
+    seller_monthly_units_mid: float | None = None,
+) -> dict[str, Any]:
     """
-    Last six calendar months of **relative** sales activity from Keepa sales-rank CSV, scaled to
-    sum to ``monthlySold`` when present (visual proxy — not POS truth).
+    Last six calendar months of **relative** sales activity from Keepa sales-rank CSV.
+
+    When ``seller_monthly_units_mid`` is set (seller-scoped planning mid from
+    ``apply_seller_scoped_monthly_planning``), bars are scaled so the **average**
+    month ≈ that mid (total across six months ≈ ``6 * seller_monthly_units_mid``),
+    preserving rank-history **shape** only.
+
+    Without it, scaling matches legacy behavior: total mass equals ``monthlySold``
+    when present (visual proxy — not POS truth).
     """
     import math
     from datetime import datetime, timedelta, timezone
@@ -598,14 +609,34 @@ def extract_keepa_monthly_sales_history_6m(p: dict[str, Any]) -> dict[str, Any]:
         return f"{dt.year}-{dt.month:02d}"
 
     ms = _safe_int(p.get("monthlySold"))
+    try:
+        seller_mid = float(seller_monthly_units_mid) if seller_monthly_units_mid is not None else None
+    except (TypeError, ValueError):
+        seller_mid = None
+    if seller_mid is not None and seller_mid <= 0:
+        seller_mid = None
+
+    def _scale_target_total() -> tuple[float, str]:
+        """Total units to distribute across the six months (sum of bars)."""
+        if seller_mid is not None:
+            return 6.0 * seller_mid, "seller_planning_monthly_mid_x6"
+        if ms and ms > 0:
+            return float(ms), "keepa_monthlySold_total_legacy"
+        return 100.0, "placeholder_100"
     csv_list = p.get("csv")
     lu = _safe_int(p.get("lastUpdate"))
     if not isinstance(csv_list, list) or len(csv_list) < 4 or not lu:
-        if ms and ms > 0:
-            v = round(float(ms) / 6.0, 2)
+        if seller_mid is not None or (ms and ms > 0):
+            tgt, scale_basis = _scale_target_total()
+            v = round(tgt / 6.0, 2)
             return {
                 "status": "approximate",
-                "note": "Keepa returned no csv/lastUpdate; bars split current monthlySold evenly (placeholder).",
+                "scaling_basis": scale_basis,
+                "note": (
+                    "Keepa returned no csv/lastUpdate; even placeholder months scaled to seller planning mid (avg ≈ that mid)."
+                    if seller_mid is not None
+                    else "Keepa returned no csv/lastUpdate; bars split current monthlySold evenly (legacy placeholder)."
+                ),
                 "six_month_mean_units": v,
                 "months": [{"month_key": f"M{i + 1}", "units_est": v} for i in range(6)],
             }
@@ -620,11 +651,17 @@ def extract_keepa_monthly_sales_history_6m(p: dict[str, Any]) -> dict[str, Any]:
     # 3 = SALES_RANK in Keepa product csv types (US marketplace)
     rank_chunk = sections.get(3) or []
     if len(rank_chunk) < 4:
-        if ms and ms > 0:
-            v = round(float(ms) / 6.0, 2)
+        if seller_mid is not None or (ms and ms > 0):
+            tgt, scale_basis = _scale_target_total()
+            v = round(tgt / 6.0, 2)
             return {
                 "status": "approximate",
-                "note": "No sales-rank history section; bars split monthlySold evenly.",
+                "scaling_basis": scale_basis,
+                "note": (
+                    "No sales-rank history section; even split scaled to seller planning mid."
+                    if seller_mid is not None
+                    else "No sales-rank history section; bars split monthlySold evenly."
+                ),
                 "six_month_mean_units": v,
                 "months": [{"month_key": f"M{i + 1}", "units_est": v} for i in range(6)],
             }
@@ -640,11 +677,17 @@ def extract_keepa_monthly_sales_history_6m(p: dict[str, Any]) -> dict[str, Any]:
         if rnk > 0:
             pairs.append((t, rnk))
     if len(pairs) < 2:
-        if ms and ms > 0:
-            v = round(float(ms) / 6.0, 2)
+        if seller_mid is not None or (ms and ms > 0):
+            tgt, scale_basis = _scale_target_total()
+            v = round(tgt / 6.0, 2)
             return {
                 "status": "approximate",
-                "note": "Rank series too short; using monthlySold split.",
+                "scaling_basis": scale_basis,
+                "note": (
+                    "Rank series too short; even split scaled to seller planning mid."
+                    if seller_mid is not None
+                    else "Rank series too short; using monthlySold split."
+                ),
                 "six_month_mean_units": v,
                 "months": [{"month_key": f"M{i + 1}", "units_est": v} for i in range(6)],
             }
@@ -683,15 +726,25 @@ def extract_keepa_monthly_sales_history_6m(p: dict[str, Any]) -> dict[str, Any]:
         out_months.append({"month_key": mk, "activity_raw": round(act, 6), "units_est": 0.0})
 
     total_act = sum(activities) or 1.0
-    target = float(ms) if ms and ms > 0 else 100.0
+    target_total, scale_basis = _scale_target_total()
     for i, m in enumerate(out_months):
-        m["units_est"] = round(target * activities[i] / total_act, 2)
+        m["units_est"] = round(target_total * activities[i] / total_act, 2)
 
     mean_u = round(sum(m["units_est"] for m in out_months) / max(len(out_months), 1), 2)
+    seller_scaled = seller_mid is not None
     return {
         "status": "complete",
-        "basis": "keepa_sales_rank_csv_proxy_scaled_to_monthlySold",
-        "note": "Bars are rank-activity shares scaled to Keepa monthlySold (marketplace estimate).",
+        "scaling_basis": scale_basis,
+        "basis": (
+            "keepa_sales_rank_csv_proxy_scaled_to_seller_planning_mid"
+            if seller_scaled
+            else "keepa_sales_rank_csv_proxy_scaled_to_monthlySold"
+        ),
+        "note": (
+            "Rank-shaped months scaled so average ≈ seller-scoped planning mid (not raw ASIN monthlySold)."
+            if seller_scaled
+            else "Bars are rank-activity shares scaled to Keepa monthlySold (legacy marketplace total-mass)."
+        ),
         "six_month_mean_units": mean_u,
         "months": out_months,
     }
@@ -1332,6 +1385,153 @@ def augment_keepa_demand_core(
     )
 
 
+def slim_keepa_planning_for_seller_ui(
+    demand: dict[str, Any],
+    *,
+    marketplace_seller_id: str | None = None,
+    top_buybox_sellers: int = 8,
+) -> dict[str, Any]:
+    """
+    JSON-safe subset of ``extract_demand_from_keepa_payload`` for seller results UI
+    (no raw ``offers[]`` or full listing blobs).
+    """
+    if not isinstance(demand, dict):
+        return {"status": "partial", "note": "invalid demand payload"}
+
+    sid = (marketplace_seller_id or "").strip() or None
+    rot = demand.get("buy_box_rotation") if isinstance(demand.get("buy_box_rotation"), dict) else {}
+    win_map: dict[str, float] = {}
+    if isinstance(rot.get("win_pct_by_seller"), dict):
+        for k, v in rot["win_pct_by_seller"].items():
+            ks = str(k)
+            if not _is_real_marketplace_seller(ks):
+                continue
+            try:
+                win_map[ks] = float(v)
+            except (TypeError, ValueError):
+                continue
+    items = sorted(win_map.items(), key=lambda x: (-x[1], x[0]))
+    win_pct_top = [{"seller_id": a, "win_pct": round(b, 2)} for a, b in items[: max(1, int(top_buybox_sellers))]]
+
+    client_win_pct: float | None = None
+    if sid and sid in win_map:
+        client_win_pct = round(win_map[sid], 2)
+
+    km = (
+        demand.get("keepa_marketplace_monthly_reference")
+        if isinstance(demand.get("keepa_marketplace_monthly_reference"), dict)
+        else {}
+    )
+    market_mid = km.get("monthly_units_est_mid")
+    try:
+        market_mid_n = float(market_mid) if market_mid is not None else None
+    except (TypeError, ValueError):
+        market_mid_n = None
+
+    plan_mid = demand.get("monthly_units_est_mid")
+    plan_low = demand.get("monthly_units_est_low")
+    plan_high = demand.get("monthly_units_est_high")
+    try:
+        pm = float(plan_mid) if plan_mid is not None else None
+    except (TypeError, ValueError):
+        pm = None
+    try:
+        plf = float(plan_low) if plan_low is not None else None
+    except (TypeError, ValueError):
+        plf = None
+    try:
+        phf = float(plan_high) if plan_high is not None else None
+    except (TypeError, ValueError):
+        phf = None
+
+    bbm = (
+        demand.get("buy_box_market_summary")
+        if isinstance(demand.get("buy_box_market_summary"), dict)
+        else {}
+    )
+    proc = (
+        demand.get("procurement_suggestion")
+        if isinstance(demand.get("procurement_suggestion"), dict)
+        else {}
+    )
+    spv = demand.get("seller_planning_velocity") if isinstance(demand.get("seller_planning_velocity"), dict) else {}
+    reasons = spv.get("reasoning")
+    reason_short: list[str] = []
+    if isinstance(reasons, list):
+        for r in reasons[:4]:
+            if isinstance(r, str) and r.strip():
+                reason_short.append(r.strip()[:220])
+            elif r is not None:
+                reason_short.append(str(r)[:220])
+
+    upgrades_raw = demand.get("possible_upgrades")
+    upgrades_out: list[dict[str, Any]] = []
+    if isinstance(upgrades_raw, list):
+        for u in upgrades_raw[:12]:
+            if isinstance(u, dict) and u.get("code"):
+                upgrades_out.append(
+                    {
+                        "code": str(u.get("code")),
+                        "impact": (str(u.get("impact"))[:300] if u.get("impact") else ""),
+                    }
+                )
+
+    cohort = demand.get("client_vs_buybox_cohort")
+    cohort_slim: dict[str, Any] | None = None
+    if isinstance(cohort, dict) and cohort.get("status"):
+        cohort_slim = {
+            "status": cohort.get("status"),
+            "note": (str(cohort.get("note"))[:400] if cohort.get("note") else None),
+        }
+
+    return {
+        "status": str(demand.get("status") or "partial"),
+        "planning_method": demand.get("planning_method"),
+        "monthly_units_est_mid": pm,
+        "monthly_units_est_low": plf,
+        "monthly_units_est_high": phf,
+        "keepa_market_monthly_units_mid": market_mid_n,
+        "buy_box_rotation_status": rot.get("status"),
+        "buy_box_rotation_note": (str(rot.get("note") or "")[:400] or None),
+        "dominant_seller_id": rot.get("dominant_seller_id"),
+        "dominant_win_pct": rot.get("dominant_win_pct"),
+        "win_pct_top_sellers": win_pct_top,
+        "client_seller_id": sid,
+        "client_buy_box_win_pct": client_win_pct,
+        "buy_box_market_summary": {
+            k: bbm[k]
+            for k in (
+                "monthly_sales_basis",
+                "rotation_status",
+                "seller_landscape_status",
+                "distinct_buy_box_sellers_in_window",
+                "dominant_seller_id",
+                "dominant_win_pct",
+                "follower_avg_win_pct",
+            )
+            if k in bbm
+        },
+        "procurement_suggestion": {
+            k: proc[k]
+            for k in (
+                "status",
+                "target_days_cover",
+                "suggested_monthly_procurement_mid_units",
+                "suggested_units_for_target_cover",
+                "implied_daily_velocity_units",
+                "prompt_for_buyer",
+                "planning_band_units_monthly",
+            )
+            if k in proc
+        },
+        "seller_planning_velocity": {
+            "planning_mode": spv.get("planning_mode"),
+            "reasons_short": reason_short,
+        },
+        "possible_upgrades": upgrades_out,
+        "client_vs_buybox_cohort": cohort_slim,
+    }
+
 
 def extract_demand_from_keepa_payload(
     data: dict[str, Any],
@@ -1460,7 +1660,6 @@ def extract_demand_from_keepa_payload(
         title=listing_profile.get("title"),
         product_origin_postal=None,
         monthly_units_est_mid=plan_mid,
-        target_days_cover=30.0,
         suggested_min_active_warehouses=int(hints.get("suggested_min_active_warehouses") or 1),
         warehouse_nodes=[],
     )
@@ -1499,7 +1698,9 @@ def extract_demand_from_keepa_payload(
         },
         "placement_hints": hints,
         "inventory_placement_summary": inv,
-        "monthly_sales_history_6m": extract_keepa_monthly_sales_history_6m(p),
+        "monthly_sales_history_6m": extract_keepa_monthly_sales_history_6m(
+            p, seller_monthly_units_mid=float(plan_mid) if plan_mid is not None else None
+        ),
     }
     augment_keepa_demand_core(
         core,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from unie_cortex.config import settings
 from unie_cortex.network.warehouse_pricing_mock import (
     estimate_hub_crossdock_forward_usd,
     estimate_receive_fee_usd,
@@ -195,13 +196,14 @@ def derive_inventory_carry_metrics(
     inv: dict[str, Any] | None = None
     if demand_by_sku and isinstance(demand_by_sku.get(sku), dict):
         inv = (demand_by_sku[sku] or {}).get("inventory_placement_summary")
-    target_days = 30.0
+    default_td = float(getattr(settings, "planning_default_target_days_cover", 75.0) or 75.0)
+    target_days = default_td
     peak: float | None = None
     if isinstance(inv, dict):
         try:
-            target_days = float(inv.get("target_days_cover") or 30.0)
+            target_days = float(inv.get("target_days_cover") or default_td)
         except (TypeError, ValueError):
-            target_days = 30.0
+            target_days = default_td
         raw_peak = inv.get("suggested_total_units_for_target_cover")
         if raw_peak is not None:
             try:
@@ -336,6 +338,7 @@ def build_item_intelligence_economics(
     agg_parcel_pu_sum = 0.0
     agg_recv_pu_sum = 0.0
     n_lines = 0
+    xfer_pricing_model = str(allocation.get("transfer_linehaul_model") or "lane_dollar_per_lb_v1")
     pa = placement_mock_rate_grids.get("parcel_assumptions") or {}
     grid_w_lb = max(0.1, float(pa.get("weight_lb") or 2.0))
     parcel_mean_cache: dict[float, dict[str, float]] = {}
@@ -553,7 +556,14 @@ def build_item_intelligence_economics(
             "inter_warehouse_positioning": {
                 "modeled_monthly_linehaul_usd_total": round(xfer_monthly_usd, 6),
                 "linehaul_usd_per_unit_sold": round(transfer_pu, 6),
-                "note": "Lane $/lb × weight × monthly hub→node flow; divide by demand for per-unit sold.",
+                "pricing_model": xfer_pricing_model,
+                "note": (
+                    "Hub→node monthly flow: pallet_slot_fraction × mock one reference-slot linehaul (LTL/FTL by leg weight), "
+                    "same basis as seller order-planning when pricing_model is seller_mixed_pallet_linehaul_v1; "
+                    "SKUs without unit cube fall back to lane $/lb. Per-unit = monthly total ÷ demand."
+                    if xfer_pricing_model == "seller_mixed_pallet_linehaul_v1"
+                    else "Lane $/lb × weight × monthly hub→node flow; divide by demand for per-unit sold."
+                ),
             },
             "inventory_carry_storage_rent": {
                 "storage_rate_usd_per_unit_in_stock_per_month_network_blend": round(stor_rate_network, 6),
@@ -574,12 +584,18 @@ def build_item_intelligence_economics(
         if hub_spoke and hub_spoke_detail is not None:
             cost_detail["hub_spoke_inbound_flow"] = hub_spoke_detail
 
+        xfer_note = (
+            "Transfer = mixed-pallet linehaul mock on hub→node flow (same as seller optimization) ÷ demand; "
+            "missing unit cube uses lane $/lb fallback."
+            if xfer_pricing_model == "seller_mixed_pallet_linehaul_v1"
+            else "Transfer = lane $/lb × weight × monthly hub→node flow ÷ demand. "
+        )
         sku_notes = (
             "Outbound ship: one line in fully loaded — label buy rate from SKU history when present, else mock parcel "
             "(demand-weighted network when grid exposes it). mock_outbound_parcel_usd_per_unit is always the benchmark; "
             "label_usd_per_unit is non-zero only when avg_label_amount_usd is set. "
-            "Transfer = lane $/lb × weight × monthly hub→node flow ÷ demand. "
-            "Storage = network-blend $/unit-in-stock/month × time-weighted avg on-hand ÷ monthly demand."
+            + xfer_note
+            + "Storage = network-blend $/unit-in-stock/month × time-weighted avg on-hand ÷ monthly demand."
         )
         if hub_spoke:
             sku_notes += (
@@ -628,19 +644,37 @@ def build_item_intelligence_economics(
                     ),
                 }
             )
-        negotiation_suggestions.append(
-            {
-                "lever": "inter_warehouse_transport_cost_per_lb",
-                "current_assumption_note": "Lane cost × weight × monthly transfer flow ÷ demand.",
-                "current_transfer_usd_per_unit_typical_sku_blend": round(avg_transfer, 4),
-                "scenario": "If carrier reduces hub-to-node $/lb by 10%",
-                "estimated_savings_usd_per_unit": round(avg_transfer * 0.10, 6),
-                "talk_track": (
-                    "Inter-DC linehaul is a direct multiplier on weight × flow. "
-                    "Negotiate MWB/min charge, backhaul lanes, or multi-stop milk runs to cut effective $/lb."
-                ),
-            }
-        )
+        if xfer_pricing_model == "seller_mixed_pallet_linehaul_v1":
+            negotiation_suggestions.append(
+                {
+                    "lever": "inter_warehouse_linehaul_mock",
+                    "current_assumption_note": (
+                        "Hub→spoke transfer uses mixed-pallet fraction × mock one-slot LTL/FTL (same as seller optimization); "
+                        "divide by demand for $/unit."
+                    ),
+                    "current_transfer_usd_per_unit_typical_sku_blend": round(avg_transfer, 4),
+                    "scenario": "If consolidated linehaul mock is 10% high vs contract",
+                    "estimated_savings_usd_per_unit": round(avg_transfer * 0.10, 6),
+                    "talk_track": (
+                        "Transfer is mocked from reference-pallet linehaul, not raw $/lb. "
+                        "Compare to your lane MWB and FTL/LTL tariffs; tune NETWORK_CONSOLIDATED_LINEHAUL_COST_MULTIPLIER or contract rates."
+                    ),
+                }
+            )
+        else:
+            negotiation_suggestions.append(
+                {
+                    "lever": "inter_warehouse_transport_cost_per_lb",
+                    "current_assumption_note": "Lane cost × weight × monthly transfer flow ÷ demand.",
+                    "current_transfer_usd_per_unit_typical_sku_blend": round(avg_transfer, 4),
+                    "scenario": "If carrier reduces hub-to-node $/lb by 10%",
+                    "estimated_savings_usd_per_unit": round(avg_transfer * 0.10, 6),
+                    "talk_track": (
+                        "Inter-DC linehaul is a direct multiplier on weight × flow. "
+                        "Negotiate MWB/min charge, backhaul lanes, or multi-stop milk runs to cut effective $/lb."
+                    ),
+                }
+            )
         negotiation_suggestions.append(
             {
                 "lever": "outbound_parcel_mock_to_48_state_hubs",

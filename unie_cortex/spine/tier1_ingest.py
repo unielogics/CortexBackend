@@ -9,6 +9,10 @@ from uuid import uuid4
 
 from unie_cortex.db.store import CortexStore
 from unie_cortex.spine.ingest import _parse_float
+from unie_cortex.utils.identifiers import (
+    mapped_sku_matches_product_filters,
+    order_line_raw_row_matches_filters,
+)
 
 CANONICAL_ASN = frozenset(
     {
@@ -138,14 +142,35 @@ async def ingest_order_lines_csv(
     file_content: bytes,
     filename: str,
     mappings: dict[str, str],
-) -> tuple[str, int]:
+    *,
+    filter_asin: str | None = None,
+    filter_upc: str | None = None,
+) -> tuple[str, int, dict[str, int] | None]:
     text = file_content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     rows = list(reader)
     batch_id = str(uuid4())
     facts: list[dict] = []
+    active_filter = bool(filter_asin or filter_upc)
+    stats: dict[str, int] | None = None
+    if active_filter:
+        stats = {"rows_read": 0, "rows_skipped_identifier": 0}
     for r in rows:
-        c = _row_map(r, mappings, CANONICAL_ORDER_LINE, _OL_FLOATS)
+        norm_r = {k or "": (v if isinstance(v, str) else str(v or "")) for k, v in r.items()}
+        if stats is not None:
+            stats["rows_read"] += 1
+        c = _row_map(norm_r, mappings, CANONICAL_ORDER_LINE, _OL_FLOATS)
+        if active_filter:
+            raw_ok = order_line_raw_row_matches_filters(
+                norm_r, filter_asin=filter_asin, filter_upc=filter_upc
+            )
+            sku_ok = mapped_sku_matches_product_filters(
+                c.get("sku"), filter_asin=filter_asin, filter_upc=filter_upc
+            )
+            if not raw_ok and not sku_ok:
+                assert stats is not None
+                stats["rows_skipped_identifier"] += 1
+                continue
         if not _ol_row_ok(c):
             continue
         facts.append(
@@ -157,7 +182,7 @@ async def ingest_order_lines_csv(
             }
         )
     await store.order_line_facts_insert(facts)
-    return batch_id, len(facts)
+    return batch_id, len(facts), stats
 
 
 async def ingest_billing_lines_csv(

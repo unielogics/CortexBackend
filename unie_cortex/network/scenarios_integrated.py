@@ -14,7 +14,11 @@ from unie_cortex.network.warehouse_pricing_mock import (
     get_pricing_profile,
 )
 from unie_cortex.network.ltl_mock import mock_ltl_quote_usd, sku_cube_cuft
-from unie_cortex.network.parcel_integrated import integrated_parcel_quote, integrated_parcel_sum_for_dests
+from unie_cortex.network.parcel_integrated import (
+    integrated_parcel_quote,
+    integrated_parcel_sum_for_dests,
+    winning_carrier_service_from_rates,
+)
 from unie_cortex.network.parcel_mock import best_mock_parcel_among_carriers
 from unie_cortex.network.scenario_fbm_warehouse_fees import (
     build_fba_comparative_guidance,
@@ -23,6 +27,10 @@ from unie_cortex.network.scenario_fbm_warehouse_fees import (
 )
 from unie_cortex.network.scenario_vocabulary import enrich_scenario_result_vocabulary
 from unie_cortex.network.scenarios_core import normalize_destinations, scale_consolidated_linehaul_leg
+from unie_cortex.network.seller_mixed_pallet_linehaul import (
+    build_seller_consolidated_linehaul_leg,
+    pallet_slot_fraction,
+)
 from unie_cortex.network.transit_mock import estimate_ground_transit_days
 from unie_cortex.network.zones import CarrierCode
 
@@ -51,6 +59,7 @@ async def compare_scenario_v2_integrated(
     product_origin_postal: str | None = None,
     fulfillment_mode: str | None = None,
     consolidated_linehaul_cost_multiplier: float = 1.0,
+    seller_mixed_pallet_linehaul: bool = False,
 ) -> dict[str, Any]:
     """
     Same topology as ``compare_scenario_v2`` but parcel segments use ``RateShoppingService``
@@ -119,6 +128,7 @@ async def compare_scenario_v2_integrated(
                 )
                 piece = q["total_usd"]
                 leg = piece * units
+                wc, ws = winning_carrier_service_from_rates(float(piece), q.get("rates") or [])
                 candidates.append(
                     {
                         "origin_postal": op,
@@ -127,6 +137,8 @@ async def compare_scenario_v2_integrated(
                         "leg_total_usd": round(leg, 2),
                         "pricing": "integrated",
                         "source": q["source"],
+                        "winning_carrier": wc,
+                        "winning_service": ws,
                     }
                 )
             else:
@@ -173,14 +185,17 @@ async def compare_scenario_v2_integrated(
     lh_origin = (linehaul_origin_postal or str(origins[0]["postal"])).strip()
     total_w = weight_lb_per_unit * qty
     total_cube = sku_cube_cuft(length_in, width_in, height_in, qty)
-    ltl_shape = mock_ltl_quote_usd(
-        weight_lb=weight_lb_per_unit,
-        length_in=length_in,
-        width_in=width_in,
-        height_in=height_in,
-        qty=qty,
-    )
-    pallet_est = float(ltl_shape["pallet_positions_est"])
+    ltl_shape: dict[str, Any] | None = None
+    pallet_est = 1.0
+    if not seller_mixed_pallet_linehaul:
+        ltl_shape = mock_ltl_quote_usd(
+            weight_lb=weight_lb_per_unit,
+            length_in=length_in,
+            width_in=width_in,
+            height_in=height_in,
+            qty=qty,
+        )
+        pallet_est = float(ltl_shape["pallet_positions_est"])
     mode = choose_linehaul_mode(
         total_w,
         freight_mode=freight_mode,
@@ -194,7 +209,15 @@ async def compare_scenario_v2_integrated(
 
     for r in receive_nodes:
         rp = str(r["postal"]).strip()
-        if mode == "ftl":
+        if seller_mixed_pallet_linehaul:
+            freight = build_seller_consolidated_linehaul_leg(
+                mode="ftl" if mode == "ftl" else "ltl",
+                qty=qty,
+                total_w=total_w,
+                total_cuft=total_cube,
+                consolidated_linehaul_cost_multiplier=consolidated_linehaul_cost_multiplier,
+            )
+        elif mode == "ftl":
             fr = mock_ftl_quote_usd(
                 total_weight_lb=total_w,
                 total_cube_cuft=total_cube,
@@ -205,10 +228,10 @@ async def compare_scenario_v2_integrated(
                 "at_qty": qty,
                 "linehaul_usd_per_unit_at_this_qty": round(float(fr["total_usd"]) / max(qty, 1), 6),
             }
+            freight = scale_consolidated_linehaul_leg(freight, consolidated_linehaul_cost_multiplier)
         else:
-            freight = dict(ltl_shape)
-
-        freight = scale_consolidated_linehaul_leg(freight, consolidated_linehaul_cost_multiplier)
+            assert ltl_shape is not None
+            freight = scale_consolidated_linehaul_leg(dict(ltl_shape), consolidated_linehaul_cost_multiplier)
 
         if consolidated_parcel_use_integrated:
             parcel_part, parcel_legs = await integrated_parcel_sum_for_dests(
@@ -323,6 +346,7 @@ async def compare_scenario_v2_integrated(
         reason = f"Savings ${savings_vs_direct} below threshold ${min_savings_usd}"
 
     uc = sku_cube_cuft(length_in, width_in, height_in, 1)
+    slot_disp = pallet_defaults.display_pallet_cuft()
     cube_and_pallet = {
         "unit_cube_cuft": round(uc, 6),
         "reference_pallet_dims_in": {
@@ -334,8 +358,24 @@ async def compare_scenario_v2_integrated(
         "max_units_fit_reference_pallet_floor_est": pallet_defaults.max_units_on_reference_pallet(
             length_in, width_in, height_in
         ),
+        "display_pallet_dims_in": {
+            "length": pallet_defaults.DISPLAY_PALLET_LENGTH_IN,
+            "width": pallet_defaults.DISPLAY_PALLET_WIDTH_IN,
+            "height": pallet_defaults.DISPLAY_PALLET_HEIGHT_IN,
+        },
+        "display_pallet_cuft": round(slot_disp, 4),
+        "unit_fraction_of_display_pallet_slot": round(
+            min(1.0, uc / slot_disp) if uc > 0 and slot_disp > 0 else 0.0,
+            6,
+        ),
         "note": "Pallet is a reference slot for cube math; carrier rules vary.",
     }
+    if seller_mixed_pallet_linehaul:
+        slot_ref = pallet_defaults.reference_pallet_cuft()
+        cube_and_pallet["analyzed_qty_total_cuft"] = round(total_cube, 4)
+        cube_and_pallet["fraction_of_reference_pallet_slot"] = round(
+            pallet_slot_fraction(total_cuft=total_cube, slot_cuft=slot_ref), 6
+        )
     economics_per_unit = {
         "qty": qty,
         "direct_all_in_usd_per_unit": round(direct_all_in / max(qty, 1), 6),
@@ -374,7 +414,11 @@ async def compare_scenario_v2_integrated(
     methodology = {
         "parcel_pricing_direct": parcel_direct,
         "parcel_pricing_consolidated_legs": parcel_consol,
-        "linehaul_pricing_model": f"network_{mode}_mock",
+        "linehaul_pricing_model": (
+            f"network_{mode}_mock_seller_mixed_pallet_v1"
+            if seller_mixed_pallet_linehaul
+            else f"network_{mode}_mock"
+        ),
         "strategy_multi_warehouse": (
             "Parcel from each **origin** to each destination bucket; cheapest origin wins per bucket "
             "(multi-warehouse outbound)."
@@ -394,6 +438,12 @@ async def compare_scenario_v2_integrated(
             "(Unie-style rate_card mocks). FBA: transport-only scenario for comparison — see fba_comparative_guidance."
         ),
     }
+    if seller_mixed_pallet_linehaul:
+        methodology["seller_mixed_pallet_linehaul"] = (
+            "Consolidated linehaul USD = pallet_slot_fraction × mock one reference-slot linehaul (LTL or FTL baseline); "
+            "fraction = analyzed_qty_total_cuft / reference_pallet_cuft. Mode (LTL vs FTL) still follows "
+            "choose_linehaul_mode on actual cohort weight."
+        )
 
     out = {
         "status": "complete",
@@ -407,6 +457,7 @@ async def compare_scenario_v2_integrated(
             "multiplier_applied": float(consolidated_linehaul_cost_multiplier),
             "applies_to": "consolidated_path_linehaul_leg_only",
             "direct_multi_origin_unchanged": True,
+            "seller_mixed_pallet_linehaul_applied": bool(seller_mixed_pallet_linehaul),
         },
         "carriers_fallback": list(carriers_fallback),
         "inbound_routing": inbound_routing,

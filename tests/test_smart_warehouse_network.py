@@ -2,10 +2,53 @@
 
 from unittest.mock import patch
 
+from unie_cortex.network.us_state_demand_share import build_blended_state_demand_weights_from_labels
 from unie_cortex.services.smart_warehouse_network import (
+    _build_warehouse_priority_order,
+    _hot_zip3_for_priority_scoring,
     _max_nodes_for_monthly_volume,
+    build_warehouse_network_recommendation_options,
+    multi_dc_target_warehouse_count,
     recommend_warehouse_network,
+    trim_client_warehouse_network_to_demand,
 )
+
+
+def test_multi_dc_target_count_orders_step():
+    assert multi_dc_target_warehouse_count(72, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 2
+    assert multi_dc_target_warehouse_count(1000, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 3
+    assert multi_dc_target_warehouse_count(5000, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 6
+
+
+def test_recommendation_options_always_single_and_multi():
+    out = build_warehouse_network_recommendation_options(
+        monthly_total_demand_units=72.0,
+        seed_warehouses=[{"id": "hub", "postal": "07055"}],
+        hub_warehouse_id="hub",
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        max_warehouses_cap=6,
+        candidate_pool=[
+            {"id": "hub", "postal": "07055"},
+            {"id": "b", "postal": "30303"},
+        ],
+    )
+    assert out["status"] == "complete"
+    assert out["parameters"].get("hot_zip3_priority_proxy_source") == "blended_top_states"
+    assert isinstance(out["parameters"].get("hot_zip3_priority_proxy_used"), list)
+    assert len(out["parameters"]["hot_zip3_priority_proxy_used"]) > 0
+    assert len(out["options"]) == 2
+    keys = {o["option_key"] for o in out["options"]}
+    assert keys == {"single_dc", "multi_dc"}
+    multi = next(o for o in out["options"] if o["option_key"] == "multi_dc")
+    assert multi["target_warehouse_count_requested"] == 2
+    assert multi["feasible"] is False
+    g = multi.get("inventory_transfer_moq_guidance") or {}
+    assert g.get("monthly_flow_moq_met_at_velocity") is False
+    assert g.get("max_replenishment_months_for_min_transfer_batch") is not None
+    assert multi.get("achievable_with_deeper_stocking_for_transfer_moq") is True
+    assert multi.get("client_planning_nudge")
 
 
 def test_max_nodes_volume_tiers():
@@ -140,3 +183,49 @@ def test_max_warehouses_cap_respected(mock_grid):
         candidate_pool=pool,
     )
     assert out["selected_warehouse_count"] <= 3
+
+
+def test_hot_zip3_priority_fallback_blended_top_states_without_labels():
+    blended, _ = build_blended_state_demand_weights_from_labels([])
+    eff, src = _hot_zip3_for_priority_scoring(blended, [])
+    assert src == "blended_top_states"
+    assert len(eff) >= 5
+    # Top contiguous demand states include CA (900xx hub) in the default prior
+    assert "900" in eff
+
+    ctx = _build_warehouse_priority_order(
+        seed_warehouses=[{"id": "hub", "postal": "07055"}],
+        hub_warehouse_id="hub",
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        candidate_pool=[
+            {"id": "hub", "postal": "07055"},
+            {"id": "b", "postal": "30303"},
+        ],
+    )
+    assert ctx is not None
+    assert ctx["hot_zip3_priority_proxy_source"] == "blended_top_states"
+    assert ctx["label_hot_zip3_raw"] == []
+    assert len(ctx["hot_zip3"]) > 0
+
+
+def test_trim_client_warehouses_low_volume_collapses_to_hub():
+    """Client lists more DCs than volume supports — trim to hub only (no mock grids)."""
+    client = [
+        {"id": "hub", "postal": "10001"},
+        {"id": "b", "postal": "30303"},
+    ]
+    out = trim_client_warehouse_network_to_demand(
+        client_warehouses=client,
+        hub_warehouse_id="hub",
+        monthly_total_demand_units=100.0,
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        min_monthly_units_to_expand_beyond_one=250.0,
+    )
+    assert out["client_trim_applied"] is True
+    assert [w["id"] for w in out["selected_warehouses"]] == ["hub"]
+    assert out["lanes"] == []
+    assert out["hub_warehouse_id"] == "hub"

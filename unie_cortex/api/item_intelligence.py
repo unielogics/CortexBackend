@@ -38,6 +38,11 @@ class CatalogItemBody(BaseModel):
 
 class WarehouseNode(BaseModel):
     id: str = Field(..., min_length=1, max_length=64)
+    display_name: str | None = Field(
+        None,
+        max_length=256,
+        description="Optional label for distribution / UI; defaults to id.",
+    )
     target_share_pct: float | None = None
     postal: str | None = Field(None, max_length=16, description="Origin ZIP for mock parcel grid (US)")
     lat: float | None = None
@@ -61,6 +66,15 @@ class WarehouseNode(BaseModel):
         None,
         max_length=64,
         description="Mock rate card id (e.g. profile_nj_v1) for hub_spoke_rate_card_v1 inbound/cross-dock math.",
+    )
+    min_monthly_flow_units: float | None = Field(
+        None,
+        ge=0,
+        description=(
+            "Optional modeled MOQ / minimum monthly units through this DC for network gates. "
+            "Omitted nodes use smart_network_min_units_per_warehouse_monthly_flow (1–2 nodes) or "
+            "smart_network_min_units_per_warehouse_when_three_or_more_nodes (3+)."
+        ),
     )
 
 
@@ -148,6 +162,11 @@ class ItemIntelligenceRunBody(BaseModel):
         max_length=32,
         description="Optional UPC for Catalog API lookup (research-only ASIN hints; requires SP-API).",
     )
+    job_id: str | None = Field(
+        None,
+        max_length=64,
+        description="Correlation id for distribution rows and local export; server generates UUID if omitted.",
+    )
     engagement_id: str | None = Field(
         None,
         max_length=36,
@@ -167,6 +186,22 @@ class ItemIntelligenceRunBody(BaseModel):
         None,
         max_length=8,
         description="Optional US state (2 letters) for display with origin.",
+    )
+    planning_monthly_units_override_by_sku: dict[str, float] | None = Field(
+        None,
+        description=(
+            "Per-SKU monthly planning velocity (units/mo) for this run only — overrides Keepa-derived "
+            "monthly_units_est_* before allocation, warehouse trim, LTL, and placement summary. "
+            "Takes priority over modeled forecasts when set."
+        ),
+    )
+    planning_marketplace_seller_id_by_sku: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Per-SKU Amazon marketplace seller id for Keepa seller-scoped planning on this run only — "
+            "overrides catalog marketplace_seller_id / extra. When Keepa buy-box history includes this seller, "
+            "planning uses that seller's time-on-buy-box share × ASIN velocity (see seller_planning_velocity)."
+        ),
     )
 
 
@@ -232,18 +267,24 @@ async def item_intelligence_run(
 ):
     """
     Product Research Optimization: catalog + labels/tasks + Keepa (ASIN) + optional UPC research + economics + suggestions.
+
+    Response includes ``multi_dc_parallel_scenario``: when ``warehouse_network_recommendation_options`` has a multi-DC
+    plan with at least two nodes, this block repeats mock grids, allocation, landed cost, and fulfillment comparison for
+    that plan (non-zero modeled inter-DC / LTL where applicable). Otherwise ``status`` is ``skipped`` with a ``reason``.
     """
     if not body.warehouses:
         raise HTTPException(400, detail="warehouses required (at least one node)")
     wh = [w.model_dump() for w in body.warehouses]
     ln = [l.model_dump() for l in body.lanes]
     pool = [w.model_dump() for w in body.warehouse_candidate_pool] if body.warehouse_candidate_pool else None
+    job_id_in = (body.job_id or "").strip() or None
     art = await run_item_intelligence(
         store,
         tenant_id,
         warehouse_id,
         warehouses=wh,
         lanes=ln,
+        job_id=job_id_in,
         hub_warehouse_id=body.hub_warehouse_id,
         domain=body.domain,
         refresh_keepa=body.refresh_keepa,
@@ -265,6 +306,8 @@ async def item_intelligence_run(
         product_origin_postal=body.product_origin_postal,
         product_origin_city=body.product_origin_city,
         product_origin_region=body.product_origin_region,
+        planning_monthly_units_override_by_sku=body.planning_monthly_units_override_by_sku,
+        planning_marketplace_seller_id_by_sku=body.planning_marketplace_seller_id_by_sku,
     )
     if body.engagement_id:
         eg = await store.engagement_get(body.engagement_id)

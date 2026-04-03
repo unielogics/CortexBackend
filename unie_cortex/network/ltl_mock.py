@@ -80,4 +80,5 @@ def mock_ltl_quote_usd(
             "min_applied": subtotal == min_charge_usd and (weight_line + space_line) < min_charge_usd,
         },
         "source": "network_ltl_mock_v2",
+        "display_carrier_name": "Unie mock LTL (deterministic — not carrier-rated)",
     }

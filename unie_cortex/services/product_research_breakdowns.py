@@ -140,10 +140,16 @@ def build_fbm_fulfillment_services_breakdown(
 
     xfer = cd.get("inter_warehouse_positioning")
     if isinstance(xfer, dict) and xfer.get("linehaul_usd_per_unit_sold") is not None:
+        pr_model = str(xfer.get("pricing_model") or "")
+        xfer_label = (
+            "Inter-warehouse transfer (mixed-pallet LTL/FTL share — same basis as seller optimization)"
+            if pr_model == "seller_mixed_pallet_linehaul_v1"
+            else "Inter-warehouse transfer (linehaul model)"
+        )
         lines.append(
             {
                 "code": "inter_warehouse_transfer",
-                "label": "Inter-warehouse transfer (linehaul model)",
+                "label": xfer_label,
                 "amount_usd_per_unit": float(xfer["linehaul_usd_per_unit_sold"]),
                 "data_source": "allocation_model",
                 "pointer": "cost_detail_for_downstream_systems.inter_warehouse_positioning",

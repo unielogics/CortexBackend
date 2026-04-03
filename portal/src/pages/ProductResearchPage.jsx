@@ -81,6 +81,192 @@ function NetworkAdjustmentNotes({ allocation }) {
   );
 }
 
+/** Catalog-wide network scenarios from the same item-intelligence run (not PRO-only). */
+function WarehouseNetworkScenariosPanel({ wno, trim, recommendedNetwork }) {
+  const opts = wno?.options;
+  const hasOpts = Array.isArray(opts) && opts.length > 0;
+  const hasTrim = trim && typeof trim === "object" && Object.keys(trim).length > 0 && trim.status !== "skipped";
+  const hasRec = recommendedNetwork && typeof recommendedNetwork === "object" && Object.keys(recommendedNetwork).length > 0;
+
+  if (!hasOpts && !hasTrim && !hasRec) {
+    return (
+      <p style={{ color: "#64748b", fontSize: 13 }}>
+        No <code>warehouse_network_recommendation_options</code> yet (or run returned skipped). This block is independent of
+        product research economics — it appears whenever the backend attaches network scenarios to the same response.
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {typeof wno?.monthly_total_demand_units === "number" && (
+        <p style={{ margin: 0, fontSize: 13, color: "#475569" }}>
+          Catalog-wide monthly demand (mid sum) for network sizing:{" "}
+          <strong>{wno.monthly_total_demand_units}</strong> units/mo ·{" "}
+          <code style={{ fontSize: 12 }}>{wno.assumptions_version ?? "—"}</code>
+        </p>
+      )}
+
+      {hasTrim && (
+        <div
+          style={{
+            fontSize: 13,
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #bae6fd",
+            background: "#f0f9ff",
+          }}
+        >
+          <strong>Client warehouse trim</strong>{" "}
+          {trim.client_trim_applied ? "(applied)" : "(evaluated, no change)"} —{" "}
+          <code>{trim.selected_warehouse_count ?? "—"}</code> DC(s), hub <code>{trim.hub_warehouse_id ?? "—"}</code>
+          {Array.isArray(trim.trace) && trim.trace.length > 0 && (
+            <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 12, color: "#0369a1" }}>
+              {trim.trace.slice(-4).map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {hasRec && (
+        <details style={{ fontSize: 13 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Auto-expanded recommended network (raw)</summary>
+          <pre
+            style={{
+              marginTop: 8,
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 8,
+              padding: 12,
+              fontSize: 11,
+              overflow: "auto",
+              maxHeight: 220,
+            }}
+          >
+            {JSON.stringify(recommendedNetwork, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {hasOpts && (
+        <div style={{ display: "grid", gap: 12 }}>
+          {opts.map((o) => (
+            <div
+              key={o.option_key}
+              style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "14px 16px",
+                background: o.option_key === "multi_dc" && o.feasible === false ? "#fffbeb" : "#fafafa",
+              }}
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{o.label || o.option_key}</span>
+                <code style={{ fontSize: 11 }}>{o.option_key}</code>
+                <span
+                  style={{
+                    fontSize: 12,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background: o.feasible ? "#dcfce7" : "#fee2e2",
+                    color: o.feasible ? "#166534" : "#991b1b",
+                  }}
+                >
+                  {o.feasible ? "Feasible at stated velocity" : "Not feasible at stated velocity"}
+                </span>
+                {o.achievable_with_deeper_stocking_for_transfer_moq && (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "#dbeafe",
+                      color: "#1e40af",
+                    }}
+                  >
+                    Deeper stocking can clear transfer MOQ
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b" }}>
+                Warehouses: <strong>{o.selected_warehouse_count ?? o.applied_warehouse_count ?? "—"}</strong> · hub{" "}
+                <code>{o.hub_warehouse_id ?? "—"}</code>
+                {o.target_warehouse_count_requested != null && (
+                  <>
+                    {" "}
+                    · multi target requested: <strong>{o.target_warehouse_count_requested}</strong>
+                  </>
+                )}
+              </p>
+              {o.suggested_months_stock_depth_for_hub_spoke_transfer_moq != null && (
+                <p style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.5 }}>
+                  <strong>Suggested months (transfer MOQ):</strong> {o.suggested_months_stock_depth_for_hub_spoke_transfer_moq}
+                  {o.approx_catalog_units_over_that_window != null && (
+                    <>
+                      {" "}
+                      (~{o.approx_catalog_units_over_that_window} catalog units over that window at current velocity)
+                    </>
+                  )}
+                </p>
+              )}
+              {o.client_planning_nudge && (
+                <p style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.55, color: "#1e293b" }}>{o.client_planning_nudge}</p>
+              )}
+              {o.infeasibility_note && !o.client_planning_nudge && (
+                <p style={{ margin: "0 0 8px", fontSize: 12, color: "#92400e" }}>{o.infeasibility_note}</p>
+              )}
+              {Array.isArray(o.selected_warehouses) && o.selected_warehouses.length > 0 && (
+                <div style={{ overflow: "auto", marginTop: 8 }}>
+                  <table style={tableBase()}>
+                    <thead>
+                      <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+                        <th style={{ padding: 6 }}>id</th>
+                        <th style={{ padding: 6 }}>postal</th>
+                        <th style={{ padding: 6 }}>share %</th>
+                        <th style={{ padding: 6 }}>min moq/mo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {o.selected_warehouses.map((w) => (
+                        <tr key={w.id} style={{ borderTop: "1px solid #e2e8f0" }}>
+                          <td style={{ padding: 6, fontFamily: "monospace", fontSize: 12 }}>{w.id}</td>
+                          <td style={{ padding: 6, fontSize: 12 }}>{w.postal ?? "—"}</td>
+                          <td style={{ padding: 6, fontSize: 12 }}>{w.target_share_pct ?? "—"}</td>
+                          <td style={{ padding: 6, fontSize: 12 }}>{w.min_monthly_flow_units ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <details style={{ fontSize: 12 }}>
+        <summary style={{ cursor: "pointer" }}>Raw warehouse_network_recommendation_options JSON</summary>
+        <pre
+          style={{
+            background: "#0f172a",
+            color: "#e2e8f0",
+            padding: 12,
+            fontSize: 10,
+            overflow: "auto",
+            maxHeight: 280,
+            marginTop: 8,
+            borderRadius: 6,
+          }}
+        >
+          {JSON.stringify(wno ?? {}, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 function DemandEnrichmentTable({ demandBySku }) {
   const rows = useMemo(() => {
     if (!demandBySku || typeof demandBySku !== "object") return [];
@@ -331,6 +517,17 @@ function RunResults({ data }) {
       </Section>
 
       <Section
+        title="Warehouse network scenarios (same run)"
+        subtitle="From warehouse_network_recommendation_options — single-DC vs multi-DC plus transfer-MOQ stocking nudges. Shipped on every item-intelligence response alongside allocation and PRO; not gated on product_research_economics."
+      >
+        <WarehouseNetworkScenariosPanel
+          wno={data.warehouse_network_recommendation_options}
+          trim={data.client_warehouse_network_trim}
+          recommendedNetwork={data.recommended_warehouse_network}
+        />
+      </Section>
+
+      <Section
         title="Executive summary"
         subtitle="From item_intelligence_synthesis.run_summary_bullets (fulfillment + cost drivers)."
       >
@@ -390,24 +587,6 @@ function RunResults({ data }) {
       <Section title="Economics & fulfillment comparison" subtitle="landed_cost_economics + fulfillment_network_comparison.">
         <LandedAndFulfillmentTables landed={data.landed_cost_economics} fnc={data.fulfillment_network_comparison} />
       </Section>
-
-      {data.recommended_warehouse_network && Object.keys(data.recommended_warehouse_network).length > 0 && (
-        <Section title="Recommended warehouse network" subtitle="Present when auto_expand_warehouse_network is used on the run.">
-          <pre
-            style={{
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              padding: 12,
-              fontSize: 11,
-              overflow: "auto",
-              maxHeight: 280,
-            }}
-          >
-            {JSON.stringify(data.recommended_warehouse_network, null, 2)}
-          </pre>
-        </Section>
-      )}
 
       <Section
         title="Product research economics (PRO bundle)"
@@ -537,7 +716,8 @@ export default function ProductResearchPage() {
       <p style={{ color: "#475569", lineHeight: 1.55, fontSize: 14 }}>
         Runs <code>POST …/item-intelligence/run</code> with options aligned to{" "}
         <code>ItemIntelligenceRunBody</code>. The UI surfaces the same artifacts the backend already returns: allocation
-        (inventory by DC), demand enrichment, synthesis, economics, fulfillment comparison, and optional PRO economics.
+        (inventory by DC), <strong>warehouse network scenarios</strong> (single vs multi-DC + MOQ nudges, same response),
+        demand enrichment, synthesis, economics, fulfillment comparison, and optional PRO economics.
       </p>
 
       {!configured && (

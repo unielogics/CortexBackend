@@ -576,13 +576,16 @@ def rollup_order_financial_facts_by_sku(rows: list[dict[str, Any]]) -> dict[str,
 
     acc: dict[str, dict[str, Any]] = {}
     for r in rows:
-        sku = str(r.get("sku") or "").strip()
-        asin = str(r.get("asin") or "").strip() or None
-        key = sku or asin or "__empty__"
+        if not isinstance(r, dict):
+            continue
+        key = order_financial_rollup_key(r)
+        sku = str(r.get("sku") or "").strip() or None
+        asin_raw = str(r.get("asin") or "").strip() or None
+        asin = asin_raw.upper() if asin_raw else None
         if key not in acc:
             acc[key] = {
                 "identifier": key,
-                "sku": sku or None,
+                "sku": sku,
                 "asin": asin,
                 "line_title": r.get("line_title"),
                 "quantity_total": 0.0,
@@ -591,15 +594,17 @@ def rollup_order_financial_facts_by_sku(rows: list[dict[str, Any]]) -> dict[str,
                 "line_count": 0,
             }
         row = acc[key]
-        q = _f(r.get("quantity"))
-        row["quantity_total"] += q if q > 0 else 1.0
+        qline = max(_f(r.get("quantity")), 1.0) or 1.0
+        row["quantity_total"] += qline
         row["revenue_usd_total"] += _f(r.get("revenue_usd"))
         row["product_cogs_usd_total"] += _f(r.get("product_cogs_usd"))
         row["line_count"] += 1
         if not row.get("line_title") and r.get("line_title"):
             row["line_title"] = r.get("line_title")
-        if not row.get("asin") and r.get("asin"):
-            row["asin"] = str(r.get("asin") or "").strip() or None
+        if not row.get("asin") and asin:
+            row["asin"] = asin
+        if not row.get("sku") and sku:
+            row["sku"] = sku
 
     out_rows = sorted(acc.values(), key=lambda x: -float(x["revenue_usd_total"] or 0))
     for row in out_rows:
