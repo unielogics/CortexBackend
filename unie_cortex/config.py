@@ -44,11 +44,175 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MONGODB_DB", "mongodb_db"),
     )
 
-    # SQLite/Postgres only when MONGODB_URI is empty
+    # SQLite/Postgres only when MONGODB_URI is empty (unless Aurora DSQL host is set)
     database_url: str = Field(
         "sqlite+aiosqlite:///./unie_cortex.db",
         validation_alias=AliasChoices("DATABASE_URL", "database_url"),
     )
+
+    # Amazon Aurora DSQL — IAM auth via aurora-dsql-python-connector + asyncpg.
+    # When AURORA_DSQL_CLUSTER_HOST is set, SQLAlchemy uses DSQL (DATABASE_URL ignored for connections).
+    aurora_dsql_cluster_host: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AURORA_DSQL_CLUSTER_HOST",
+            "aurora_dsql_cluster_host",
+        ),
+        description="Cluster endpoint, e.g. xxx.dsql.us-east-1.on.aws (or short cluster id + region)",
+    )
+    aurora_dsql_region: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AURORA_DSQL_REGION", "aurora_dsql_region"),
+        description="AWS region if not inferable from hostname (required for short cluster id)",
+    )
+    aurora_dsql_user: str = Field(
+        "admin",
+        validation_alias=AliasChoices("AURORA_DSQL_USER", "aurora_dsql_user"),
+    )
+    aurora_dsql_dbname: str = Field(
+        "postgres",
+        validation_alias=AliasChoices("AURORA_DSQL_DBNAME", "aurora_dsql_dbname"),
+    )
+    aurora_dsql_token_duration_secs: int | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AURORA_DSQL_TOKEN_DURATION_SECS",
+            "aurora_dsql_token_duration_secs",
+        ),
+        description="IAM token lifetime in seconds; omit for connector default",
+    )
+    aurora_dsql_aws_profile: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "AURORA_DSQL_AWS_PROFILE",
+            "aurora_dsql_aws_profile",
+        ),
+        description="Optional shared credentials profile for local dev; on EC2 use instance role and leave unset",
+    )
+    aurora_dsql_pool_recycle: int = Field(
+        3300,
+        validation_alias=AliasChoices(
+            "AURORA_DSQL_POOL_RECYCLE",
+            "aurora_dsql_pool_recycle",
+        ),
+        description="pool_recycle seconds; keep below Aurora DSQL max connection duration (~1h)",
+    )
+
+    # --- Aurora Postgres (pgvector) semantic memory ---
+    semantic_memory_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "SEMANTIC_MEMORY_ENABLED",
+            "semantic_memory_enabled",
+        ),
+    )
+    semantic_database_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SEMANTIC_DATABASE_URL",
+            "semantic_database_url",
+        ),
+        description="postgresql+asyncpg://... for Aurora Postgres + pgvector",
+    )
+    semantic_database_secret_arn: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SEMANTIC_DATABASE_SECRET_ARN",
+            "semantic_database_secret_arn",
+        ),
+        description="Secrets Manager secret JSON: username, password, host, port, dbname",
+    )
+    semantic_database_region: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SEMANTIC_DATABASE_REGION",
+            "semantic_database_region",
+        ),
+    )
+    semantic_pool_recycle: int = Field(
+        3300,
+        validation_alias=AliasChoices(
+            "SEMANTIC_POOL_RECYCLE",
+            "semantic_pool_recycle",
+        ),
+    )
+    semantic_embed_dimensions: int = Field(
+        1536,
+        validation_alias=AliasChoices(
+            "SEMANTIC_EMBED_DIMENSIONS",
+            "semantic_embed_dimensions",
+        ),
+        description="Must match embedding model output size (e.g. text-embedding-3-small = 1536)",
+    )
+    semantic_embed_max_chars_audit: int = Field(
+        8000,
+        validation_alias=AliasChoices(
+            "SEMANTIC_EMBED_MAX_CHARS_AUDIT",
+            "semantic_embed_max_chars_audit",
+        ),
+    )
+    semantic_embed_max_chars_proposal: int = Field(
+        4000,
+        validation_alias=AliasChoices(
+            "SEMANTIC_EMBED_MAX_CHARS_PROPOSAL",
+            "semantic_embed_max_chars_proposal",
+        ),
+    )
+    semantic_embed_max_concurrency: int = Field(
+        4,
+        validation_alias=AliasChoices(
+            "SEMANTIC_EMBED_MAX_CONCURRENCY",
+            "semantic_embed_max_concurrency",
+        ),
+    )
+    embedding_provider: str = Field(
+        "openai",
+        validation_alias=AliasChoices("EMBEDDING_PROVIDER", "embedding_provider"),
+        description="openai (default) — extend for bedrock later",
+    )
+    openai_api_key: str | None = Field(
+        None,
+        validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
+        description="Used for text embeddings when EMBEDDING_PROVIDER=openai",
+    )
+    openai_embedding_model: str = Field(
+        "text-embedding-3-small",
+        validation_alias=AliasChoices(
+            "OPENAI_EMBEDDING_MODEL",
+            "openai_embedding_model",
+        ),
+    )
+    openai_embedding_base_url: str = Field(
+        "https://api.openai.com/v1",
+        validation_alias=AliasChoices(
+            "OPENAI_EMBEDDING_BASE_URL",
+            "openai_embedding_base_url",
+        ),
+    )
+    rag_top_k: int = Field(
+        6,
+        validation_alias=AliasChoices("RAG_TOP_K", "rag_top_k"),
+    )
+    rag_min_similarity: float = Field(
+        0.25,
+        validation_alias=AliasChoices("RAG_MIN_SIMILARITY", "rag_min_similarity"),
+        description="Min cosine similarity 0–1 (1=identical); below = drop chunk",
+    )
+
+    # --- S3 optional blob tier ---
+    s3_artifacts_bucket: str | None = Field(
+        None,
+        validation_alias=AliasChoices("S3_ARTIFACTS_BUCKET", "s3_artifacts_bucket"),
+    )
+    s3_artifacts_prefix: str = Field(
+        "",
+        validation_alias=AliasChoices("S3_ARTIFACTS_PREFIX", "s3_artifacts_prefix"),
+    )
+    aws_region: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AWS_REGION", "AWS_DEFAULT_REGION", "aws_region"),
+    )
+
     upload_dir: str = Field(
         "./uploads",
         validation_alias=AliasChoices("UPLOAD_DIR", "upload_dir"),
@@ -1059,6 +1223,25 @@ class Settings(BaseSettings):
     @property
     def use_mongodb(self) -> bool:
         return bool(self.mongodb_uri and str(self.mongodb_uri).strip())
+
+    @property
+    def use_aurora_dsql(self) -> bool:
+        return bool(self.aurora_dsql_cluster_host and str(self.aurora_dsql_cluster_host).strip())
+
+    @property
+    def semantic_brain_configured(self) -> bool:
+        """True when semantic memory flag is on and a URL or secret ARN is set."""
+        if not self.semantic_memory_enabled:
+            return False
+        u = (self.semantic_database_url or "").strip()
+        if u:
+            return True
+        arn = (self.semantic_database_secret_arn or "").strip()
+        return bool(arn)
+
+    @property
+    def s3_artifacts_configured(self) -> bool:
+        return bool((self.s3_artifacts_bucket or "").strip())
 
     @property
     def shippo_configured(self) -> bool:

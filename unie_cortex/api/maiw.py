@@ -258,6 +258,16 @@ async def maiw_proposal_approve(
     if p["status"] != "pending":
         raise HTTPException(400, f"Proposal is {p['status']}, not pending")
     await store.maiw_proposal_set_status(proposal_id, "approved", approve_note=body.note)
+    from unie_cortex.services.semantic_memory.pipeline import queue_proposal_decision_embedding
+
+    queue_proposal_decision_embedding(
+        tenant_id=p["tenant_id"],
+        proposal_id=proposal_id,
+        engagement_id=p.get("engagement_id"),
+        decision="approved",
+        note_or_reason=body.note,
+        source_table="maiw_operational",
+    )
     return {
         "proposal_id": proposal_id,
         "status": "approved",
@@ -277,4 +287,14 @@ async def maiw_proposal_deny(
     if p["status"] != "pending":
         raise HTTPException(400, f"Proposal is {p['status']}, not pending")
     await store.maiw_proposal_set_status(proposal_id, "denied", deny_reason=body.reason)
+    from unie_cortex.services.semantic_memory.pipeline import queue_proposal_decision_embedding
+
+    queue_proposal_decision_embedding(
+        tenant_id=p["tenant_id"],
+        proposal_id=proposal_id,
+        engagement_id=p.get("engagement_id"),
+        decision="denied",
+        note_or_reason=body.reason,
+        source_table="maiw_operational",
+    )
     return {"proposal_id": proposal_id, "status": "denied"}

@@ -14,6 +14,7 @@ from unie_cortex.db.deps import get_store
 from unie_cortex.db.store import CortexStore
 from unie_cortex.services.cuopt_scenario import run_multi_dc_scenario
 from unie_cortex.services.nim_narrative import fallback_narrative, generate_narrative_from_artifact
+from unie_cortex.services.semantic_memory.pipeline import queue_audit_run_embedding
 from unie_cortex.spine.ingest import ingest_labels_csv, ingest_tasks_csv
 from unie_cortex.spine.runner import (
     artifact_to_json,
@@ -516,11 +517,20 @@ async def upload_csv(
             "kind must be labels, tasks, order_financials, asn, order_lines, billing, or employees",
         )
 
-    root = Path(settings.upload_dir) / engagement_id
-    root.mkdir(parents=True, exist_ok=True)
-    fp = root / f"{batch_id}_{file.filename or 'data.csv'}"
-    fp.write_bytes(raw)
     out: dict[str, Any] = {"batch_id": batch_id, "kind": kind, "row_count": n}
+    if settings.s3_artifacts_configured:
+        from unie_cortex.integrations.s3_artifacts import put_bytes_async
+
+        prefix = (settings.s3_artifacts_prefix or "").strip().strip("/")
+        rel = f"{engagement_id}/{batch_id}_{file.filename or 'data.csv'}"
+        key = f"{prefix}/{rel}" if prefix else rel
+        s3_uri = await put_bytes_async(key=key, body=raw, content_type="text/csv")
+        out["s3_uri"] = s3_uri
+    else:
+        root = Path(settings.upload_dir) / engagement_id
+        root.mkdir(parents=True, exist_ok=True)
+        fp = root / f"{batch_id}_{file.filename or 'data.csv'}"
+        fp.write_bytes(raw)
     if ol_stats is not None:
         out["rows_read"] = ol_stats.get("rows_read", 0)
         out["rows_skipped_identifier"] = ol_stats.get("rows_skipped_identifier", 0)
@@ -564,6 +574,14 @@ async def start_audit_run(
             "artifact_json": artifact_to_json(artifact),
             "narrative_text": narrative,
         }
+    )
+    tid_mem = (e.get("org_tenant_id") or "").strip() or engagement_id
+    queue_audit_run_embedding(
+        tenant_id=tid_mem,
+        run_id=rid,
+        engagement_id=engagement_id,
+        artifact=artifact,
+        narrative_text=narrative,
     )
     return AuditRunOut(
         run_id=rid,

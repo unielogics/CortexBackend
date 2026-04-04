@@ -1,11 +1,13 @@
 """Alembic environment.
 
-Online migrations run via an **async** SQLAlchemy engine (asyncpg / aiosqlite) and
-``connection.run_sync`` so Alembic's synchronous ``context.run_migrations`` works.
+Online migrations run via an **async** SQLAlchemy engine (asyncpg / aiosqlite / Aurora DSQL)
+and ``connection.run_sync`` so Alembic's synchronous ``context.run_migrations`` works.
+When ``AURORA_DSQL_CLUSTER_HOST`` is set, online mode uses the same DSQL IAM path as the app.
 
 For **offline** SQL generation, ``DATABASE_URL`` must use a sync driver: replace
 ``postgresql+asyncpg`` with ``postgresql`` or ``postgresql+psycopg2`` (and install a sync
 PostgreSQL driver). ``sqlite+aiosqlite`` is converted to ``sqlite`` for offline mode.
+DSQL-only configs use a placeholder Postgres URL for offline dialect.
 """
 from __future__ import annotations
 
@@ -15,10 +17,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from unie_cortex.config import settings
-from unie_cortex.db.database import Base
+from unie_cortex.db.database import Base, create_async_sql_engine
 
 import unie_cortex.db.models  # noqa: F401
 
@@ -37,8 +38,15 @@ def _offline_url(url: str) -> str:
     return url
 
 
+def _effective_migration_url() -> str:
+    """Offline SQL uses a placeholder URL when only DSQL env is configured."""
+    if settings.use_aurora_dsql:
+        return "postgresql+asyncpg://placeholder/dummy"
+    return settings.database_url
+
+
 def run_migrations_offline() -> None:
-    url = _offline_url(settings.database_url)
+    url = _offline_url(_effective_migration_url())
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -56,7 +64,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = create_async_engine(settings.database_url, poolclass=pool.NullPool)
+    connectable = create_async_sql_engine(poolclass=pool.NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

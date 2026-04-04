@@ -62,10 +62,13 @@ Proxy targets API :8080. Production: `npm run build` then serve `portal/dist` vi
 
 ## Env
 
-See `.env.example`: Mongo/SQLite, Shippo, Geoapify, `NVIDIA_API_KEY`, etc.
+See `.env.example`: MongoDB, SQLite/Postgres (`DATABASE_URL`), **Aurora DSQL** (`AURORA_DSQL_CLUSTER_HOST` + IAM), Shippo, Geoapify, `NVIDIA_API_KEY`, etc.
 
 ## Docs
 
 - **[docs/PRODUCT_MODES.md](docs/PRODUCT_MODES.md)** — assessment vs live API, data sources, approve/deny.
 - **[docs/PRODUCT_RESEARCH_OPTIMIZATION.md](docs/PRODUCT_RESEARCH_OPTIMIZATION.md)** — ASIN/UPC product research, catalog + run + Keepa/SP-API.
 - **[docs/NETWORK_INTELLIGENCE.md](docs/NETWORK_INTELLIGENCE.md)** — network scenarios, carrier zones, LTL/pallet mocks (`/v1/network`).
+
+## realfrancoamerica
+

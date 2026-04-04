@@ -16,6 +16,7 @@ from unie_cortex.api.item_intelligence import router as item_intelligence_router
 from unie_cortex.api.operational import router as operational_router
 from unie_cortex.config import settings
 from unie_cortex.db.database import SessionLocal, init_sql_db
+from unie_cortex.db import semantic_database as semantic_db_mod
 from unie_cortex.product_identity import SELLER_OPTIMIZATION_ENGINE_NAME, seller_optimization_engine_identity
 from unie_cortex.db.store import MongoCortexStore, SqlCortexStore, ensure_mongo_indexes
 from unie_cortex.middleware.auth_middleware import APIAuthMiddleware
@@ -42,8 +43,18 @@ async def lifespan(app: FastAPI):
             await SqlCortexStore(session).templates_seed_default()
             await session.commit()
 
+    app.state.semantic_engine = None
+    if settings.semantic_brain_configured:
+        eng = semantic_db_mod.configure_semantic_from_settings(settings)
+        if eng is not None:
+            await semantic_db_mod.init_semantic_database(eng)
+            app.state.semantic_engine = eng
+
     yield
 
+    sem_eng = getattr(app.state, "semantic_engine", None)
+    if sem_eng is not None:
+        await sem_eng.dispose()
     if app.state.mongo_client is not None:
         app.state.mongo_client.close()
 
@@ -52,7 +63,7 @@ app = FastAPI(
     title=SELLER_OPTIMIZATION_ENGINE_NAME,
     description=(
         f"{SELLER_OPTIMIZATION_ENGINE_NAME} — Amazon seller fee, fulfillment, and network planning "
-        "(assessment, order-financial ingest, MAIW, warehouse intelligence; MongoDB or SQLite)."
+        "(assessment, order-financial ingest, MAIW, warehouse intelligence; MongoDB, SQLite/Postgres, Aurora DSQL, optional semantic pgvector + S3)."
     ),
     version="0.4.0",
     lifespan=lifespan,
@@ -124,8 +135,25 @@ async def health_deps(request: Request):
     else:
         deps["database"] = "sql"
         deps["mongo"] = "n/a"
-    ok = deps.get("mongo") in ("ok", "n/a", "not_initialized")
-    return {"status": "ok" if ok else "degraded", "dependencies": deps}
+    if settings.semantic_brain_configured:
+        eng = getattr(request.app.state, "semantic_engine", None)
+        if eng is None:
+            deps["semantic_memory"] = "not_initialized"
+        else:
+            try:
+                from unie_cortex.db.semantic_database import ping_semantic_database
+
+                await ping_semantic_database(eng)
+                deps["semantic_memory"] = "ok"
+            except Exception as e:
+                deps["semantic_memory"] = f"error: {type(e).__name__}"
+    else:
+        deps["semantic_memory"] = "disabled"
+    mongo_ok = deps.get("mongo") in ("ok", "n/a", "not_initialized")
+    sem_ok = True
+    if settings.semantic_brain_configured:
+        sem_ok = deps.get("semantic_memory") == "ok"
+    return {"status": "ok" if mongo_ok and sem_ok else "degraded", "dependencies": deps}
 
 
 @app.get("/")

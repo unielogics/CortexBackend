@@ -311,6 +311,16 @@ async def approve_proposal(
         chosen_variant=body.chosen_variant,
         approve_note=body.note,
     )
+    from unie_cortex.services.semantic_memory.pipeline import queue_proposal_decision_embedding
+
+    queue_proposal_decision_embedding(
+        tenant_id=row["tenant_id"],
+        proposal_id=proposal_id,
+        engagement_id=None,
+        decision="approved",
+        note_or_reason=body.note,
+        source_table="maiw_warehouse",
+    )
     return {"ok": True, "proposalId": proposal_id, "status": "approved"}
 
 
@@ -329,5 +339,15 @@ async def deny_proposal(
         proposal_id,
         "denied",
         deny_reason=body.reason,
+    )
+    from unie_cortex.services.semantic_memory.pipeline import queue_proposal_decision_embedding
+
+    queue_proposal_decision_embedding(
+        tenant_id=row["tenant_id"],
+        proposal_id=proposal_id,
+        engagement_id=None,
+        decision="denied",
+        note_or_reason=body.reason,
+        source_table="maiw_warehouse",
     )
     return {"ok": True, "proposalId": proposal_id, "status": "denied"}

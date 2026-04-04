@@ -7,8 +7,29 @@
 | `CORS_ORIGINS` | Allowed origins (comma-separated); empty = * | No | `*` |
 | `MONGODB_URI` | MongoDB connection | No* | — |
 | `MONGODB_DB` | MongoDB database name | No | `unie_cortex` |
-| `DATABASE_URL` | SQLite/Postgres when MONGODB_URI unset | No | `sqlite+aiosqlite:///./unie_cortex.db` |
-| `UPLOAD_DIR` | CSV upload directory | No | `./uploads` |
+| `DATABASE_URL` | SQLite/Postgres when MONGODB_URI unset and DSQL host unset | No | `sqlite+aiosqlite:///./unie_cortex.db` |
+| `AURORA_DSQL_CLUSTER_HOST` | Aurora DSQL endpoint (IAM); connections ignore `DATABASE_URL` | No | — |
+| `AURORA_DSQL_REGION` | AWS region if not inferable from hostname | No | — |
+| `AURORA_DSQL_USER` | DSQL user (often `admin`) | No | `admin` |
+| `AURORA_DSQL_DBNAME` | Database name | No | `postgres` |
+| `AURORA_DSQL_TOKEN_DURATION_SECS` | IAM token lifetime (seconds) | No | (connector default) |
+| `AURORA_DSQL_AWS_PROFILE` | Shared credentials profile (local dev) | No | — |
+| `AURORA_DSQL_POOL_RECYCLE` | SQLAlchemy `pool_recycle` (< ~3600 for DSQL) | No | `3300` |
+| `SEMANTIC_MEMORY_ENABLED` | Enable pgvector semantic DB + async embed pipeline | No | `false` |
+| `SEMANTIC_DATABASE_URL` | `postgresql+asyncpg://...` for Aurora Postgres + pgvector | No* | — |
+| `SEMANTIC_DATABASE_SECRET_ARN` | Secrets Manager JSON → build semantic URL | No* | — |
+| `SEMANTIC_DATABASE_REGION` | Region for Secrets Manager / S3 client | No | — |
+| `SEMANTIC_POOL_RECYCLE` | Semantic engine `pool_recycle` | No | `3300` |
+| `EMBEDDING_PROVIDER` | `openai` (extensible) | No | `openai` |
+| `OPENAI_API_KEY` | Embeddings when provider is OpenAI | No* | — |
+| `OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_BASE_URL` | Embedding model + API base | No | see `.env.example` |
+| `SEMANTIC_EMBED_MAX_CHARS_*` | Truncate before embed | No | see defaults in config |
+| `SEMANTIC_EMBED_MAX_CONCURRENCY` | Async embedding semaphore | No | `4` |
+| `RAG_TOP_K` / `RAG_MIN_SIMILARITY` | Retrieval for NIM audit narrative | No | `6` / `0.25` |
+| `S3_ARTIFACTS_BUCKET` | Optional: store uploads in S3 instead of only `UPLOAD_DIR` | No | — |
+| `S3_ARTIFACTS_PREFIX` | Key prefix inside bucket | No | (empty) |
+| `AWS_REGION` | S3 / Secrets Manager region hint | No | — |
+| `UPLOAD_DIR` | CSV upload directory (when S3 unset) | No | `./uploads` |
 | `GEOAPIFY_API_KEY` | Geocoding (primary) | No | — |
 | `GEOCODING_MAPBOX_TOKEN` | Geocoding fallback | No | — |
 | `GEOCODING_NOMINATIM` | Use Nominatim when no paid geocoder | No | `true` |

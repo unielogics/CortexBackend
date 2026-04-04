@@ -66,6 +66,7 @@ async def nim_post_chat_completions(
     proposal_id: str | None = None,
     correlation_id: str | None = None,
     extra: dict[str, Any] | None = None,
+    rag_observability: dict[str, Any] | None = None,
     timeout_sec: float = 120,
 ) -> NimChatOutcome:
     """
@@ -82,7 +83,12 @@ async def nim_post_chat_completions(
     prompt_sha = prompt_fingerprint(
         messages=messages, model=model, temperature=temperature, max_tokens=max_tokens
     )
-    extra_json = json.dumps(extra, default=str) if extra else None
+    merged_extra: dict[str, Any] = {}
+    if extra:
+        merged_extra.update(extra)
+    if rag_observability:
+        merged_extra["rag"] = rag_observability
+    extra_json = json.dumps(merged_extra, default=str) if merged_extra else None
     preview_n = int(settings.ai_observability_preview_max_chars or 0)
 
     def previews_for(response_body: str | None) -> tuple[str | None, str | None]:

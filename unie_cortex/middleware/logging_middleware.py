@@ -7,6 +7,8 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from unie_cortex.request_context import correlation_id_ctx
+
 # Redact API keys, bearer tokens, and common secret patterns
 REDACT_PATTERNS = [
     (re.compile(r'(api[_-]?key|apikey|authorization|bearer)\s*[:=]\s*["\']?([^\s"\']+)', re.I), r'\1=***REDACTED***'),
@@ -28,6 +30,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:12]
         request.scope["request_id"] = request_id
+        token = correlation_id_ctx.set(request_id)
         method = request.method
         path = request.scope.get("path", "")
         logger.info(_redact(f"[{request_id}] {method} {path}"))
@@ -39,3 +42,5 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.exception(_redact(f"[{request_id}] {method} {path} -> error: {e}"))
             raise
+        finally:
+            correlation_id_ctx.reset(token)

@@ -9,6 +9,7 @@ from typing import Any
 
 from unie_cortex.config import settings
 from unie_cortex.integrations.nim_chat import nim_post_chat_completions
+from unie_cortex.request_context import get_correlation_id
 
 
 def _strip_code_fence(text: str) -> str:
@@ -283,6 +284,7 @@ async def generate_audit_ai_recommendations(
         tenant_id=tenant_id,
         engagement_id=engagement_id,
         run_id=run_id,
+        correlation_id=get_correlation_id(),
     )
 
     def _merge_inv(**extra: Any) -> dict[str, Any]:
