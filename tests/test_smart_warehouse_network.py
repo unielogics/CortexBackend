@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from unie_cortex.network.us_state_demand_share import build_blended_state_demand_weights_from_labels
+from unie_cortex.services.cuopt_allocation_hints import build_cuopt_allocation_intelligence
 from unie_cortex.services.smart_warehouse_network import (
     _build_warehouse_priority_order,
     _hot_zip3_for_priority_scoring,
@@ -10,14 +11,96 @@ from unie_cortex.services.smart_warehouse_network import (
     build_warehouse_network_recommendation_options,
     multi_dc_target_warehouse_count,
     recommend_warehouse_network,
+    rollup_catalog_monthly_demand_bands_from_alloc_inputs,
     trim_client_warehouse_network_to_demand,
 )
+
+
+def test_rollup_catalog_monthly_demand_bands_from_alloc_inputs():
+    r = rollup_catalog_monthly_demand_bands_from_alloc_inputs(
+        [
+            {"sku": "A", "monthly_units": 100, "monthly_units_low": 80, "monthly_units_high": 120},
+            {"sku": "B", "monthly_units": 50, "monthly_units_low": 40, "monthly_units_high": 60},
+        ]
+    )
+    assert r["monthly_mid_total"] == 150
+    assert r["monthly_low_total"] == 120
+    assert r["monthly_high_total"] == 180
+
+
+def test_cuopt_allocation_intelligence_cost_refit_blend():
+    nvb = {
+        "result": {
+            "solver_response": {
+                "vehicle_data": {"v1": {"task_id": ["h", "a", "depot"]}},
+            }
+        }
+    }
+    out = build_cuopt_allocation_intelligence(
+        nvidia_block=nvb,
+        warehouse_ids=["h", "a"],
+        max_nudge_pct=2.5,
+        mean_mock_parcel_usd_by_warehouse={"h": 10.0, "a": 5.0},
+        cost_refit_blend=1.0,
+    )
+    assert out["status"] == "ok"
+    nu = out["target_share_pct_nudges_pct_points"]
+    assert nu["a"] > nu["h"]
 
 
 def test_multi_dc_target_count_orders_step():
     assert multi_dc_target_warehouse_count(72, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 2
     assert multi_dc_target_warehouse_count(1000, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 3
     assert multi_dc_target_warehouse_count(5000, orders_per_additional=1000, base_multi_count=2, max_cap=6) == 6
+
+
+def test_wno_includes_network_location_intelligence():
+    out = build_warehouse_network_recommendation_options(
+        monthly_total_demand_units=72.0,
+        seed_warehouses=[{"id": "hub", "postal": "07055"}],
+        hub_warehouse_id="hub",
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        max_warehouses_cap=6,
+        candidate_pool=[
+            {"id": "hub", "postal": "07055"},
+            {"id": "b", "postal": "30303"},
+        ],
+    )
+    assert out["status"] == "complete"
+    nli = out.get("network_location_intelligence") or {}
+    assert nli.get("schema_version") == "network_location_intelligence_v1"
+    assert nli.get("max_locations_in_scope") == 6
+    assert len(nli.get("location_profiles") or []) <= 6
+    assert isinstance(nli.get("subset_layout_evaluations"), list)
+
+
+@patch("unie_cortex.services.smart_warehouse_network.build_warehouse_mock_placement_grids")
+def test_network_location_intelligence_top_six_subset_table(mock_grid):
+    mock_grid.side_effect = lambda nodes, **kw: _grid_payload(nodes, 8.0)
+    zips = ["07102", "30303", "60607", "77002", "80202", "90012"]
+    pool = [{"id": f"w{i}", "postal": zips[i]} for i in range(6)]
+    out = recommend_warehouse_network(
+        monthly_total_demand_units=5000.0,
+        seed_warehouses=[pool[0]],
+        hub_warehouse_id="w0",
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        min_monthly_units_to_expand_beyond_one=250.0,
+        volume_tiers_for_max_nodes=[(0.0, 1), (400.0, 6)],
+        max_warehouses_cap=6,
+        candidate_pool=pool,
+    )
+    nli = out.get("network_location_intelligence") or {}
+    assert nli.get("schema_version") == "network_location_intelligence_v1"
+    assert len(nli.get("priority_warehouse_ids_in_scope") or []) == 6
+    assert len(nli.get("location_profiles") or []) == 6
+    subs = nli.get("subset_layout_evaluations") or []
+    assert len(subs) >= 32
+    sel = nli.get("selected_layout") or {}
+    assert "warehouse_ids" in sel
 
 
 def test_recommendation_options_always_single_and_multi():
@@ -99,8 +182,8 @@ def test_low_volume_forces_single_node_without_mock_grids():
 
 
 @patch("unie_cortex.services.smart_warehouse_network.build_warehouse_mock_placement_grids")
-def test_equal_mock_means_three_nodes_when_demand_saturates(mock_grid):
-    """Equal inverse shares → even split; 1800/3 = 600 ≥ 500 MOQ for 3+ nodes."""
+def test_equal_mock_subset_cost_prefers_two_nodes_over_three(mock_grid):
+    """Equal mock parcel: volume tier allows 3 DCs but subset objective (last mile + linehaul) favors fewer spokes."""
 
     def _side_effect(nodes, **kwargs):
         return _grid_payload(nodes, 9.0)
@@ -127,13 +210,15 @@ def test_equal_mock_means_three_nodes_when_demand_saturates(mock_grid):
         candidate_pool=pool,
         default_lane_cost_per_lb=0.15,
     )
-    assert out["selected_warehouse_count"] == 3
+    assert out["selected_warehouse_count"] == 2
     sel = {w["id"] for w in out["selected_warehouses"]}
-    assert sel <= {"h", "a", "b", "c"} and "h" in sel and len(sel) == 3
+    assert sel <= {"h", "a", "b", "c"} and "h" in sel and len(sel) == 2
     assert out["hub_warehouse_id"] == "h"
-    assert len(out["lanes"]) == 2
+    assert len(out["lanes"]) == 1
     hub_ids = {ln["from_id"] for ln in out["lanes"]}
     assert hub_ids == {"h"}
+    meta = out.get("network_selection_meta") or {}
+    assert meta.get("selection_engine_resolved") in ("subset_cost", "expand_two_preference")
 
 
 @patch("unie_cortex.services.smart_warehouse_network.build_warehouse_mock_placement_grids")
@@ -163,7 +248,8 @@ def test_skewed_means_stops_before_third_node(mock_grid):
         candidate_pool=pool,
     )
     assert out["selected_warehouse_count"] == 2
-    assert "rejected" in " ".join(out["trace"]).lower()
+    tr = " ".join(out["trace"]).lower()
+    assert "moq fail" in tr or "rejected" in tr
 
 
 @patch("unie_cortex.services.smart_warehouse_network.build_warehouse_mock_placement_grids")

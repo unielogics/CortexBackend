@@ -39,6 +39,18 @@ def test_resolve_listing_price_override_and_keepa():
     assert resolve_listing_price_usd_for_sku("S2", dem, None) == (None, "unavailable")
 
 
+def test_resolve_listing_price_prefers_keepa_7d_average():
+    dem = {
+        "S1": {
+            "listing_economics_reference": {
+                "buy_box_landed_price_usd": 30.0,
+                "buy_box_landed_avg_7d_usd": 28.5,
+            }
+        },
+    }
+    assert resolve_listing_price_usd_for_sku("S1", dem, None) == (28.5, "keepa_buy_box_7d_average")
+
+
 def test_fba_prep_subtotal_includes_default_fnsku():
     wh = [{"id": "w1", "target_share_pct": 100.0, "pricing_profile_id": "profile_nj_v1"}]
     br = build_fba_prep_services_breakdown("w1", wh, prep_options=None, default_pricing_profile_id="profile_nj_v1")

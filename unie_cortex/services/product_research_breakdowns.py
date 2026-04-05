@@ -24,11 +24,18 @@ def resolve_listing_price_usd_for_sku(
     if not isinstance(dem, dict):
         return None, "unavailable"
     le = dem.get("listing_economics_reference")
-    if isinstance(le, dict) and le.get("buy_box_landed_price_usd") is not None:
-        try:
-            return float(le["buy_box_landed_price_usd"]), "keepa_listing_economics_reference"
-        except (TypeError, ValueError):
-            pass
+    if isinstance(le, dict):
+        a7 = le.get("buy_box_landed_avg_7d_usd")
+        if a7 is not None:
+            try:
+                return float(a7), "keepa_buy_box_7d_average"
+            except (TypeError, ValueError):
+                pass
+        if le.get("buy_box_landed_price_usd") is not None:
+            try:
+                return float(le["buy_box_landed_price_usd"]), "keepa_listing_economics_reference"
+            except (TypeError, ValueError):
+                pass
     return None, "unavailable"
 
 
@@ -214,6 +221,7 @@ def build_scenario_comparison_for_sku(
     fbm_fully_loaded_usd_per_unit: float | None,
     amazon_fees_fba: dict[str, Any] | None,
     amazon_fees_fbm: dict[str, Any] | None,
+    listing_price_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Side-by-side FBA prep path vs FBM network path (per unit), with KPIs when inputs exist."""
     cogs = float(cogs_per_unit) if cogs_per_unit is not None else None
@@ -239,7 +247,7 @@ def build_scenario_comparison_for_sku(
     margin_fba = round(gp_fba / price, 6) if (gp_fba is not None and price and price > 0) else None
     margin_fbm = round(gp_fbm / price, 6) if (gp_fbm is not None and price and price > 0) else None
 
-    return {
+    out = {
         "sku": sku,
         "asin": asin,
         "listing_price_usd": price,
@@ -263,6 +271,9 @@ def build_scenario_comparison_for_sku(
             "note": "KPIs omitted when listing price, COGS, or Amazon fee estimate is missing (graceful partial).",
         },
     }
+    if isinstance(listing_price_context, dict) and listing_price_context:
+        out["listing_price_context"] = listing_price_context
+    return out
 
 
 def build_product_research_core_bundle(
@@ -326,6 +337,43 @@ def build_product_research_core_bundle(
             except (TypeError, ValueError):
                 cogs = None
 
+        dem_row = demand_by_sku.get(sku) if isinstance(demand_by_sku, dict) else None
+        le = dem_row.get("listing_economics_reference") if isinstance(dem_row, dict) else None
+        listing_price_context: dict[str, Any] | None = None
+        if isinstance(le, dict):
+            lpc: dict[str, Any] = {}
+            spot_bb = le.get("buy_box_landed_price_usd")
+            if spot_bb is not None:
+                try:
+                    lpc["spot_buy_box_landed_usd"] = float(spot_bb)
+                except (TypeError, ValueError):
+                    pass
+            for src_k, dst_k in (
+                ("buy_box_landed_avg_7d_usd", "avg_7d_usd"),
+                ("buy_box_landed_min_7d_usd", "min_7d_usd"),
+                ("buy_box_landed_max_7d_usd", "max_7d_usd"),
+            ):
+                raw_v = le.get(src_k)
+                if raw_v is not None:
+                    try:
+                        lpc[dst_k] = float(raw_v)
+                    except (TypeError, ValueError):
+                        pass
+            wd = le.get("buy_box_landed_7d_window_days")
+            if wd is not None:
+                try:
+                    lpc["window_days"] = int(wd)
+                except (TypeError, ValueError):
+                    pass
+            sc = le.get("buy_box_landed_7d_sample_count")
+            if sc is not None:
+                try:
+                    lpc["7d_distinct_price_change_points"] = int(sc)
+                except (TypeError, ValueError):
+                    pass
+            if lpc:
+                listing_price_context = lpc
+
         scen = build_scenario_comparison_for_sku(
             sku,
             asin=asin,
@@ -336,6 +384,7 @@ def build_product_research_core_bundle(
             fbm_fully_loaded_usd_per_unit=float(fl) if fl is not None else None,
             amazon_fees_fba=fba_fees if isinstance(fba_fees, dict) else None,
             amazon_fees_fbm=fbm_fees if isinstance(fbm_fees, dict) else None,
+            listing_price_context=listing_price_context,
         )
 
         per_sku.append(

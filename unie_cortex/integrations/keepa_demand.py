@@ -225,6 +225,92 @@ def _keepa_cents_to_usd(cents: int | None) -> float | None:
     return round(float(cents) / 100.0, 4)
 
 
+def compute_buy_box_landed_price_7d_reference_stats(
+    p: dict[str, Any],
+    *,
+    days: int = 7,
+) -> dict[str, Any] | None:
+    """
+    Rolling buy-box landed (BUY_BOX_SHIPPING) stats from Keepa ``csv`` history.
+
+    Uses change points in csv type **18** (same index as ``stats.current`` BUY_BOX_SHIPPING).
+    Mean/min/max are taken over **distinct price levels** observed after the window start
+    (opening level carried into the window, then each new positive price inside the window).
+    """
+    lu = _safe_int(p.get("lastUpdate"))
+    if lu is None or lu <= 0:
+        return None
+    d = max(int(days), 1)
+    window_mins = d * 1440
+    t_start = lu - window_mins
+    csv_list = p.get("csv")
+    if not isinstance(csv_list, list) or len(csv_list) < 4:
+        return None
+    try:
+        as_ints = [int(x) for x in csv_list]
+    except (TypeError, ValueError):
+        return None
+    sections = _parse_keepa_csv_sections(as_ints)
+    chunk = sections.get(_KEEPA_CSV_BUY_BOX_SHIPPING) or []
+    if len(chunk) < 4:
+        return None
+    pairs: list[tuple[int, int]] = []
+    for j in range(0, len(chunk) - 1, 2):
+        try:
+            t = int(chunk[j])
+            cents = int(chunk[j + 1])
+        except (TypeError, ValueError):
+            continue
+        pairs.append((t, cents))
+    pairs.sort(key=lambda x: x[0])
+    if not pairs:
+        return None
+
+    last: float | None = None
+    for t, cents in pairs:
+        if t > t_start:
+            break
+        if cents > 0:
+            last = _keepa_cents_to_usd(cents)
+        elif cents == -1:
+            last = None
+
+    samples: list[float] = []
+    if last is not None:
+        samples.append(last)
+
+    prev = last
+    for t, cents in pairs:
+        if t <= t_start or t > lu:
+            continue
+        if cents > 0:
+            cur = _keepa_cents_to_usd(cents)
+        elif cents == -1:
+            cur = None
+        else:
+            continue
+        if cur is not None and cur != prev:
+            samples.append(cur)
+        prev = cur
+
+    if not samples:
+        return None
+    avg = round(sum(samples) / len(samples), 4)
+    lo = round(min(samples), 4)
+    hi = round(max(samples), 4)
+    return {
+        "buy_box_landed_avg_7d_usd": avg,
+        "buy_box_landed_min_7d_usd": lo,
+        "buy_box_landed_max_7d_usd": hi,
+        "buy_box_landed_7d_window_days": d,
+        "buy_box_landed_7d_sample_count": len(samples),
+        "buy_box_landed_7d_note": (
+            f"From Keepa csv BUY_BOX_SHIPPING history: mean/min/max of distinct landed buy-box "
+            f"levels seen in the last {d} days (change-point sampling; not minute-weighted)."
+        ),
+    }
+
+
 def extract_listing_economics_reference_usd(p: dict[str, Any]) -> dict[str, Any]:
     """
     Current reference prices from Keepa ``stats.current`` for marketplace economics (breakeven, margin ex-COGS).
@@ -263,6 +349,9 @@ def extract_listing_economics_reference_usd(p: dict[str, Any]) -> dict[str, Any]
             "for listing economics; COGS/fees are not subtracted."
         ),
     }
+    roll = compute_buy_box_landed_price_7d_reference_stats(p, days=7)
+    if roll:
+        out.update(roll)
     return out
 
 
@@ -424,6 +513,218 @@ def _peer_trust_distance(
 
 def _offer_amazon_flag(o: dict[str, Any]) -> bool:
     return o.get("isAmazon") in (True, 1) or o.get("isAmz") in (True, 1)
+
+
+def _offer_is_used_like(o: dict[str, Any]) -> bool:
+    """Keepa offer ``condition`` — 1 / New treated as new; other numeric codes = not new."""
+    c = o.get("condition")
+    if c is None:
+        return False
+    try:
+        return int(c) != 1
+    except (TypeError, ValueError):
+        s = str(c).strip().lower()
+        if not s:
+            return False
+        if s in ("1", "new"):
+            return False
+        return "used" in s or s in ("2", "3", "4", "5", "refurb", "collectible")
+
+
+def _qualified_buy_box_minutes_in_window(
+    pairs: list[tuple[int, str]], t_end: int, window_mins: int
+) -> float:
+    """Minutes within [t_end-window, t_end] where buy box is held by a real marketplace seller id."""
+    if not pairs or t_end <= 0 or window_mins <= 0:
+        return 0.0
+    t_start = max(0, int(t_end) - int(window_mins))
+    total = 0.0
+    for i, (t_s, sid) in enumerate(pairs):
+        t_e = pairs[i + 1][0] if i + 1 < len(pairs) else int(t_end)
+        a = max(int(t_s), t_start)
+        b = min(int(t_e), int(t_end))
+        if b <= a:
+            continue
+        if _is_real_marketplace_seller(str(sid).strip()):
+            total += float(b - a)
+    return total
+
+
+def build_inventory_suggestion_guardrails(
+    p: dict[str, Any],
+    *,
+    buybox_stats_light: dict[str, Any] | None = None,
+    buy_box_rotation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    UX / risk flags for procurement and monthly-unit suggestions (Product Research).
+
+    - Surfaces Amazon-new-only listings (no 3P new offers in Keepa snapshot).
+    - Documents that used-condition offers are not modeled in planning velocity.
+    - Buy-box history: lack of qualified seller time in 30d / 90d; ephemeral seller stints in 12m.
+    """
+    offers = p.get("offers") if isinstance(p.get("offers"), list) else []
+    bsl = buybox_stats_light if isinstance(buybox_stats_light, dict) else {}
+    rot = buy_box_rotation if isinstance(buy_box_rotation, dict) else {}
+
+    used_metrics_note = (
+        "Cortex planning velocity and buy-box analytics use the new-condition listing path. "
+        "Used, refurbished, and collectible offers in Keepa are not counted toward these metrics."
+    )
+
+    amazon_new_offer_rows = 0
+    third_party_new_seller_ids: set[str] = set()
+    used_like_offer_rows = 0
+    if offers:
+        for raw in offers:
+            if not isinstance(raw, dict):
+                continue
+            o = raw
+            if _offer_is_used_like(o):
+                used_like_offer_rows += 1
+                continue
+            if _offer_amazon_flag(o):
+                amazon_new_offer_rows += 1
+                continue
+            sid = o.get("sellerId")
+            if sid is not None and str(sid).strip():
+                third_party_new_seller_ids.add(str(sid).strip())
+
+    amazon_bb_hint = bsl.get("buyBoxIsAmazon") in (True, 1)
+    amazon_retail_new_in_offers = amazon_new_offer_rows > 0
+    no_third_party_new = len(third_party_new_seller_ids) == 0
+
+    offer_snapshot_complete = len(offers) > 0
+    amazon_only_new_listing = bool(
+        offer_snapshot_complete and amazon_retail_new_in_offers and no_third_party_new
+    )
+
+    lu = _safe_int(p.get("lastUpdate")) or 0
+    pairs = _parse_buybox_seller_id_history(p.get("buyBoxSellerIdHistory"))
+    t_end = int(lu) if lu > 0 else (pairs[-1][0] if pairs else 0)
+
+    mins_30d = _qualified_buy_box_minutes_in_window(pairs, t_end, 30 * 1440) if pairs and t_end > 0 else 0.0
+    mins_90d = _qualified_buy_box_minutes_in_window(pairs, t_end, 90 * 1440) if pairs and t_end > 0 else 0.0
+    mins_12m = _qualified_buy_box_minutes_in_window(pairs, t_end, 365 * 1440) if pairs and t_end > 0 else 0.0
+
+    no_qualified_buy_box_30d = pairs and t_end > 0 and mins_30d < 60.0
+    no_qualified_buy_box_90d = pairs and t_end > 0 and mins_90d < 60.0
+
+    ephemeral_sellers = 0
+    if len(pairs) >= 2 and t_end > 0:
+        win_mins = int(365 * 1440)
+        t_start = max(0, t_end - win_mins)
+        per_sid: dict[str, float] = {}
+        for i, (t_s, sid) in enumerate(pairs):
+            if not _is_real_marketplace_seller(str(sid).strip()):
+                continue
+            t_e = pairs[i + 1][0] if i + 1 < len(pairs) else int(t_end)
+            a = max(int(t_s), t_start)
+            b = min(int(t_e), int(t_end))
+            if b <= a:
+                continue
+            k = str(sid).strip()
+            per_sid[k] = per_sid.get(k, 0.0) + float(b - a)
+        for _sid, m in per_sid.items():
+            if 1440.0 <= m <= 10 * 1440.0:
+                ephemeral_sellers += 1
+
+    dominant_win = rot.get("dominant_win_pct")
+    try:
+        dom_pct = float(dominant_win) if dominant_win is not None else None
+    except (TypeError, ValueError):
+        dom_pct = None
+
+    flags: list[dict[str, Any]] = []
+    if amazon_only_new_listing:
+        flags.append(
+            {
+                "code": "amazon_new_no_third_party_new_offers",
+                "severity": "critical",
+                "title": "Amazon appears to own the new offer",
+                "detail": (
+                    "Keepa shows Amazon retail on new condition and no third-party sellers in new condition in this "
+                    "snapshot. We do not recommend planning inventory for resale unless you are the brand or an "
+                    "authorized seller."
+                ),
+            }
+        )
+    elif not offer_snapshot_complete and amazon_bb_hint:
+        flags.append(
+            {
+                "code": "buy_box_amazon_hint_no_offer_rows",
+                "severity": "warning",
+                "title": "Buy box may be Amazon — offer snapshot missing",
+                "detail": (
+                    "Keepa hints the buy box is Amazon but returned no offer rows — increase Keepa offers/stats depth "
+                    "to confirm third-party new sellers before relying on inventory suggestions."
+                ),
+            }
+        )
+    if no_qualified_buy_box_90d:
+        flags.append(
+            {
+                "code": "no_qualified_buy_box_90d",
+                "severity": "critical",
+                "title": "No qualified buy-box seller in ~90 days",
+                "detail": (
+                    "Buy-box history shows essentially no time held by a normal marketplace seller id in the last "
+                    "~90 Keepa minutes window — verify listing health before trusting demand."
+                ),
+            }
+        )
+    elif no_qualified_buy_box_30d:
+        flags.append(
+            {
+                "code": "no_qualified_buy_box_30d",
+                "severity": "warning",
+                "title": "Thin buy-box seller presence in ~30 days",
+                "detail": (
+                    "Very little buy-box time with a qualified seller id in the last ~30 days — confirm competition "
+                    "and listing status."
+                ),
+            }
+        )
+    if ephemeral_sellers >= 4 and dom_pct is not None and dom_pct >= 75.0:
+        flags.append(
+            {
+                "code": "buy_box_churn_with_dominant_leader",
+                "severity": "warning",
+                "title": "Many short-lived buy-box sellers",
+                "detail": (
+                    f"Several sellers held the buy box only briefly (~1–10 days each) in the last year while one "
+                    f"seller still shows ~{dom_pct:.0f}% share — review for churn / suppression dynamics."
+                ),
+            }
+        )
+
+    requires_acknowledgement = any(f.get("severity") == "critical" for f in flags) or amazon_only_new_listing
+
+    return {
+        "schema_version": "inventory_suggestion_guardrails_v1",
+        "status": "complete" if offer_snapshot_complete or pairs else "partial",
+        "used_metrics_note": used_metrics_note,
+        "offer_snapshot": {
+            "offer_rows_total": len(offers),
+            "used_like_offer_rows": used_like_offer_rows,
+            "amazon_new_offer_rows": amazon_new_offer_rows,
+            "third_party_new_seller_count": len(third_party_new_seller_ids),
+            "buy_box_is_amazon_hint": bool(amazon_bb_hint) if bsl else None,
+        },
+        "buy_box_recency": {
+            "qualified_seller_minutes_buy_box_last_30d": round(mins_30d, 2),
+            "qualified_seller_minutes_buy_box_last_90d": round(mins_90d, 2),
+            "qualified_seller_minutes_buy_box_last_365d": round(mins_12m, 2),
+            "no_qualified_buy_box_30d": bool(no_qualified_buy_box_30d),
+            "no_qualified_buy_box_90d": bool(no_qualified_buy_box_90d),
+            "ephemeral_seller_stints_12m_approx": int(ephemeral_sellers),
+            "history_pairs_available": len(pairs),
+        },
+        "flags": flags,
+        "amazon_only_new_listing": bool(amazon_only_new_listing),
+        "requires_user_acknowledgement": bool(requires_acknowledgement),
+        "note": "Heuristic flags from Keepa offers + buyBoxSellerIdHistory — not legal advice; verify Amazon eligibility.",
+    }
 
 
 def build_client_vs_buybox_cohort(
@@ -1382,6 +1683,11 @@ def augment_keepa_demand_core(
         listing_economics_reference=le,
         seller_listing_rating_12m_pct=seller_listing_rating_12m_pct,
         seller_listing_review_count=seller_listing_review_count,
+    )
+    core["inventory_suggestion_guardrails"] = build_inventory_suggestion_guardrails(
+        p,
+        buybox_stats_light=bsl,
+        buy_box_rotation=rot,
     )
 
 

@@ -427,6 +427,95 @@ class Settings(BaseSettings):
             "(same gates as smart network expand; does not add nodes outside the request)."
         ),
     )
+    smart_network_subset_cost_optimization_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_SUBSET_COST_OPTIMIZATION_ENABLED",
+            "smart_network_subset_cost_optimization_enabled",
+        ),
+        description=(
+            "When True, evaluate MOQ-feasible warehouse subsets (primary + combinations from the ranked branch) "
+            "and pick the layout minimizing last-mile + hub→spoke linehaul proxy; not only prefix-of-priority greedy."
+        ),
+    )
+    smart_network_subset_branch_width: int = Field(
+        8,
+        ge=2,
+        le=16,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_SUBSET_BRANCH_WIDTH",
+            "smart_network_subset_branch_width",
+        ),
+        description="Max non-primary candidates considered in subset enumeration (combinatorial cap).",
+    )
+    smart_network_moq_gate_demand_stress_factor: float = Field(
+        0.85,
+        ge=0.3,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MOQ_GATE_DEMAND_STRESS_FACTOR",
+            "smart_network_moq_gate_demand_stress_factor",
+        ),
+        description=(
+            "When no explicit monthly_total_demand_units_low is passed, MOQ gates use mid × this factor "
+            "(<1 = conservative vs planning mid). Ignored when low band is supplied from catalog Keepa estimates."
+        ),
+    )
+    smart_network_linehaul_km_scale_for_selection_proxy: float = Field(
+        800.0,
+        ge=50.0,
+        le=5000.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_LINEHAUL_KM_SCALE_FOR_SELECTION_PROXY",
+            "smart_network_linehaul_km_scale_for_selection_proxy",
+        ),
+        description="Hub→spoke linehaul proxy multiplier uses 1 + haversine_km / this scale.",
+    )
+    smart_network_fixed_cost_usd_per_active_node_monthly: float = Field(
+        0.0,
+        ge=0.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_FIXED_COST_USD_PER_ACTIVE_NODE_MONTHLY",
+            "smart_network_fixed_cost_usd_per_active_node_monthly",
+        ),
+        description="Optional fixed $/month per active DC added to the subset selection objective (discourages extra nodes).",
+    )
+    smart_network_learned_rank_weights_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_LEARNED_RANK_WEIGHTS_ENABLED",
+            "smart_network_learned_rank_weights_enabled",
+        ),
+        description="When True, multiply secondary DC rank weights by the learned multipliers below (offline tuning hook).",
+    )
+    smart_network_learned_fee_weight_multiplier: float = Field(
+        1.0,
+        ge=0.0,
+        le=10.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_LEARNED_FEE_WEIGHT_MULTIPLIER",
+            "smart_network_learned_fee_weight_multiplier",
+        ),
+        description="Applied to contract-fee proxy weight in secondary ranking when learned hook is enabled.",
+    )
+    smart_network_learned_last_mile_weight_multiplier: float = Field(
+        1.0,
+        ge=0.0,
+        le=10.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_LEARNED_LAST_MILE_WEIGHT_MULTIPLIER",
+            "smart_network_learned_last_mile_weight_multiplier",
+        ),
+        description="Applied to demand-weighted mock last-mile weight in secondary ranking when learned hook is enabled.",
+    )
+    smart_network_emit_catalog_velocity_tercile_rollups: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_EMIT_CATALOG_VELOCITY_TERCILE_ROLLUPS",
+            "smart_network_emit_catalog_velocity_tercile_rollups",
+        ),
+        description="Attach high/mid/low velocity tercile demand rollups to warehouse network recommendation metadata.",
+    )
     planning_default_target_days_cover: float = Field(
         75.0,
         validation_alias=AliasChoices(
@@ -935,6 +1024,18 @@ class Settings(BaseSettings):
             "cuopt_allocation_nudge_max_pct",
         ),
         description="Max ± percentage-point nudge per warehouse when deriving cuOpt-informed share adjustments.",
+    )
+    cuopt_allocation_cost_refit_blend: float = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "CUOPT_ALLOCATION_COST_REFIT_BLEND",
+            "cuopt_allocation_cost_refit_blend",
+        ),
+        description=(
+            "Blend cuOpt visit-order nudges with mock-parcel cost-rank nudges: 0 = visit order only, 1 = cost rank only."
+        ),
     )
     cuopt_api_key: str | None = Field(
         None,

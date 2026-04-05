@@ -49,7 +49,9 @@ from unie_cortex.network.us_state_demand_share import (
 )
 from unie_cortex.services.smart_warehouse_network import (
     build_warehouse_network_recommendation_options,
+    catalog_velocity_tercile_rollups,
     recommend_warehouse_network,
+    rollup_catalog_monthly_demand_bands_from_alloc_inputs,
     trim_client_warehouse_network_to_demand,
 )
 from unie_cortex.services.sku_intelligence_merge import (
@@ -672,6 +674,20 @@ async def run_item_intelligence(
                 mid = mid / 2.0 if mid else 0.0
             except (TypeError, ValueError):
                 mid = 0.0
+        low_u = dem.get("monthly_units_est_low")
+        high_u = dem.get("monthly_units_est_high")
+        monthly_units_low: int | None = None
+        monthly_units_high: int | None = None
+        if low_u is not None:
+            try:
+                monthly_units_low = max(0, int(round(float(low_u))))
+            except (TypeError, ValueError):
+                monthly_units_low = None
+        if high_u is not None:
+            try:
+                monthly_units_high = max(0, int(round(float(high_u))))
+            except (TypeError, ValueError):
+                monthly_units_high = None
         w = row.get("weight_lb")
         if w is None:
             w = (sku_to_stats.get(sku) or {}).get("avg_weight_lb") or 0.0
@@ -686,10 +702,17 @@ async def run_item_intelligence(
             {
                 "sku": sku,
                 "monthly_units": max(0, int(round(float(mid or 0)))),
+                "monthly_units_low": monthly_units_low,
+                "monthly_units_high": monthly_units_high,
                 "weight_lb": float(w or 0),
                 "cube_cuft": round(cube, 4),
             }
         )
+
+    demand_bands = rollup_catalog_monthly_demand_bands_from_alloc_inputs(alloc_inputs)
+    catalog_terciles_for_wno: list[Any] = []
+    if bool(getattr(settings, "smart_network_emit_catalog_velocity_tercile_rollups", True)):
+        catalog_terciles_for_wno = catalog_velocity_tercile_rollups(alloc_inputs)
 
     weights = [float(x.get("weight_lb") or 0) for x in alloc_inputs if float(x.get("weight_lb") or 0) > 0]
     median_w = sorted(weights)[len(weights) // 2] if weights else 2.0
@@ -724,6 +747,9 @@ async def run_item_intelligence(
         min_inter_warehouse_transfer_units=min_xfer_pl if min_xfer_pl > 0 else None,
         max_months_to_meet_min_transfer=max_m_xfer,
         product_origin_postal=product_origin_postal,
+        monthly_total_demand_units_low=demand_bands.get("monthly_low_total"),
+        monthly_total_demand_units_high=demand_bands.get("monthly_high_total"),
+        catalog_velocity_tercile_rollups=catalog_terciles_for_wno,
     )
 
     recommended_network: dict[str, Any] | None = None
@@ -760,6 +786,8 @@ async def run_item_intelligence(
                 getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
             ),
             product_origin_postal=product_origin_postal,
+            monthly_total_demand_units_low=demand_bands.get("monthly_low_total"),
+            monthly_total_demand_units_high=demand_bands.get("monthly_high_total"),
         )
         warehouses = [dict(w) for w in (recommended_network.get("selected_warehouses") or [])]
         lanes = [dict(ln) for ln in (recommended_network.get("lanes") or [])]
@@ -798,6 +826,7 @@ async def run_item_intelligence(
                     getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
                 ),
                 product_origin_postal=product_origin_postal,
+                monthly_total_demand_units_low=demand_bands.get("monthly_low_total"),
             )
             if client_warehouse_network_trim.get("client_trim_applied"):
                 warehouses = [
@@ -1102,10 +1131,21 @@ async def run_item_intelligence(
         if str(nvb.get("status") or "") == "complete":
             wids = [str(w.get("id") or "").strip() for w in wh_cuopt if w.get("id")]
             max_nudge = float(getattr(settings, "cuopt_allocation_nudge_max_pct", 2.5) or 2.5)
+            mean_mock_by_wh: dict[str, float] = {}
+            if isinstance(grids_for_cuopt, dict):
+                raw_mm = grids_for_cuopt.get("mean_mock_parcel_usd_by_warehouse") or {}
+                if isinstance(raw_mm, dict):
+                    for kk, vv in raw_mm.items():
+                        try:
+                            mean_mock_by_wh[str(kk)] = float(vv)
+                        except (TypeError, ValueError):
+                            pass
             cuopt_allocation_intelligence = build_cuopt_allocation_intelligence(
                 nvidia_block=nvb,
                 warehouse_ids=wids,
                 max_nudge_pct=max_nudge,
+                mean_mock_parcel_usd_by_warehouse=mean_mock_by_wh if mean_mock_by_wh else None,
+                cost_refit_blend=float(getattr(settings, "cuopt_allocation_cost_refit_blend", 0.5) or 0.0),
             )
             nudges = (
                 cuopt_allocation_intelligence.get("target_share_pct_nudges_pct_points")

@@ -4,6 +4,8 @@ import pytest
 
 from unie_cortex.integrations.keepa_demand import (
     build_client_vs_buybox_cohort,
+    build_inventory_suggestion_guardrails,
+    compute_buy_box_landed_price_7d_reference_stats,
     extract_demand_from_keepa_payload,
     extract_keepa_monthly_sales_history_6m,
     extract_listing_economics_reference_usd,
@@ -79,6 +81,29 @@ def test_keepa_listing_economics_buy_box_from_stats_current():
     assert econ["list_price_usd"] == 24.99
     d = extract_demand_from_keepa_payload({"products": [p]})
     assert d["listing_economics_reference"]["buy_box_landed_price_usd"] == 19.99
+
+
+def test_keepa_buy_box_7d_stats_from_csv_history():
+    # csv: [type, length, t0, cents0, t1, cents1, ...]
+    lu = 10_000
+    t0 = lu - 5000
+    t1 = lu - 2000
+    bb_chunk = [t0, 1800, t1, 2200]  # $18.00 then $22.00 inside window
+    csv_flat = [18, len(bb_chunk), *bb_chunk]
+    p = {
+        "asin": "B07D",
+        "lastUpdate": lu,
+        "csv": csv_flat,
+        "stats": {"current": [0] * 18 + [2500]},
+        "monthlySold": 40,
+    }
+    stats = compute_buy_box_landed_price_7d_reference_stats(p, days=7)
+    assert stats is not None
+    assert stats["buy_box_landed_min_7d_usd"] == 18.0
+    assert stats["buy_box_landed_max_7d_usd"] == 22.0
+    assert stats["buy_box_landed_avg_7d_usd"] == 20.0
+    econ = extract_listing_economics_reference_usd(p)
+    assert econ["buy_box_landed_avg_7d_usd"] == stats["buy_box_landed_avg_7d_usd"]
 
 
 def test_keepa_extract_rank_fallback():
@@ -863,3 +888,44 @@ def test_apply_product_origin_catalog_extra_overridden_by_body():
         warehouse_nodes=[{"warehouse_id": "W", "postal": "11111"}],
     )
     assert demand["S"]["inventory_placement_summary"]["product_origin_postal"] == "33333"
+
+
+def test_inventory_suggestion_guardrails_amazon_new_no_third_party_new():
+    offers = [{"sellerId": "AMZ1", "isAmazon": 1, "condition": 1}]
+    g = build_inventory_suggestion_guardrails(
+        {"offers": offers, "lastUpdate": 1_000_000},
+        buybox_stats_light={},
+        buy_box_rotation={},
+    )
+    assert g["schema_version"] == "inventory_suggestion_guardrails_v1"
+    assert g["amazon_only_new_listing"] is True
+    assert g["requires_user_acknowledgement"] is True
+    assert any(f["severity"] == "critical" for f in g["flags"])
+
+
+def test_inventory_suggestion_guardrails_third_party_new_present():
+    offers = [
+        {"sellerId": "AMZ1", "isAmazon": 1, "condition": 1},
+        {"sellerId": "S3P", "condition": 1},
+    ]
+    g = build_inventory_suggestion_guardrails(
+        {"offers": offers, "lastUpdate": 1_000_000},
+        buybox_stats_light={},
+        buy_box_rotation={},
+    )
+    assert g["amazon_only_new_listing"] is False
+
+
+def test_extract_demand_includes_inventory_suggestion_guardrails():
+    p = {
+        "asin": "B0GUARD",
+        "monthlySold": 100,
+        "offers": [{"sellerId": "AMZ1", "isAmazon": 1, "condition": 1}],
+        "stats": {"current": [0] * 19},
+    }
+    d = extract_demand_from_keepa_payload({"products": [p]})
+    assert "inventory_suggestion_guardrails" in d
+    assert (
+        d["inventory_suggestion_guardrails"]["schema_version"]
+        == "inventory_suggestion_guardrails_v1"
+    )

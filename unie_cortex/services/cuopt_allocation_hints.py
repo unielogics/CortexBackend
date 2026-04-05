@@ -73,6 +73,48 @@ def share_nudges_from_visit_order(
     return out
 
 
+def share_nudges_from_mean_mock_cost_rank(
+    warehouse_ids: list[str],
+    mean_mock_parcel_usd_by_warehouse: dict[str, float],
+    *,
+    max_nudge_pct: float,
+) -> dict[str, float]:
+    """
+    Lower mean mock parcel → earlier in synthetic visit order → positive nudge (more stocking emphasis).
+    Aligns allocation hints with placement_mock_rate_grids / cuOpt fusion last-mile proxy.
+    """
+    if len(warehouse_ids) < 2 or max_nudge_pct <= 0:
+        return {}
+    ranked = sorted(
+        warehouse_ids,
+        key=lambda w: float(mean_mock_parcel_usd_by_warehouse.get(str(w), 99.0)),
+    )
+    return share_nudges_from_visit_order(ranked, max_nudge_pct=max_nudge_pct)
+
+
+def _blend_nudge_maps(
+    visit_nudges: dict[str, float],
+    cost_nudges: dict[str, float],
+    *,
+    cost_weight: float,
+) -> dict[str, float]:
+    """Convex blend; re-center so sum ≈ 0 (keeps net share drift small before apply + renormalize)."""
+    t = max(0.0, min(1.0, float(cost_weight)))
+    keys = set(visit_nudges) | set(cost_nudges)
+    if not keys:
+        return {}
+    out: dict[str, float] = {}
+    for k in keys:
+        v = (1.0 - t) * float(visit_nudges.get(k, 0.0)) + t * float(cost_nudges.get(k, 0.0))
+        out[str(k)] = round(v, 6)
+    s = sum(out.values())
+    if keys and abs(s) > 1e-9:
+        adj = s / len(keys)
+        for k in list(out.keys()):
+            out[k] = round(out[k] - adj, 6)
+    return out
+
+
 def apply_share_nudges_to_warehouses(
     warehouses: list[dict[str, Any]],
     nudges: dict[str, float],
@@ -107,23 +149,56 @@ def build_cuopt_allocation_intelligence(
     nvidia_block: dict[str, Any],
     warehouse_ids: list[str],
     max_nudge_pct: float,
+    mean_mock_parcel_usd_by_warehouse: dict[str, float] | None = None,
+    cost_refit_blend: float = 0.0,
 ) -> dict[str, Any]:
-    """Metadata + nudges; safe when solver output is missing or incomplete."""
+    """
+    Metadata + nudges; safe when solver output is missing or incomplete.
+
+    When ``mean_mock_parcel_usd_by_warehouse`` is set and ``cost_refit_blend`` > 0, blend visit-order nudges with
+    cost-rank nudges (inverse mock parcel emphasis) for tighter alignment with fusion / rate-shop intelligence.
+    """
     order = extract_warehouse_visit_order(nvidia_block, warehouse_ids)
-    if not order:
+    visit_nudges = share_nudges_from_visit_order(order, max_nudge_pct=max_nudge_pct) if order else {}
+    cost_nudges: dict[str, float] = {}
+    mm = mean_mock_parcel_usd_by_warehouse if isinstance(mean_mock_parcel_usd_by_warehouse, dict) else {}
+    blend = max(0.0, min(1.0, float(cost_refit_blend)))
+    if mm and blend > 0 and len(warehouse_ids) >= 2:
+        cost_nudges = share_nudges_from_mean_mock_cost_rank(
+            warehouse_ids,
+            {str(k): float(v) for k, v in mm.items()},
+            max_nudge_pct=max_nudge_pct,
+        )
+
+    if not visit_nudges and not cost_nudges:
         return {
             "schema_version": "cuopt_allocation_intelligence_v1",
             "status": "skipped",
-            "message": "Could not parse warehouse visit order from cuOpt solver_response.",
+            "message": "No cuOpt visit order and no cost-rank nudges (missing solver_response or mock parcel map).",
         }
-    nudges = share_nudges_from_visit_order(order, max_nudge_pct=max_nudge_pct)
+
+    if visit_nudges and cost_nudges and blend > 0 and blend < 1.0:
+        nudges = _blend_nudge_maps(visit_nudges, cost_nudges, cost_weight=blend)
+        blend_note = f"blended visit-order + mean-mock cost rank (cost_weight={blend:.2f})"
+    elif blend >= 1.0 and cost_nudges:
+        nudges = cost_nudges
+        blend_note = "mean-mock cost rank only (cost_weight=1)"
+    else:
+        nudges = visit_nudges
+        blend_note = "cuOpt visit order only" if visit_nudges else "cost rank only"
+
+    note = (
+        "Share nudges for counterfactual allocation: "
+        + blend_note
+        + ". When CUOPT_INFORM_ALLOCATION_WEIGHTS is enabled, apply then renormalize target_share_pct."
+    )
     return {
         "schema_version": "cuopt_allocation_intelligence_v1",
         "status": "ok",
         "visit_order_suggestion": order,
+        "cost_refit_blend_applied": blend,
+        "mean_mock_cost_nudges_pct_points": cost_nudges if cost_nudges else None,
+        "visit_order_nudges_pct_points": visit_nudges if visit_nudges else None,
         "target_share_pct_nudges_pct_points": nudges,
-        "note": (
-            "Soft priority from cuOpt route task order. Counterfactual allocation uses nudged shares when "
-            "CUOPT_INFORM_ALLOCATION_WEIGHTS is enabled."
-        ),
+        "note": note,
     }

@@ -1,19 +1,25 @@
 """
-Greedy US warehouse network expansion: volume gates, MOQ per node, supplier-proximity primary DC
-(when ``product_origin_postal`` is set), secondary DCs by contract fee proxy + demand-weighted mock
-last mile, hot-ZIP3 nudge from labels, and mock parcel grids.
+US warehouse network expansion: volume caps, MOQ per node (optionally stress-tested with Keepa low bands
+or mid × ``smart_network_moq_gate_demand_stress_factor``), supplier-proximity primary DC when
+``product_origin_postal`` is set, secondary DCs by contract fee proxy + demand-weighted mock last mile,
+hot-ZIP3 nudge from labels, and mock parcel grids.
+
+Subset cost search (default): among MOQ-feasible layouts up to the volume tier, pick the set minimizing
+last-mile + hub→spoke linehaul proxy (+ optional fixed $/node), not only a prefix of the priority list.
+Greedy prefix remains the fallback when subset search is disabled or finds no feasible layout.
 
 After DCs are selected, ``placement_mock_rate_grids`` assigns each contiguous state a primary ship-from
 warehouse (min mock parcel $ among active nodes, or tie-band mode).
 
-Does not replace CUOPT; produces a repeatable recommendation for item intelligence.
+Does not replace cuOpt; produces a repeatable recommendation aligned with fusion inputs for item intelligence.
 """
 
 from __future__ import annotations
 
+import itertools
 import math
 import re
-from typing import Any
+from typing import Any, Iterator
 
 from unie_cortex.network.demand_rollup import rollup_label_demand
 from unie_cortex.config import settings
@@ -36,6 +42,9 @@ from unie_cortex.network.facility_freight_mock_defaults import (
     enrich_warehouse_node_with_regional_fallback,
 )
 from unie_cortex.network.prep_center_loader import prep_center_candidate_warehouses_raw
+
+# Ranked-candidate diagnostics: per-location scoring + subset table (confined to top N ranks).
+NETWORK_LOCATION_INTELLIGENCE_MAX_LOCATIONS = 6
 
 
 def default_us_candidate_warehouses() -> list[dict[str, Any]]:
@@ -228,6 +237,37 @@ def _warehouse_contract_fee_proxy_usd_per_unit(wh: dict[str, Any]) -> float:
     )
 
 
+def _secondary_warehouse_score_detailed(
+    *,
+    wh: dict[str, Any],
+    weight_lb: float,
+    cars: list[CarrierCode],
+    state_shares: dict[str, float],
+    hot_zip3_eff: list[str],
+) -> dict[str, Any]:
+    """Decomposed secondary rank inputs (fee + demand-weighted parcel + hot ZIP3 proxy)."""
+    fee = _warehouse_contract_fee_proxy_usd_per_unit(wh)
+    ozp = (wh.get("postal") or "10001").strip()
+    dw = _demand_weighted_mock_parcel_usd_from_origin(ozp, max(0.1, weight_lb), cars, state_shares)
+    hot = _hot_zone_last_mile_proxy(ozp, hot_zip3_eff, weight_lb=weight_lb, carriers=cars)
+    last_mile = dw + 0.25 * hot
+    fee_w = float(getattr(settings, "smart_network_secondary_rank_contract_fee_weight", 1.0) or 1.0)
+    lm_w = float(getattr(settings, "smart_network_secondary_rank_last_mile_weight", 1.0) or 1.0)
+    if bool(getattr(settings, "smart_network_learned_rank_weights_enabled", False)):
+        fee_w *= float(getattr(settings, "smart_network_learned_fee_weight_multiplier", 1.0) or 1.0)
+        lm_w *= float(getattr(settings, "smart_network_learned_last_mile_weight_multiplier", 1.0) or 1.0)
+    weighted_total = fee_w * fee + lm_w * last_mile
+    return {
+        "weighted_secondary_rank_score": round(float(weighted_total), 6),
+        "contract_fee_proxy_usd_per_unit": round(float(fee), 6),
+        "demand_weighted_mock_parcel_usd": round(float(dw), 6),
+        "hot_zip3_proxy_usd": round(float(hot), 6),
+        "last_mile_composite_unweighted_usd": round(float(last_mile), 6),
+        "fee_weight": round(float(fee_w), 6),
+        "last_mile_weight": round(float(lm_w), 6),
+    }
+
+
 def _secondary_warehouse_score(
     *,
     wh: dict[str, Any],
@@ -236,15 +276,19 @@ def _secondary_warehouse_score(
     state_shares: dict[str, float],
     hot_zip3_eff: list[str],
 ) -> tuple[float, float, float]:
-    """Returns (weighted_total, fee_proxy, last_mile_proxy)."""
-    fee = _warehouse_contract_fee_proxy_usd_per_unit(wh)
-    ozp = (wh.get("postal") or "10001").strip()
-    dw = _demand_weighted_mock_parcel_usd_from_origin(ozp, max(0.1, weight_lb), cars, state_shares)
-    hot = _hot_zone_last_mile_proxy(ozp, hot_zip3_eff, weight_lb=weight_lb, carriers=cars)
-    last_mile = dw + 0.25 * hot
-    fee_w = float(getattr(settings, "smart_network_secondary_rank_contract_fee_weight", 1.0) or 1.0)
-    lm_w = float(getattr(settings, "smart_network_secondary_rank_last_mile_weight", 1.0) or 1.0)
-    return fee_w * fee + lm_w * last_mile, fee, last_mile
+    """Returns (weighted_total, fee_proxy, last_mile_composite_unweighted)."""
+    d = _secondary_warehouse_score_detailed(
+        wh=wh,
+        weight_lb=weight_lb,
+        cars=cars,
+        state_shares=state_shares,
+        hot_zip3_eff=hot_zip3_eff,
+    )
+    return (
+        float(d["weighted_secondary_rank_score"]),
+        float(d["contract_fee_proxy_usd_per_unit"]),
+        float(d["last_mile_composite_unweighted_usd"]),
+    )
 
 
 def _compute_warehouse_priority_and_hub(
@@ -372,6 +416,385 @@ def _gates_allow_k_nodes(
     return True
 
 
+def rollup_catalog_monthly_demand_bands_from_alloc_inputs(
+    alloc_inputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Sum catalog monthly mid and optional Keepa low/high bands from allocation prep rows
+    (``monthly_units``, ``monthly_units_low``, ``monthly_units_high``).
+    """
+    mid = 0.0
+    low_sum = 0.0
+    high_sum = 0.0
+    low_known = 0
+    high_known = 0
+    for x in alloc_inputs:
+        if not isinstance(x, dict):
+            continue
+        mid += max(0.0, float(x.get("monthly_units") or 0))
+        lo = x.get("monthly_units_low")
+        hi = x.get("monthly_units_high")
+        if lo is not None:
+            try:
+                low_sum += max(0.0, float(lo))
+                low_known += 1
+            except (TypeError, ValueError):
+                pass
+        if hi is not None:
+            try:
+                high_sum += max(0.0, float(hi))
+                high_known += 1
+            except (TypeError, ValueError):
+                pass
+    n = len([x for x in alloc_inputs if isinstance(x, dict)])
+    return {
+        "monthly_mid_total": mid,
+        "monthly_low_total": low_sum if low_known == n and n > 0 else None,
+        "monthly_high_total": high_sum if high_known == n and n > 0 else None,
+        "sku_rows_used": n,
+        "low_band_rows": low_known,
+        "high_band_rows": high_known,
+    }
+
+
+def catalog_velocity_tercile_rollups(
+    alloc_inputs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """High / mid / low velocity thirds by monthly_units (SKU-level), for network planning context."""
+    rows = [dict(x) for x in alloc_inputs if isinstance(x, dict) and x.get("sku")]
+    if len(rows) < 3:
+        return []
+    rows.sort(key=lambda r: float(r.get("monthly_units") or 0.0))
+    n = len(rows)
+    cuts = [0, n // 3, 2 * n // 3, n]
+    labels = ("low_velocity_tercile", "mid_velocity_tercile", "high_velocity_tercile")
+    out: list[dict[str, Any]] = []
+    for i, lab in enumerate(labels):
+        chunk = rows[cuts[i] : cuts[i + 1]]
+        if not chunk:
+            continue
+        mid = sum(max(0.0, float(c.get("monthly_units") or 0)) for c in chunk)
+        lo = sum(max(0.0, float(c.get("monthly_units_low") or c.get("monthly_units") or 0)) for c in chunk)
+        hi = sum(max(0.0, float(c.get("monthly_units_high") or c.get("monthly_units") or 0)) for c in chunk)
+        out.append(
+            {
+                "tercile_key": lab,
+                "sku_count": len(chunk),
+                "monthly_units_mid_sum": round(mid, 4),
+                "monthly_units_low_sum": round(lo, 4),
+                "monthly_units_high_sum": round(hi, 4),
+            }
+        )
+    return out
+
+
+def demand_units_for_moq_gate(
+    monthly_mid: float,
+    monthly_low: float | None,
+    *,
+    stress_factor: float,
+) -> float:
+    """MOQ stress: prefer explicit low band; else scale mid by stress_factor (≤1 = conservative)."""
+    if monthly_low is not None and monthly_low >= 0:
+        return float(monthly_low)
+    sf = max(0.0, min(1.0, float(stress_factor)))
+    return max(0.0, float(monthly_mid) * sf)
+
+
+def _hub_id_for_take(take: list[str], hub_ctx: str) -> str:
+    h = str(hub_ctx).strip()
+    if h and h in take:
+        return h
+    return str(take[0])
+
+
+def _linehaul_km_multiplier(hub_postal: str, spoke_postal: str, *, km_scale: float) -> float:
+    oz = normalize_zip5((hub_postal or "").strip())
+    dz = normalize_zip5((spoke_postal or "").strip())
+    if not oz or len(oz) < 5 or not dz or len(dz) < 5:
+        return 1.0
+    o_ll = resolve_warehouse_lat_lon({"postal": oz})
+    d_ll = resolve_warehouse_lat_lon({"postal": dz})
+    if not o_ll or not d_ll:
+        return 1.0
+    km = float(haversine_km(o_ll[0], o_ll[1], d_ll[0], d_ll[1]))
+    scale = max(50.0, float(km_scale))
+    return 1.0 + max(0.0, km) / scale
+
+
+def network_subset_selection_objective_breakdown(
+    *,
+    monthly_demand_mid: float,
+    hub_id: str,
+    take: list[str],
+    shares: dict[str, float],
+    mean_mock_by_wh: dict[str, float],
+    weight_lb: float,
+    default_lane_cost_per_lb: float,
+    by_id: dict[str, dict[str, Any]],
+    km_scale: float,
+    fixed_per_node_monthly: float,
+) -> dict[str, float]:
+    """
+    Joint last-mile + hub→spoke linehaul proxy for comparing layouts (same signals cuOpt fusion emphasizes).
+    """
+    w_lb = max(0.1, float(weight_lb))
+    c_lb = max(0.0, float(default_lane_cost_per_lb))
+    last_mile = 0.0
+    for w in take:
+        sh = max(0.0, float(shares.get(w, 0.0)))
+        m = max(0.0, float(mean_mock_by_wh.get(str(w), 0.0)))
+        last_mile += float(monthly_demand_mid) * sh * m
+    hid = _hub_id_for_take(take, hub_id)
+    hp = str((by_id.get(hid) or {}).get("postal") or "10001")
+    linehaul = 0.0
+    for w in take:
+        if str(w) == str(hid):
+            continue
+        sh = max(0.0, float(shares.get(w, 0.0)))
+        flow_u = float(monthly_demand_mid) * sh
+        sp = str((by_id.get(str(w)) or {}).get("postal") or "10001")
+        mult = _linehaul_km_multiplier(hp, sp, km_scale=km_scale)
+        linehaul += flow_u * w_lb * c_lb * mult
+    fixed = max(0.0, float(fixed_per_node_monthly)) * len(take)
+    total = last_mile + linehaul + fixed
+    return {
+        "last_mile_proxy_usd_monthly": round(last_mile, 4),
+        "linehaul_proxy_usd_monthly": round(linehaul, 4),
+        "fixed_cost_usd_monthly": round(fixed, 4),
+        "total_proxy_usd_monthly": round(total, 4),
+    }
+
+
+def network_subset_selection_objective(
+    *,
+    monthly_demand_mid: float,
+    hub_id: str,
+    take: list[str],
+    shares: dict[str, float],
+    mean_mock_by_wh: dict[str, float],
+    weight_lb: float,
+    default_lane_cost_per_lb: float,
+    by_id: dict[str, dict[str, Any]],
+    km_scale: float,
+    fixed_per_node_monthly: float,
+) -> float:
+    return float(
+        network_subset_selection_objective_breakdown(
+            monthly_demand_mid=monthly_demand_mid,
+            hub_id=hub_id,
+            take=take,
+            shares=shares,
+            mean_mock_by_wh=mean_mock_by_wh,
+            weight_lb=weight_lb,
+            default_lane_cost_per_lb=default_lane_cost_per_lb,
+            by_id=by_id,
+            km_scale=km_scale,
+            fixed_per_node_monthly=fixed_per_node_monthly,
+        )["total_proxy_usd_monthly"]
+    )
+
+
+def build_network_location_intelligence_artifact(
+    *,
+    priority: list[str],
+    by_id: dict[str, dict[str, Any]],
+    hub_ctx: str,
+    warehouse_rank_meta: dict[str, Any] | None,
+    weight_lb: float,
+    state_shares: dict[str, float],
+    hot_zip3_eff: list[str],
+    cars: list[CarrierCode],
+    assign_mode: str,
+    moq_demand: float,
+    monthly_demand_mid: float,
+    max_k_vol: int,
+    min_units_1_2: float,
+    min_units_3plus: float,
+    default_lane_cost_per_lb: float,
+    km_scale: float,
+    fixed_node: float,
+    selected_warehouse_ids: list[str],
+    selection_engine_resolved: str,
+) -> dict[str, Any]:
+    """
+    UI / API artifact: up to six ranked locations with decomposed secondary scores, and every subset layout
+    built from those six (MOQ + objective proxy breakdown). Subset selection at run time may use a wider
+    branch_width; this block is intentionally scoped to the top six ranks for explainability.
+    """
+    wrm = warehouse_rank_meta if isinstance(warehouse_rank_meta, dict) else {}
+    top_cap = NETWORK_LOCATION_INTELLIGENCE_MAX_LOCATIONS
+    sub_pri = [str(x) for x in priority[: min(top_cap, len(priority))]]
+    primary = sub_pri[0] if sub_pri else ""
+    branch_intel = max(0, len(sub_pri) - 1)
+
+    location_profiles: list[dict[str, Any]] = []
+    secondaries_in_scope = [w for w in sub_pri if w != primary]
+    sec_scores: list[tuple[float, str]] = []
+    for wid in secondaries_in_scope:
+        det = _secondary_warehouse_score_detailed(
+            wh=by_id[wid],
+            weight_lb=weight_lb,
+            cars=cars,
+            state_shares=state_shares,
+            hot_zip3_eff=hot_zip3_eff,
+        )
+        sec_scores.append((float(det["weighted_secondary_rank_score"]), wid))
+    sec_scores.sort(key=lambda x: (x[0], x[1]))
+    rank_by_wid = {wid: i + 1 for i, (_s, wid) in enumerate(sec_scores)}
+
+    for idx, wid in enumerate(sub_pri):
+        row: dict[str, Any] = {
+            "warehouse_id": wid,
+            "priority_rank_index": idx,
+            "postal": (by_id.get(wid) or {}).get("postal"),
+            "role": "primary" if wid == primary else "secondary_candidate",
+        }
+        if wid == primary:
+            row["supplier_distance_km"] = wrm.get("primary_dc_supplier_distance_km")
+            row["warehouse_ranking_mode"] = wrm.get("warehouse_ranking_mode")
+        else:
+            det = _secondary_warehouse_score_detailed(
+                wh=by_id[wid],
+                weight_lb=weight_lb,
+                cars=cars,
+                state_shares=state_shares,
+                hot_zip3_eff=hot_zip3_eff,
+            )
+            row["secondary_ranking"] = {
+                **det,
+                "rank_among_secondaries_in_scope": rank_by_wid.get(wid),
+            }
+        location_profiles.append(row)
+
+    def _layout_take(take: list[str]) -> tuple[dict[str, float], dict[str, float]] | None:
+        sub = [{"id": w, "postal": by_id[w].get("postal")} for w in take]
+        g2 = build_warehouse_mock_placement_grids(
+            sub,
+            n_destinations_per_warehouse=48,
+            default_weight_lb=max(0.1, weight_lb),
+            state_demand_weights=state_shares,
+            state_primary_assignment=assign_mode,
+        )
+        if g2.get("status") != "complete":
+            return None
+        mean2 = {str(a): float(b) for a, b in (g2.get("mean_mock_parcel_usd_by_warehouse") or {}).items()}
+        shares = _inverse_parcel_shares(mean2, take)
+        return shares, mean2
+
+    subset_evaluations: list[dict[str, Any]] = []
+    mk = max(1, int(max_k_vol))
+    for take in iter_priority_subsets(sub_pri, min(mk, len(sub_pri)), branch_intel):
+        lay = _layout_take(take)
+        if lay is None:
+            subset_evaluations.append(
+                {
+                    "warehouse_ids": list(take),
+                    "node_count": len(take),
+                    "placement_grid_status": "incomplete",
+                    "moq_feasible_at_gate_demand": False,
+                    "min_implied_monthly_flow_at_planning_mid": None,
+                    "min_implied_monthly_flow_at_moq_gate_demand": None,
+                    "objective_breakdown_usd_monthly": None,
+                }
+            )
+            continue
+        shares, mean2 = lay
+        moq_ok = _gates_allow_k_nodes(
+            moq_demand,
+            take,
+            shares,
+            by_id=by_id,
+            default_min_1_2=min_units_1_2,
+            default_min_3plus=min_units_3plus,
+        )
+        mid_min = min(monthly_demand_mid * float(shares[w]) for w in take) if take else None
+        gate_min = min(moq_demand * float(shares[w]) for w in take) if take else None
+        br = network_subset_selection_objective_breakdown(
+            monthly_demand_mid=monthly_demand_mid,
+            hub_id=hub_ctx,
+            take=take,
+            shares=shares,
+            mean_mock_by_wh=mean2,
+            weight_lb=weight_lb,
+            default_lane_cost_per_lb=default_lane_cost_per_lb,
+            by_id=by_id,
+            km_scale=km_scale,
+            fixed_per_node_monthly=fixed_node,
+        )
+        subset_evaluations.append(
+            {
+                "warehouse_ids": list(take),
+                "node_count": len(take),
+                "placement_grid_status": "complete",
+                "moq_feasible_at_gate_demand": moq_ok,
+                "min_implied_monthly_flow_at_planning_mid": round(mid_min, 4) if mid_min is not None else None,
+                "min_implied_monthly_flow_at_moq_gate_demand": round(gate_min, 4) if gate_min is not None else None,
+                "objective_breakdown_usd_monthly": br,
+            }
+        )
+
+    feasible_rows = [r for r in subset_evaluations if r.get("moq_feasible_at_gate_demand") and r.get("objective_breakdown_usd_monthly")]
+    best_feasible_ids: list[str] | None = None
+    best_feasible_total: float | None = None
+    if feasible_rows:
+        best = min(
+            feasible_rows,
+            key=lambda r: float((r.get("objective_breakdown_usd_monthly") or {}).get("total_proxy_usd_monthly") or 1e18),
+        )
+        best_feasible_ids = list(best["warehouse_ids"])
+        best_feasible_total = float((best.get("objective_breakdown_usd_monthly") or {}).get("total_proxy_usd_monthly") or 0.0)
+
+    sel_set = {str(x) for x in selected_warehouse_ids}
+    matches_best = bool(best_feasible_ids and sel_set == set(best_feasible_ids))
+    scope_set = set(sub_pri)
+    selected_within_top_six_scope = sel_set <= scope_set if sel_set else True
+
+    return {
+        "schema_version": "network_location_intelligence_v1",
+        "status": "complete" if sub_pri else "skipped",
+        "max_locations_in_scope": top_cap,
+        "priority_warehouse_ids_in_scope": sub_pri,
+        "note": (
+            f"Scores and subset table use the top {len(sub_pri)} warehouse(s) in Cortex priority order (cap {top_cap}). "
+            "Live subset search may use smart_network_subset_branch_width beyond six when the ranked list is longer; "
+            "see network_selection_meta."
+        ),
+        "moq_gate_demand_units": round(moq_demand, 4),
+        "planning_mid_demand_units": round(monthly_demand_mid, 4),
+        "volume_max_nodes_considered": mk,
+        "location_profiles": location_profiles,
+        "subset_layout_evaluations": subset_evaluations,
+        "best_feasible_subset_by_objective": {
+            "warehouse_ids": best_feasible_ids,
+            "total_proxy_usd_monthly": round(best_feasible_total, 4) if best_feasible_total is not None else None,
+        },
+        "selected_layout": {
+            "warehouse_ids": list(selected_warehouse_ids),
+            "selection_engine_resolved": selection_engine_resolved,
+            "matches_best_feasible_in_top_six_scope": matches_best,
+            "selected_ids_within_top_six_priority_scope": selected_within_top_six_scope,
+        },
+    }
+
+
+def iter_priority_subsets(priority: list[str], max_k: int, branch_width: int) -> Iterator[list[str]]:
+    """Primary always included; add combinations of ranked secondaries up to branch_width candidates."""
+    if not priority:
+        return
+    primary = str(priority[0])
+    cap_rest = max(0, min(int(branch_width), len(priority) - 1))
+    rest = [str(x) for x in priority[1 : 1 + cap_rest]]
+    yield [primary]
+    max_k = max(1, int(max_k))
+    for size in range(2, max_k + 1):
+        need = size - 1
+        if need > len(rest):
+            break
+        for combo in itertools.combinations(rest, need):
+            yield [primary] + [str(c) for c in combo]
+
+
 def recommend_warehouse_network(
     *,
     monthly_total_demand_units: float,
@@ -389,12 +812,17 @@ def recommend_warehouse_network(
     default_lane_cost_per_lb: float = 0.15,
     preserve_request_shares: bool = False,
     product_origin_postal: str | None = None,
+    monthly_total_demand_units_low: float | None = None,
+    monthly_total_demand_units_high: float | None = None,
 ) -> dict[str, Any]:
     """
     Returns ``selected_warehouses``, ``lanes``, ``hub_warehouse_id``, ``trace`` for downstream run.
 
     ``volume_tiers_for_max_nodes``: (min_monthly_demand, max_nodes_at_or_above). Example:
     [(0,1), (400,2), (1500,3), (8000,4), (40000,5), (150000,6)]
+
+    Optional ``monthly_total_demand_units_low`` / ``_high`` tighten MOQ gates (low) and metadata;
+    when low is omitted, mid is scaled by ``smart_network_moq_gate_demand_stress_factor`` for MOQ only.
     """
     tiers = volume_tiers_for_max_nodes or [
         (0.0, 1),
@@ -480,11 +908,28 @@ def recommend_warehouse_network(
         f"≥{min_units_per_warehouse_when_three_or_more_nodes:.0f} (3+ nodes)."
     )
 
+    moq_demand = demand_units_for_moq_gate(
+        monthly_total_demand_units,
+        monthly_total_demand_units_low,
+        stress_factor=float(getattr(settings, "smart_network_moq_gate_demand_stress_factor", 1.0) or 1.0),
+    )
+    subset_on = bool(getattr(settings, "smart_network_subset_cost_optimization_enabled", True))
+    branch_w = int(getattr(settings, "smart_network_subset_branch_width", 8) or 8)
+    km_sel_scale = float(getattr(settings, "smart_network_linehaul_km_scale_for_selection_proxy", 800.0) or 800.0)
+    fixed_node = float(getattr(settings, "smart_network_fixed_cost_usd_per_active_node_monthly", 0.0) or 0.0)
+
+    trace.append(
+        f"MOQ gate demand: {moq_demand:.1f} units/mo (planning mid={monthly_total_demand_units:.1f}; "
+        f"explicit_low={monthly_total_demand_units_low}); selection_engine="
+        f"{'subset_cost+linehaul_proxy' if subset_on else 'greedy_prefix'} branch_width={branch_w}."
+    )
+
     best_selection: list[str] = []
     best_wh_rows: list[dict[str, Any]] = []
+    best_score: float | None = None
+    selection_engine_used = "greedy_prefix"
 
-    for k in range(1, max_k + 1):
-        take = priority[:k]
+    def _layout_for_take_ids(take: list[str]) -> tuple[Any, dict[str, float], list[dict[str, Any]], dict[str, float]] | None:
         sub = [{"id": w, "postal": by_id[w].get("postal")} for w in take]
         g2 = build_warehouse_mock_placement_grids(
             sub,
@@ -494,34 +939,95 @@ def recommend_warehouse_network(
             state_primary_assignment=assign_mode,
         )
         if g2.get("status") != "complete":
-            trace.append(f"subset size {k}: grid incomplete, stop.")
-            break
+            return None
         mean2 = {str(a): float(b) for a, b in (g2.get("mean_mock_parcel_usd_by_warehouse") or {}).items()}
         shares = _inverse_parcel_shares(mean2, take)
-        if not _gates_allow_k_nodes(
-            monthly_total_demand_units,
-            take,
-            shares,
-            by_id=by_id,
-            default_min_1_2=min_units_per_warehouse_monthly_flow,
-            default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
-        ):
-            trace.append(
-                f"k={k}: rejected — min monthly flow would fall below MOQ or saturation rule "
-                f"(demand={monthly_total_demand_units:.1f})."
-            )
-            break
         merged, _src = merge_warehouse_target_shares_for_placement(
             [{**by_id[w], "id": w, "target_share_pct": round(100.0 * shares[w], 4)} for w in take],
             g2,
             preserve_request_shares=False,
         )
-        best_selection = take
-        best_wh_rows = merged
-        trace.append(
-            f"k={k}: accepted — shares from inverse mean mock; min flow ≈ "
-            f"{min(monthly_total_demand_units * shares[w] for w in take):.1f} units/mo."
-        )
+        return g2, shares, merged, mean2
+
+    if subset_on and priority:
+        tried = 0
+        for take in iter_priority_subsets(priority, max_k, branch_w):
+            tried += 1
+            lay = _layout_for_take_ids(take)
+            if lay is None:
+                trace.append(f"subset {take}: placement grid incomplete.")
+                continue
+            _g2, shares, merged, mean2 = lay
+            if not _gates_allow_k_nodes(
+                moq_demand,
+                take,
+                shares,
+                by_id=by_id,
+                default_min_1_2=min_units_per_warehouse_monthly_flow,
+                default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+            ):
+                trace.append(
+                    f"subset {take}: MOQ fail at gate demand {moq_demand:.1f} "
+                    f"(mid flow min ≈ {min(monthly_total_demand_units * shares[w] for w in take):.1f})."
+                )
+                continue
+            score = network_subset_selection_objective(
+                monthly_demand_mid=monthly_total_demand_units,
+                hub_id=hub,
+                take=take,
+                shares=shares,
+                mean_mock_by_wh=mean2,
+                weight_lb=weight_lb,
+                default_lane_cost_per_lb=default_lane_cost_per_lb,
+                by_id=by_id,
+                km_scale=km_sel_scale,
+                fixed_per_node_monthly=fixed_node,
+            )
+            better = best_score is None or score < best_score - 1e-6
+            tie_fewer = (
+                best_score is not None
+                and abs(score - best_score) <= 1e-6
+                and len(take) < len(best_selection)
+            )
+            if better or tie_fewer:
+                best_score = score
+                best_selection = list(take)
+                best_wh_rows = merged
+        if best_selection:
+            selection_engine_used = "subset_cost"
+            trace.append(
+                f"Subset search: {tried} layout(s), picked {best_selection} objective_proxy≈{best_score:.2f} USD/mo "
+                "(last-mile + hub→spoke linehaul proxy + fixed node cost)."
+            )
+
+    if not best_selection:
+        trace.append("Greedy prefix-of-priority (or subset found no feasible layout).")
+        for k in range(1, max_k + 1):
+            take = priority[:k]
+            lay = _layout_for_take_ids(take)
+            if lay is None:
+                trace.append(f"prefix k={k}: grid incomplete, stop.")
+                break
+            _g2, shares, merged, _mean2 = lay
+            if not _gates_allow_k_nodes(
+                moq_demand,
+                take,
+                shares,
+                by_id=by_id,
+                default_min_1_2=min_units_per_warehouse_monthly_flow,
+                default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+            ):
+                trace.append(
+                    f"k={k}: rejected — min monthly flow below MOQ at gate demand {moq_demand:.1f} "
+                    f"(planning mid={monthly_total_demand_units:.1f})."
+                )
+                break
+            best_selection = take
+            best_wh_rows = merged
+            trace.append(
+                f"k={k}: accepted — shares from inverse mean mock; min mid flow ≈ "
+                f"{min(monthly_total_demand_units * shares[w] for w in take):.1f} units/mo."
+            )
 
     if not best_selection:
         best_selection = [hub] if hub in by_id else [priority[0]]
@@ -539,36 +1045,24 @@ def recommend_warehouse_network(
             if cand == hub_only:
                 continue
             take2 = [hub_only, cand]
-            sub2 = [{"id": w, "postal": by_id[w].get("postal")} for w in take2]
-            g2b = build_warehouse_mock_placement_grids(
-                sub2,
-                n_destinations_per_warehouse=48,
-                default_weight_lb=max(0.1, weight_lb),
-                state_demand_weights=state_shares,
-                state_primary_assignment=assign_mode,
-            )
-            if g2b.get("status") != "complete":
+            lay2 = _layout_for_take_ids(take2)
+            if lay2 is None:
                 continue
-            mean_b = {str(a): float(b) for a, b in (g2b.get("mean_mock_parcel_usd_by_warehouse") or {}).items()}
-            shares2 = _inverse_parcel_shares(mean_b, take2)
+            _g2b, shares2, merged2, mean_b = lay2
             if _gates_allow_k_nodes(
-                monthly_total_demand_units,
+                moq_demand,
                 take2,
                 shares2,
                 by_id=by_id,
                 default_min_1_2=min_units_per_warehouse_monthly_flow,
                 default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
             ):
-                merged2, _ = merge_warehouse_target_shares_for_placement(
-                    [{**by_id[w], "id": w, "target_share_pct": round(100.0 * shares2[w], 4)} for w in take2],
-                    g2b,
-                    preserve_request_shares=False,
-                )
                 best_selection = take2
                 best_wh_rows = merged2
+                selection_engine_used = "expand_two_preference"
                 trace.append(
                     "Expanded to 2 warehouses: tier allows multi-node and per-node MOQ holds at k=2 "
-                    f"(demand={monthly_total_demand_units:.1f})."
+                    f"(gate demand={moq_demand:.1f}, planning mid={monthly_total_demand_units:.1f})."
                 )
                 break
 
@@ -576,6 +1070,46 @@ def recommend_warehouse_network(
         str(hub)
         if hub in best_selection
         else str(best_wh_rows[0].get("id") or best_selection[0])
+    )
+
+    if best_score is None and len(best_selection) >= 1:
+        lay_fin = _layout_for_take_ids(best_selection)
+        if lay_fin is not None:
+            _gf, sh_f, _mf, mean_f = lay_fin
+            best_score = network_subset_selection_objective(
+                monthly_demand_mid=monthly_total_demand_units,
+                hub_id=h_final,
+                take=best_selection,
+                shares=sh_f,
+                mean_mock_by_wh=mean_f,
+                weight_lb=weight_lb,
+                default_lane_cost_per_lb=default_lane_cost_per_lb,
+                by_id=by_id,
+                km_scale=km_sel_scale,
+                fixed_per_node_monthly=fixed_node,
+            )
+
+    cars_list: list[CarrierCode] = list(ctx.get("cars") or ["usps", "ups", "fedex"])
+    network_location_intelligence = build_network_location_intelligence_artifact(
+        priority=priority,
+        by_id=by_id,
+        hub_ctx=h_final,
+        warehouse_rank_meta=wrm,
+        weight_lb=weight_lb,
+        state_shares=state_shares,
+        hot_zip3_eff=hot_zip3_proxy,
+        cars=cars_list,
+        assign_mode=assign_mode,
+        moq_demand=moq_demand,
+        monthly_demand_mid=monthly_total_demand_units,
+        max_k_vol=max_k,
+        min_units_1_2=min_units_per_warehouse_monthly_flow,
+        min_units_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+        default_lane_cost_per_lb=default_lane_cost_per_lb,
+        km_scale=km_sel_scale,
+        fixed_node=fixed_node,
+        selected_warehouse_ids=list(best_selection),
+        selection_engine_resolved=selection_engine_used,
     )
 
     lanes: list[dict[str, Any]] = []
@@ -587,8 +1121,10 @@ def recommend_warehouse_network(
 
     return {
         "status": "complete",
-        "assumptions_version": "smart_warehouse_network_v1",
+        "assumptions_version": "smart_warehouse_network_v2",
         "monthly_total_demand_units": monthly_total_demand_units,
+        "monthly_total_demand_units_low": monthly_total_demand_units_low,
+        "monthly_total_demand_units_high": monthly_total_demand_units_high,
         "max_nodes_volume_tier": max_k,
         "selected_warehouse_count": len(best_selection),
         "selected_warehouses": best_wh_rows,
@@ -597,6 +1133,17 @@ def recommend_warehouse_network(
         "label_hot_zip3_used": hot_zip3_label[:12],
         "hot_zip3_priority_proxy_used": hot_zip3_proxy[:12],
         "rollup_status": rollup.get("status"),
+        "network_selection_meta": {
+            "schema_version": "network_selection_meta_v1",
+            "selection_engine_resolved": selection_engine_used,
+            "subset_optimization_enabled": subset_on,
+            "moq_gate_demand_units": round(moq_demand, 4),
+            "planning_mid_demand_units": round(monthly_total_demand_units, 4),
+            "best_objective_proxy_usd_monthly": None if best_score is None else round(float(best_score), 4),
+            "linehaul_km_scale": km_sel_scale,
+            "fixed_cost_usd_per_node_monthly": fixed_node,
+        },
+        "network_location_intelligence": network_location_intelligence,
         "parameters": {
             "min_monthly_units_to_expand_beyond_one": min_monthly_units_to_expand_beyond_one,
             "min_units_per_warehouse_monthly_flow": min_units_per_warehouse_monthly_flow,
@@ -616,6 +1163,9 @@ def recommend_warehouse_network(
                 else "explicit_volume_tiers_for_max_nodes"
             ),
             "us_state_demand_forecast": demand_share_metadata(),
+            "moq_gate_demand_units": round(moq_demand, 4),
+            "monthly_total_demand_units_low": monthly_total_demand_units_low,
+            "monthly_total_demand_units_high": monthly_total_demand_units_high,
         },
         "trace": trace,
     }
@@ -814,6 +1364,9 @@ def build_warehouse_network_recommendation_options(
     min_inter_warehouse_transfer_units: float | None = None,
     max_months_to_meet_min_transfer: int | None = None,
     product_origin_postal: str | None = None,
+    monthly_total_demand_units_low: float | None = None,
+    monthly_total_demand_units_high: float | None = None,
+    catalog_velocity_tercile_rollups: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Always returns a **single-DC** and a **multi-DC** scenario for UI / planning.
@@ -822,6 +1375,9 @@ def build_warehouse_network_recommendation_options(
     When per-node monthly-flow MOQ is not met at stated velocity, the multi option still returns with
     ``feasible: false`` but adds **transfer-batch MOQ** guidance (months of stocking to clear hub→spoke min move)
     using the same math as ``allocate_skus`` when ``min_inter_warehouse_transfer_units`` is set.
+
+    MOQ gates use ``monthly_total_demand_units_low`` when provided, else mid × stress factor
+    (``smart_network_moq_gate_demand_stress_factor``). Subset cost search matches ``recommend_warehouse_network``.
     """
     xfer_setting = (
         min_inter_warehouse_transfer_units
@@ -894,9 +1450,20 @@ def build_warehouse_network_recommendation_options(
 
     target_multi_k = min(target_multi_k, len(priority), max_warehouses_cap)
     take_target = priority[:target_multi_k]
+    moq_demand = demand_units_for_moq_gate(
+        monthly_total_demand_units,
+        monthly_total_demand_units_low,
+        stress_factor=float(getattr(settings, "smart_network_moq_gate_demand_stress_factor", 1.0) or 1.0),
+    )
+    subset_on = bool(getattr(settings, "smart_network_subset_cost_optimization_enabled", True))
+    branch_w = int(getattr(settings, "smart_network_subset_branch_width", 8) or 8)
+    km_sel_scale = float(getattr(settings, "smart_network_linehaul_km_scale_for_selection_proxy", 800.0) or 800.0)
+    fixed_node = float(getattr(settings, "smart_network_fixed_cost_usd_per_active_node_monthly", 0.0) or 0.0)
     multi_trace: list[str] = [
         f"Multi-DC target from volume: {target_multi_k} warehouse(s) "
-        f"(base {base_m} + floor({monthly_total_demand_units:.1f} / {step_orders:.0f}), cap {max_warehouses_cap})."
+        f"(base {base_m} + floor({monthly_total_demand_units:.1f} / {step_orders:.0f}), cap {max_warehouses_cap}).",
+        f"Multi MOQ gate demand: {moq_demand:.1f} units/mo (catalog mid={monthly_total_demand_units:.1f}; "
+        f"explicit_low={monthly_total_demand_units_low}); subset_opt={subset_on}.",
     ]
 
     def _layout_for_take(take: list[str]) -> tuple[list[dict[str, Any]], dict[str, float], dict[str, Any] | None]:
@@ -924,46 +1491,107 @@ def build_warehouse_network_recommendation_options(
     applied_rows: list[dict[str, Any]] = []
     applied_shares: dict[str, float] = {}
     applied_take: list[str] = []
+    best_score_m: float | None = None
 
-    for try_k in range(target_multi_k, 1, -1):
-        take = priority[:try_k]
-        merged, shares, g2 = _layout_for_take(take)
-        if not merged or not shares:
-            multi_trace.append(f"multi: k={try_k} grid incomplete.")
-            continue
-        if _gates_allow_k_nodes(
-            monthly_total_demand_units,
-            take,
-            shares,
-            by_id=by_id,
-            default_min_1_2=min_units_per_warehouse_monthly_flow,
-            default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
-        ):
-            multi_feasible = True
-            applied_k = try_k
-            applied_rows = merged
-            applied_shares = shares
-            applied_take = list(take)
-            multi_trace.append(
-                f"multi: k={try_k} feasible — min implied flow ≈ "
-                f"{min(monthly_total_demand_units * shares[w] for w in take):.1f} units/mo."
-            )
-            break
-        flows = _flows(monthly_total_demand_units, shares, take)
-        mins = [
-            _per_node_moq_floor(
-                take[i],
-                k_nodes=len(take),
+    if subset_on and priority:
+        tried_m = 0
+        for take in iter_priority_subsets(priority, target_multi_k, branch_w):
+            if len(take) < 2:
+                continue
+            tried_m += 1
+            merged, shares, g2 = _layout_for_take(take)
+            if not merged or not shares or not isinstance(g2, dict):
+                multi_trace.append(f"multi subset {take}: grid incomplete.")
+                continue
+            mean2 = {
+                str(a): float(b) for a, b in (g2.get("mean_mock_parcel_usd_by_warehouse") or {}).items()
+            }
+            if not _gates_allow_k_nodes(
+                moq_demand,
+                take,
+                shares,
                 by_id=by_id,
                 default_min_1_2=min_units_per_warehouse_monthly_flow,
                 default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+            ):
+                flows = _flows(moq_demand, shares, take)
+                multi_trace.append(
+                    f"multi subset {take}: MOQ fail at gate {moq_demand:.1f} "
+                    f"(gate flows={[round(f, 2) for f in flows]})."
+                )
+                continue
+            sc = network_subset_selection_objective(
+                monthly_demand_mid=monthly_total_demand_units,
+                hub_id=h_use,
+                take=take,
+                shares=shares,
+                mean_mock_by_wh=mean2,
+                weight_lb=weight_lb,
+                default_lane_cost_per_lb=default_lane_cost_per_lb,
+                by_id=by_id,
+                km_scale=km_sel_scale,
+                fixed_per_node_monthly=fixed_node,
             )
-            for i in range(len(take))
-        ]
-        multi_trace.append(
-            f"multi: k={try_k} fails MOQ at demand={monthly_total_demand_units:.1f} "
-            f"(flows={[round(f, 2) for f in flows]} vs floors={[round(m, 2) for m in mins]})."
-        )
+            better = best_score_m is None or sc < best_score_m - 1e-6
+            tie_fewer = (
+                best_score_m is not None
+                and abs(sc - best_score_m) <= 1e-6
+                and len(take) < len(applied_take)
+            )
+            if better or tie_fewer:
+                best_score_m = sc
+                multi_feasible = True
+                applied_k = len(take)
+                applied_rows = merged
+                applied_shares = shares
+                applied_take = list(take)
+        if applied_take:
+            multi_trace.append(
+                f"multi: subset search tried {tried_m} multi-node pattern(s); "
+                f"picked {applied_take} objective_proxy≈{best_score_m:.2f} USD/mo."
+            )
+
+    if not multi_feasible:
+        for try_k in range(target_multi_k, 1, -1):
+            take = priority[:try_k]
+            merged, shares, g2 = _layout_for_take(take)
+            if not merged or not shares:
+                multi_trace.append(f"multi: k={try_k} grid incomplete.")
+                continue
+            if _gates_allow_k_nodes(
+                moq_demand,
+                take,
+                shares,
+                by_id=by_id,
+                default_min_1_2=min_units_per_warehouse_monthly_flow,
+                default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+            ):
+                multi_feasible = True
+                applied_k = try_k
+                applied_rows = merged
+                applied_shares = shares
+                applied_take = list(take)
+                multi_trace.append(
+                    f"multi: k={try_k} feasible — min mid implied flow ≈ "
+                    f"{min(monthly_total_demand_units * shares[w] for w in take):.1f} units/mo "
+                    f"(MOQ gate demand {moq_demand:.1f})."
+                )
+                break
+            flows = _flows(moq_demand, shares, take)
+            mins = [
+                _per_node_moq_floor(
+                    take[i],
+                    k_nodes=len(take),
+                    by_id=by_id,
+                    default_min_1_2=min_units_per_warehouse_monthly_flow,
+                    default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+                )
+                for i in range(len(take))
+            ]
+            multi_trace.append(
+                f"multi: k={try_k} fails MOQ at gate demand={moq_demand:.1f} "
+                f"(flows={[round(f, 2) for f in flows]} vs floors={[round(m, 2) for m in mins]})."
+            )
 
     if not multi_feasible:
         merged, shares, _g2 = _layout_for_take(take_target)
@@ -1007,6 +1635,29 @@ def build_warehouse_network_recommendation_options(
     max_rm = moq_guidance.get("max_replenishment_months_for_min_transfer_batch")
     xfer_ok = bool(moq_guidance.get("transfer_batch_moq_feasible_within_horizon"))
     req_monthly = moq_guidance.get("required_monthly_catalog_units_for_node_flow_moq")
+
+    cars_wno: list[CarrierCode] = list(ctx.get("cars") or ["usps", "ups", "fedex"])
+    network_location_intelligence = build_network_location_intelligence_artifact(
+        priority=priority,
+        by_id=by_id,
+        hub_ctx=str(h_multi),
+        warehouse_rank_meta=wh_rank_meta if isinstance(wh_rank_meta, dict) else {},
+        weight_lb=weight_lb,
+        state_shares=state_shares,
+        hot_zip3_eff=hot_zip3_proxy,
+        cars=cars_wno,
+        assign_mode=assign_mode,
+        moq_demand=moq_demand,
+        monthly_demand_mid=monthly_total_demand_units,
+        max_k_vol=target_multi_k,
+        min_units_1_2=min_units_per_warehouse_monthly_flow,
+        min_units_3plus=min_units_per_warehouse_when_three_or_more_nodes,
+        default_lane_cost_per_lb=default_lane_cost_per_lb,
+        km_scale=km_sel_scale,
+        fixed_node=fixed_node,
+        selected_warehouse_ids=list(applied_take),
+        selection_engine_resolved="warehouse_network_recommendation_options_multi_dc",
+    )
 
     opt_multi: dict[str, Any] = {
         "option_key": "multi_dc",
@@ -1054,10 +1705,17 @@ def build_warehouse_network_recommendation_options(
             max_rm is not None and xfer_ok and not multi_feasible
         )
 
+    tercile_payload = (
+        list(catalog_velocity_tercile_rollups or [])
+        if bool(getattr(settings, "smart_network_emit_catalog_velocity_tercile_rollups", True))
+        else []
+    )
     return {
         "status": "complete",
-        "assumptions_version": "warehouse_network_recommendation_options_v2",
+        "assumptions_version": "warehouse_network_recommendation_options_v3",
         "monthly_total_demand_units": monthly_total_demand_units,
+        "monthly_total_demand_units_low": monthly_total_demand_units_low,
+        "monthly_total_demand_units_high": monthly_total_demand_units_high,
         "parameters": {
             "smart_network_monthly_orders_per_additional_warehouse": step_orders,
             "smart_network_min_multi_dc_warehouse_count": base_m,
@@ -1074,9 +1732,14 @@ def build_warehouse_network_recommendation_options(
             "us_state_demand_forecast": demand_share_metadata(),
             "hot_zip3_priority_proxy_source": proxy_src or None,
             "hot_zip3_priority_proxy_used": hot_zip3_proxy[:12],
+            "moq_gate_demand_units": round(moq_demand, 4),
+            "monthly_total_demand_units_low": monthly_total_demand_units_low,
+            "monthly_total_demand_units_high": monthly_total_demand_units_high,
+            "catalog_velocity_tercile_rollups": tercile_payload,
         },
         "label_hot_zip3_used": hot_zip3_label[:12],
         "rollup_status": rollup.get("status"),
+        "network_location_intelligence": network_location_intelligence,
         "options": [opt_single, opt_multi],
     }
 
@@ -1096,6 +1759,7 @@ def trim_client_warehouse_network_to_demand(
     default_lane_cost_per_lb: float = 0.15,
     volume_tiers_for_max_nodes: list[tuple[float, int]] | None = None,
     product_origin_postal: str | None = None,
+    monthly_total_demand_units_low: float | None = None,
 ) -> dict[str, Any]:
     """
     Reduce **client-supplied** warehouses to a MOQ-feasible subset (same gates as ``recommend_warehouse_network``).
@@ -1225,6 +1889,16 @@ def trim_client_warehouse_network_to_demand(
         f"with 3+ nodes ≥{min_units_per_warehouse_when_three_or_more_nodes:.0f}."
     )
 
+    moq_demand_trim = demand_units_for_moq_gate(
+        monthly_total_demand_units,
+        monthly_total_demand_units_low,
+        stress_factor=float(getattr(settings, "smart_network_moq_gate_demand_stress_factor", 1.0) or 1.0),
+    )
+    trace.append(
+        f"trim: MOQ gate demand {moq_demand_trim:.1f} units/mo (planning mid={monthly_total_demand_units:.1f}; "
+        f"explicit_low={monthly_total_demand_units_low})."
+    )
+
     best_selection: list[str] = []
     best_wh_rows: list[dict[str, Any]] = []
 
@@ -1244,7 +1918,7 @@ def trim_client_warehouse_network_to_demand(
         mean2 = {str(a): float(b) for a, b in (g2.get("mean_mock_parcel_usd_by_warehouse") or {}).items()}
         shares = _inverse_parcel_shares(mean2, take)
         if not _gates_allow_k_nodes(
-            monthly_total_demand_units,
+            moq_demand_trim,
             take,
             shares,
             by_id=by_id,
@@ -1252,7 +1926,8 @@ def trim_client_warehouse_network_to_demand(
             default_min_3plus=min_units_per_warehouse_when_three_or_more_nodes,
         ):
             trace.append(
-                f"trim: k={k} rejected — implied monthly flow per node below MOQ at demand={monthly_total_demand_units:.1f}."
+                f"trim: k={k} rejected — implied flow below MOQ at gate demand={moq_demand_trim:.1f} "
+                f"(planning mid={monthly_total_demand_units:.1f})."
             )
             break
         merged, _src = merge_warehouse_target_shares_for_placement(
