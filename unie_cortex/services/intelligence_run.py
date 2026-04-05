@@ -65,6 +65,10 @@ from unie_cortex.services.asin_package_enrichment import (
     batch_resolve_asin_package_hints,
 )
 from unie_cortex.services.analysis_views import attach_four_views_and_pipeline
+from unie_cortex.services.green_logistics_impact import (
+    append_green_bullets_to_synthesis,
+    build_green_logistics_impact_v1,
+)
 from unie_cortex.services.placement_summary import (
     append_cuopt_tri_modal_note_to_placement_summaries,
     apply_inventory_cover_splits_from_allocation,
@@ -457,8 +461,11 @@ async def run_item_intelligence(
         else {},
         "note": (
             "planning_marketplace_seller_id_by_sku overrides catalog marketplace_seller_id for Keepa extract only on "
-            "this run (buy-box history / listing match). planning_monthly_units_override_by_sku replaces modeled "
-            "monthly_units_est_* after Keepa — allocation, network, LTL, and placement (after origin) follow the override."
+            "this run (buy-box history / listing match). Default monthly velocity uses Keepa ASIN signals blended with "
+            "seller buy-box statistics when the seller id matches history (demand_by_sku.seller_planning_velocity). "
+            "planning_monthly_units_override_by_sku is optional; when sent, each value must be >= "
+            "planning_manual_monthly_units_override_minimum (default 150). Allocation, cuOpt tri-modal demand scaling, "
+            "network trim, LTL, and placement use the resulting monthly_units_est_*."
         ),
     }
     request_seed_warehouses = [dict(w) for w in warehouses if isinstance(w, dict)]
@@ -630,6 +637,26 @@ async def run_item_intelligence(
 
     override_meta = apply_planning_monthly_units_overrides(demand_by_sku, planning_monthly_units_override_by_sku)
     planning_context["planning_monthly_units_override_result"] = override_meta
+    _min_ov = int(getattr(settings, "planning_manual_monthly_units_override_minimum", 150) or 0)
+    planning_context["planning_velocity_policy"] = {
+        "schema_version": "planning_velocity_policy_v1",
+        "manual_override_minimum_units": max(0, _min_ov),
+        "default_velocity_source": (
+            "Keepa monthly sales / ASIN velocity, seller-scoped with buy-box seller history and listing signals "
+            "when marketplace_seller_id matches Keepa buyBoxSellerIdHistory (see demand_by_sku.seller_planning_velocity)."
+        ),
+        "multi_warehouse_cover_extension": (
+            "When monthly flow is low relative to modeled hub→spoke minimum transfer batches, allocation may extend "
+            "target cover over a longer replenishment horizon (up to placement_max_months_min_transfer_horizon and "
+            "capped by network_placement_adjustment_max_days_cover) so suggested network inventory can clear MOQ-style "
+            "legs — see inventory_placement_summary.network_placement_adjustment."
+        ),
+        "cuopt_monthly_demand_basis": (
+            "multi_dc_placement_tri_modal uses the same per-SKU monthly_units as allocation (post-Keepa and valid "
+            "override) for fusion inputs, demand-band integer hypotheticals, and waterfall context "
+            "(monthly_catalog_demand_total on the tri-modal block)."
+        ),
+    }
     integerize_monthly_unit_fields_in_demand_by_sku(demand_by_sku)
 
     alloc_inputs = []
@@ -696,6 +723,7 @@ async def run_item_intelligence(
         ),
         min_inter_warehouse_transfer_units=min_xfer_pl if min_xfer_pl > 0 else None,
         max_months_to_meet_min_transfer=max_m_xfer,
+        product_origin_postal=product_origin_postal,
     )
 
     recommended_network: dict[str, Any] | None = None
@@ -731,6 +759,7 @@ async def run_item_intelligence(
             default_lane_cost_per_lb=float(
                 getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
             ),
+            product_origin_postal=product_origin_postal,
         )
         warehouses = [dict(w) for w in (recommended_network.get("selected_warehouses") or [])]
         lanes = [dict(ln) for ln in (recommended_network.get("lanes") or [])]
@@ -768,6 +797,7 @@ async def run_item_intelligence(
                 default_lane_cost_per_lb=float(
                     getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
                 ),
+                product_origin_postal=product_origin_postal,
             )
             if client_warehouse_network_trim.get("client_trim_applied"):
                 warehouses = [
@@ -1050,6 +1080,17 @@ async def run_item_intelligence(
         fulfillment_network_comparison=fulfillment_compare if isinstance(fulfillment_compare, dict) else None,
     )
     if isinstance(multi_dc_placement_tri_modal, dict):
+        _min_c = int(getattr(settings, "planning_manual_monthly_units_override_minimum", 150) or 0)
+        multi_dc_placement_tri_modal["planning_demand_context"] = {
+            "schema_version": "planning_demand_context_for_cuopt_v1",
+            "monthly_catalog_demand_total_units": monthly_catalog_demand_total,
+            "manual_override_minimum_units": max(0, _min_c),
+            "note": (
+                "cuOpt tri-modal scales warehouse fusion from allocation outputs built with the same monthly_units "
+                "per SKU as this total (Keepa + buy-box seller scope by default; optional manual override when "
+                f">= {max(0, _min_c)} units/mo)."
+            ),
+        }
         append_cuopt_tri_modal_note_to_placement_summaries(demand_by_sku, multi_dc_placement_tri_modal)
 
     cuopt_allocation_intelligence: dict[str, Any] | None = None
@@ -1087,6 +1128,23 @@ async def run_item_intelligence(
                     sku = line.get("sku")
                     if sku:
                         line["weight_lb_for_economics"] = weight_by_sku.get(str(sku), 0.0)
+
+    green_logistics_impact = build_green_logistics_impact_v1(
+        placement_mock_rate_grids=placement_mock_rate_grids,
+        allocation=allocation,
+        fulfillment_network_comparison=fulfillment_compare,
+        warehouses=warehouses_for_alloc,
+        demand_by_sku=demand_by_sku,
+        hub_warehouse_id=None
+        if hub_warehouse_id is None
+        else (str(hub_warehouse_id).strip() or None),
+        multi_dc_placement_tri_modal=multi_dc_placement_tri_modal
+        if isinstance(multi_dc_placement_tri_modal, dict)
+        else None,
+        cuopt_allocation_intelligence=cuopt_allocation_intelligence,
+    )
+
+    append_green_bullets_to_synthesis(synthesis, green_logistics_impact)
 
     product_research_economics: dict[str, Any] | None = None
     if include_product_research_economics:
@@ -1264,6 +1322,14 @@ async def run_item_intelligence(
                 "name": "item_intelligence_synthesis",
                 "detail": "Unified per-SKU intelligence: fulfillment + economics + placement + negotiation priorities.",
             },
+            {
+                "step": 6,
+                "name": "green_logistics_impact",
+                "detail": (
+                    "Demand-weighted last-mile miles (48-state hub ZIPs): multi-routed vs best single-hub counterfactual; "
+                    "illustrative CO₂e; inter-DC linehaul mile×units; cuOpt / NVIDIA alignment context."
+                ),
+            },
         ],
         "catalog": catalog,
         "physical_buckets": {k: v for k, v in sig_to_skus.items() if len(v) > 1},
@@ -1298,6 +1364,7 @@ async def run_item_intelligence(
         "multi_dc_parallel_scenario": multi_dc_parallel_scenario,
         "cuopt_allocation_intelligence": cuopt_allocation_intelligence,
         "allocation_cuopt_counterfactual": allocation_cuopt_counterfactual,
+        "green_logistics_impact": green_logistics_impact,
         "product_research_economics": product_research_economics,
         "distribution": distribution_block,
     }

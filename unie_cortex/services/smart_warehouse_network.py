@@ -1,6 +1,10 @@
 """
-Greedy US warehouse network expansion: volume gates, MOQ per node, saturation before
-adding further nodes, hot-ZIP3 signal from label history, and mock last-mile cost.
+Greedy US warehouse network expansion: volume gates, MOQ per node, supplier-proximity primary DC
+(when ``product_origin_postal`` is set), secondary DCs by contract fee proxy + demand-weighted mock
+last mile, hot-ZIP3 nudge from labels, and mock parcel grids.
+
+After DCs are selected, ``placement_mock_rate_grids`` assigns each contiguous state a primary ship-from
+warehouse (min mock parcel $ among active nodes, or tie-band mode).
 
 Does not replace CUOPT; produces a repeatable recommendation for item intelligence.
 """
@@ -18,12 +22,14 @@ from unie_cortex.network.us_state_demand_share import (
     demand_share_metadata,
 )
 from unie_cortex.network.parcel_mock import best_mock_parcel_among_carriers
-from unie_cortex.network.zones import CarrierCode
+from unie_cortex.network.road_matrix import haversine_km
+from unie_cortex.network.zones import CarrierCode, normalize_zip5
 from unie_cortex.services.allocation_v1 import replenishment_months_for_min_transfer_batch
 from unie_cortex.services.warehouse_mock_rate_grid import (
     CONTIGUOUS_STATE_HUB_DESTINATIONS_48,
     build_warehouse_mock_placement_grids,
     merge_warehouse_target_shares_for_placement,
+    resolve_warehouse_lat_lon,
 )
 from unie_cortex.network.facility_freight_mock_defaults import (
     enrich_warehouse_node_dict,
@@ -192,6 +198,127 @@ def _hot_zip3_for_priority_scoring(
     return fb, "blended_top_states"
 
 
+def _km_supplier_zip_to_warehouse(origin_zip5: str, warehouse_row: dict[str, Any]) -> float | None:
+    z = normalize_zip5(origin_zip5.strip())
+    if not z or len(z) < 5:
+        return None
+    o_ll = resolve_warehouse_lat_lon({"postal": z})
+    w_ll = resolve_warehouse_lat_lon(warehouse_row)
+    if not o_ll or not w_ll:
+        return None
+    return float(haversine_km(o_ll[0], o_ll[1], w_ll[0], w_ll[1]))
+
+
+def _warehouse_contract_fee_proxy_usd_per_unit(wh: dict[str, Any]) -> float:
+    """Inbound + outbound + storage rate card fields on the node when present (else 0)."""
+
+    def _f(key: str) -> float:
+        v = wh.get(key)
+        if v is None:
+            return 0.0
+        try:
+            return max(0.0, float(v))
+        except (TypeError, ValueError):
+            return 0.0
+
+    return (
+        _f("inbound_receiving_per_unit_usd")
+        + _f("outbound_handling_per_unit_usd")
+        + _f("storage_per_unit_month_usd")
+    )
+
+
+def _secondary_warehouse_score(
+    *,
+    wh: dict[str, Any],
+    weight_lb: float,
+    cars: list[CarrierCode],
+    state_shares: dict[str, float],
+    hot_zip3_eff: list[str],
+) -> tuple[float, float, float]:
+    """Returns (weighted_total, fee_proxy, last_mile_proxy)."""
+    fee = _warehouse_contract_fee_proxy_usd_per_unit(wh)
+    ozp = (wh.get("postal") or "10001").strip()
+    dw = _demand_weighted_mock_parcel_usd_from_origin(ozp, max(0.1, weight_lb), cars, state_shares)
+    hot = _hot_zone_last_mile_proxy(ozp, hot_zip3_eff, weight_lb=weight_lb, carriers=cars)
+    last_mile = dw + 0.25 * hot
+    fee_w = float(getattr(settings, "smart_network_secondary_rank_contract_fee_weight", 1.0) or 1.0)
+    lm_w = float(getattr(settings, "smart_network_secondary_rank_last_mile_weight", 1.0) or 1.0)
+    return fee_w * fee + lm_w * last_mile, fee, last_mile
+
+
+def _compute_warehouse_priority_and_hub(
+    *,
+    by_id: dict[str, dict[str, Any]],
+    hub_warehouse_id: str | None,
+    product_origin_postal: str | None,
+    weight_lb: float,
+    state_shares: dict[str, float],
+    hot_zip3_eff: list[str],
+    cars: list[CarrierCode],
+) -> tuple[list[str], str, dict[str, Any]]:
+    """
+    Primary DC: closest to supplier ZIP when configured and origin is set; else request hub.
+    Secondary+: lowest (contract fee proxy + weighted demand-weighted mock last mile).
+    """
+    all_ids = list(by_id.keys())
+    meta: dict[str, Any] = {}
+    if not all_ids:
+        return [], "", meta
+
+    hub_req = str(hub_warehouse_id or "").strip() or str(all_ids[0])
+    if hub_req not in by_id:
+        hub_req = str(all_ids[0])
+
+    use_proximity = bool(getattr(settings, "smart_network_primary_dc_by_supplier_proximity", True))
+    oz = normalize_zip5((product_origin_postal or "").strip()) if product_origin_postal else ""
+    if not oz or len(oz) < 5:
+        oz = ""
+
+    if use_proximity and oz:
+        dist_pairs: list[tuple[float, str]] = []
+        for wid in all_ids:
+            km = _km_supplier_zip_to_warehouse(oz, by_id[wid])
+            dist_pairs.append((km if km is not None else 1.0e12, wid))
+        dist_pairs.sort(key=lambda x: (x[0], x[1]))
+        primary = dist_pairs[0][1]
+        hub_eff = primary
+        d0 = dist_pairs[0][0]
+        meta["primary_dc_supplier_distance_km"] = None if d0 >= 1.0e11 else round(float(d0), 4)
+        meta["warehouse_ranking_mode"] = "supplier_proximity_primary_then_fee_plus_last_mile"
+        rest = [w for w in all_ids if w != primary]
+        sec_scored: list[tuple[float, str]] = []
+        for wid in rest:
+            total, _fee, _lm = _secondary_warehouse_score(
+                wh=by_id[wid],
+                weight_lb=weight_lb,
+                cars=cars,
+                state_shares=state_shares,
+                hot_zip3_eff=hot_zip3_eff,
+            )
+            sec_scored.append((total, wid))
+        sec_scored.sort(key=lambda x: (x[0], x[1]))
+        priority = [primary] + [w for _, w in sec_scored]
+        return priority, hub_eff, meta
+
+    hub_eff = hub_req
+    rest = [w for w in all_ids if w != hub_eff]
+    sec_scored = []
+    for wid in rest:
+        total, _f, _l = _secondary_warehouse_score(
+            wh=by_id[wid],
+            weight_lb=weight_lb,
+            cars=cars,
+            state_shares=state_shares,
+            hot_zip3_eff=hot_zip3_eff,
+        )
+        sec_scored.append((total, wid))
+    sec_scored.sort(key=lambda x: (x[0], x[1]))
+    priority = [hub_eff] + [w for _, w in sec_scored]
+    meta["warehouse_ranking_mode"] = "request_hub_first_then_fee_plus_last_mile"
+    return priority, hub_eff, meta
+
+
 def _demand_weighted_mock_parcel_usd_from_origin(
     origin_postal: str,
     weight_lb: float,
@@ -261,6 +388,7 @@ def recommend_warehouse_network(
     candidate_pool: list[dict[str, Any]] | None = None,
     default_lane_cost_per_lb: float = 0.15,
     preserve_request_shares: bool = False,
+    product_origin_postal: str | None = None,
 ) -> dict[str, Any]:
     """
     Returns ``selected_warehouses``, ``lanes``, ``hub_warehouse_id``, ``trace`` for downstream run.
@@ -303,6 +431,7 @@ def recommend_warehouse_network(
         catalog_skus=catalog_skus,
         weight_lb=weight_lb,
         candidate_pool=candidate_pool,
+        product_origin_postal=product_origin_postal,
     )
     if ctx is None:
         return {
@@ -326,10 +455,24 @@ def recommend_warehouse_network(
     proxy_src = str(ctx.get("hot_zip3_priority_proxy_source") or "")
 
     trace: list[str] = []
-
+    wrm = (ctx.get("warehouse_priority_rank_meta") or {}) if isinstance(ctx.get("warehouse_priority_rank_meta"), dict) else {}
+    mode = wrm.get("warehouse_ranking_mode")
+    if mode == "supplier_proximity_primary_then_fee_plus_last_mile":
+        trace.append(
+            "Primary DC = warehouse closest to product_origin_postal (supplier) by great-circle km on resolved lat/lon; "
+            "2nd+ DCs rank by (weighted contract fee proxy: inbound+outbound+storage) + (weighted demand-weighted mock "
+            f"parcel to 48 state hubs + 0.25× hot-ZIP3 proxy). hot-ZIP3 source: {proxy_src or 'n/a'}."
+        )
+        if wrm.get("primary_dc_supplier_distance_km") is not None:
+            trace.append(f"Supplier→primary DC distance ≈ {wrm['primary_dc_supplier_distance_km']} km.")
+    else:
+        trace.append(
+            "Primary DC = request hub_warehouse_id (or first seed); 2nd+ rank by weighted contract fee proxy + "
+            f"demand-weighted mock parcel + hot-ZIP3 proxy ({proxy_src or 'n/a'})."
+        )
     trace.append(
-        "Candidate ordering uses demand-weighted mock parcel to 48 state hubs (2026 prior) + hot-ZIP3 proxy "
-        f"({proxy_src or 'n/a'})."
+        "After DCs are chosen, each contiguous US state gets a primary ship-from among those DCs via "
+        "placement_mock_rate_grids (min mock parcel $ per state; see state_shipping_coverage / rate shop summary)."
     )
     trace.append(
         f"Volume tier allows up to {max_k} node(s); enforcing per-warehouse min_monthly_flow_units when set, "
@@ -458,8 +601,12 @@ def recommend_warehouse_network(
             "min_monthly_units_to_expand_beyond_one": min_monthly_units_to_expand_beyond_one,
             "min_units_per_warehouse_monthly_flow": min_units_per_warehouse_monthly_flow,
             "min_units_per_warehouse_when_three_or_more_nodes": min_units_per_warehouse_when_three_or_more_nodes,
+            "product_origin_postal_used_for_primary_dc": (str(product_origin_postal).strip() or None)
+            if product_origin_postal
+            else None,
+            "warehouse_priority_rank_meta": ctx.get("warehouse_priority_rank_meta"),
             "hot_zip3_priority_proxy_source": proxy_src or None,
-            "candidate_scoring": "label_blended_state_demand_weighted_mock_parcel_48_hubs_plus_hot_zip3_proxy",
+            "candidate_scoring": "supplier_proximity_primary_or_request_hub_then_fee_plus_last_mile_mock",
             "placement_mock_state_primary_assignment": assign_mode,
             "label_demand_weight_confidence": label_dw_meta.get("demand_weight_confidence"),
             "volume_tiers_for_max_nodes": tiers if volume_tiers_for_max_nodes is not None else None,
@@ -482,9 +629,20 @@ def _build_warehouse_priority_order(
     catalog_skus: set[str],
     weight_lb: float,
     candidate_pool: list[dict[str, Any]] | None,
+    product_origin_postal: str | None = None,
 ) -> dict[str, Any] | None:
-    """Shared candidate merge + mock-parcel scoring order (hub first)."""
-    pool = [dict(w) for w in (candidate_pool or default_us_candidate_warehouses())]
+    """
+    Merge candidates + seeds, then rank warehouses:
+    - With ``product_origin_postal`` and ``smart_network_primary_dc_by_supplier_proximity``: primary = closest DC to
+      supplier ZIP; additional DCs by contract fee proxy + demand-weighted mock last mile (+ hot ZIP3 nudge).
+    - Otherwise: request hub first, then same fee + last-mile score for spokes.
+    State→primary ship-from per destination is delegated to ``build_warehouse_mock_placement_grids`` (min mock parcel
+    among active nodes for each contiguous state).
+    """
+    if candidate_pool is None:
+        pool = [dict(w) for w in default_us_candidate_warehouses()]
+    else:
+        pool = [dict(w) for w in candidate_pool]
     by_id: dict[str, dict[str, Any]] = {
         str(w.get("id") or ""): dict(w) for w in pool if w.get("id")
     }
@@ -495,8 +653,6 @@ def _build_warehouse_priority_order(
     all_ids = list(by_id.keys())
     if not all_ids:
         return None
-    hub = hub_warehouse_id or (seed_warehouses[0].get("id") if seed_warehouses else None)
-    hub = str(hub or all_ids[0])
     sku_labels = [lf for lf in labels if (lf.get("sku") or "") in catalog_skus] if catalog_skus else labels
     rollup = rollup_label_demand(sku_labels, hot_pct=0.33, cold_pct=0.33)
     label_hot_zip3_raw: list[str] = []
@@ -523,17 +679,15 @@ def _build_warehouse_priority_order(
         state_demand_weights=state_shares,
         state_primary_assignment=assign_mode,
     )
-    scored: list[tuple[float, str]] = []
-    for wid in all_ids:
-        oz = (by_id[wid].get("postal") or "10001").strip()
-        dw_mock = _demand_weighted_mock_parcel_usd_from_origin(oz, max(0.1, weight_lb), cars, state_shares)
-        hot = _hot_zone_last_mile_proxy(oz, hot_zip3_eff, weight_lb=weight_lb, carriers=cars)
-        combined = dw_mock + 0.25 * hot
-        scored.append((combined, wid))
-    scored.sort(key=lambda x: x[0])
-    ordered_ids = [wid for _, wid in scored]
-    rest = [w for w in ordered_ids if w != hub]
-    priority = [hub] + rest if hub in by_id else ordered_ids
+    priority, hub, rank_meta = _compute_warehouse_priority_and_hub(
+        by_id=by_id,
+        hub_warehouse_id=hub_warehouse_id,
+        product_origin_postal=product_origin_postal,
+        weight_lb=weight_lb,
+        state_shares=state_shares,
+        hot_zip3_eff=hot_zip3_eff,
+        cars=cars,
+    )
     return {
         "by_id": by_id,
         "hub": hub,
@@ -546,6 +700,7 @@ def _build_warehouse_priority_order(
         "rollup": rollup,
         "label_dw_meta": label_dw_meta,
         "cars": cars,
+        "warehouse_priority_rank_meta": rank_meta,
     }
 
 
@@ -658,6 +813,7 @@ def build_warehouse_network_recommendation_options(
     default_lane_cost_per_lb: float = 0.15,
     min_inter_warehouse_transfer_units: float | None = None,
     max_months_to_meet_min_transfer: int | None = None,
+    product_origin_postal: str | None = None,
 ) -> dict[str, Any]:
     """
     Always returns a **single-DC** and a **multi-DC** scenario for UI / planning.
@@ -697,6 +853,7 @@ def build_warehouse_network_recommendation_options(
         catalog_skus=catalog_skus,
         weight_lb=weight_lb,
         candidate_pool=candidate_pool,
+        product_origin_postal=product_origin_postal,
     )
     if ctx is None:
         return {
@@ -716,6 +873,7 @@ def build_warehouse_network_recommendation_options(
     proxy_src = str(ctx.get("hot_zip3_priority_proxy_source") or "")
     rollup = ctx["rollup"]
     label_dw_meta = ctx["label_dw_meta"]
+    wh_rank_meta = ctx.get("warehouse_priority_rank_meta")
 
     h_use = hub if hub in by_id else priority[0]
     wh_single = dict(by_id[h_use])
@@ -906,6 +1064,10 @@ def build_warehouse_network_recommendation_options(
             "default_min_units_per_warehouse_monthly_flow": min_units_per_warehouse_monthly_flow,
             "default_min_units_per_warehouse_when_three_or_more_nodes": min_units_per_warehouse_when_three_or_more_nodes,
             "max_warehouses_cap": max_warehouses_cap,
+            "product_origin_postal_used_for_primary_dc": (str(product_origin_postal).strip() or None)
+            if product_origin_postal
+            else None,
+            "warehouse_priority_rank_meta": wh_rank_meta,
             "label_demand_weight_confidence": label_dw_meta.get("demand_weight_confidence"),
             "placement_min_inter_warehouse_transfer_units_effective": min_xfer_effective,
             "placement_max_months_min_transfer_horizon": max_m_xfer,
@@ -933,11 +1095,14 @@ def trim_client_warehouse_network_to_demand(
     max_warehouses_cap: int = 6,
     default_lane_cost_per_lb: float = 0.15,
     volume_tiers_for_max_nodes: list[tuple[float, int]] | None = None,
+    product_origin_postal: str | None = None,
 ) -> dict[str, Any]:
     """
-    Reduce **client-supplied** warehouses to a MOQ-feasible subset (same gates as ``recommend_warehouse_network``),
-    scoring only among the client's nodes (hub first, then cheapest demand-weighted mock parcel among the rest).
-    Does not add nodes outside the client list.
+    Reduce **client-supplied** warehouses to a MOQ-feasible subset (same gates as ``recommend_warehouse_network``).
+
+    Rankings use only client nodes (``candidate_pool=[]``): primary DC closest to ``product_origin_postal`` when set
+    and settings allow; else request hub first; additional nodes by contract fee proxy + demand-weighted mock last mile.
+    State→primary ship-from is still chosen in ``placement_mock_rate_grids`` per state among active nodes.
     """
     trace: list[str] = []
     tiers = volume_tiers_for_max_nodes or [
@@ -991,9 +1156,10 @@ def trim_client_warehouse_network_to_demand(
             "client_trim_applied": False,
         }
 
-    hub = str(hub_warehouse_id or client_order[0]).strip()
-    if hub not in by_id:
-        hub = client_order[0]
+    hub_req = str(hub_warehouse_id or client_order[0]).strip()
+    if hub_req not in by_id:
+        hub_req = client_order[0]
+    hub = hub_req
 
     if len(by_id) == 1:
         trace.append("trim: single client node — no reduction.")
@@ -1012,38 +1178,43 @@ def trim_client_warehouse_network_to_demand(
             "trim_removed_count": 0,
         }
 
-    sku_labels = [lf for lf in labels if (lf.get("sku") or "") in catalog_skus] if catalog_skus else labels
-    rollup = rollup_label_demand(sku_labels, hot_pct=0.33, cold_pct=0.33)
-    label_hot_zip3_raw: list[str] = []
-    if rollup.get("status") == "complete":
-        label_hot_zip3_raw = list(rollup.get("tiers", {}).get("hot_zip3") or [])
-
-    cars: list[CarrierCode] = ["usps", "ups", "fedex"]
-    state_shares, label_dw_meta = build_blended_state_demand_weights_from_labels(
-        labels,
-        min_label_lines_for_full_blend=float(
-            getattr(settings, "label_state_weight_blend_min_lines", 200.0) or 200.0
-        ),
+    seed_only = [dict(by_id[wid]) for wid in client_order if wid in by_id]
+    ctx_trim = _build_warehouse_priority_order(
+        seed_warehouses=seed_only,
+        hub_warehouse_id=hub_req,
+        labels=labels,
+        catalog_skus=catalog_skus,
+        weight_lb=weight_lb,
+        candidate_pool=[],
+        product_origin_postal=product_origin_postal,
     )
-    hot_zip3_eff, hot_proxy_src = _hot_zip3_for_priority_scoring(state_shares, label_hot_zip3_raw)
-    assign_mode = str(
-        getattr(settings, "placement_mock_state_primary_assignment", "min_mock_parcel") or "min_mock_parcel"
-    ).strip().lower()
-    if assign_mode not in ("min_mock_parcel", "distance_tie_band"):
-        assign_mode = "min_mock_parcel"
+    if not ctx_trim:
+        return {
+            "status": "skipped",
+            "message": "trim: priority build failed",
+            "selected_warehouses": client_warehouses,
+            "lanes": [],
+            "hub_warehouse_id": hub_req,
+            "trace": trace + ["trim: _build_warehouse_priority_order returned None"],
+            "client_trim_applied": False,
+        }
 
-    client_ids = list(by_id.keys())
-    scored_pairs: list[tuple[float, str]] = []
-    for wid in client_ids:
-        oz = (by_id[wid].get("postal") or "10001").strip()
-        dw_mock = _demand_weighted_mock_parcel_usd_from_origin(oz, max(0.1, weight_lb), cars, state_shares)
-        hot = _hot_zone_last_mile_proxy(oz, hot_zip3_eff, weight_lb=weight_lb, carriers=cars)
-        combined = dw_mock + 0.25 * hot
-        scored_pairs.append((combined, wid))
-    scored_pairs.sort(key=lambda x: x[0])
-    ordered_by_score = [w for _, w in scored_pairs]
-    rest_scored = [w for w in ordered_by_score if w != hub]
-    priority = [hub] + rest_scored
+    state_shares = ctx_trim["state_shares"]
+    label_dw_meta = ctx_trim["label_dw_meta"]
+    rollup = ctx_trim["rollup"]
+    label_hot_zip3_raw = list(ctx_trim.get("label_hot_zip3_raw") or [])
+    hot_zip3_eff = list(ctx_trim["hot_zip3"])
+    hot_proxy_src = str(ctx_trim.get("hot_zip3_priority_proxy_source") or "")
+    assign_mode = str(ctx_trim["assign_mode"])
+    priority = list(ctx_trim["priority"])
+    hub = str(ctx_trim["hub"])
+    rank_meta = ctx_trim.get("warehouse_priority_rank_meta") or {}
+    trace.append(f"trim: warehouse_ranking_mode={rank_meta.get('warehouse_ranking_mode', 'n/a')}.")
+    if rank_meta.get("primary_dc_supplier_distance_km") is not None:
+        trace.append(f"trim: supplier→primary DC ≈ {rank_meta['primary_dc_supplier_distance_km']} km.")
+    trace.append(
+        "trim: per-state primary ship-from among kept DCs follows placement_mock_rate_grids (min mock parcel $ / state)."
+    )
 
     max_k = min(len(priority), max_k_vol)
     trace.append(
@@ -1136,6 +1307,10 @@ def trim_client_warehouse_network_to_demand(
             "min_monthly_units_to_expand_beyond_one": min_monthly_units_to_expand_beyond_one,
             "min_units_per_warehouse_monthly_flow": min_units_per_warehouse_monthly_flow,
             "min_units_per_warehouse_when_three_or_more_nodes": min_units_per_warehouse_when_three_or_more_nodes,
+            "product_origin_postal_used_for_primary_dc": (str(product_origin_postal).strip() or None)
+            if product_origin_postal
+            else None,
+            "warehouse_priority_rank_meta": rank_meta,
             "placement_mock_state_primary_assignment": assign_mode,
             "label_demand_weight_confidence": label_dw_meta.get("demand_weight_confidence"),
             "volume_tiers_for_max_nodes": tiers,

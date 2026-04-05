@@ -28,10 +28,20 @@ def test_monthly_override_scales_band():
             "monthly_units_est_high": 133.0,
         }
     }
-    meta = apply_planning_monthly_units_overrides(demand, {"S1": 50.0})
+    meta = apply_planning_monthly_units_overrides(demand, {"S1": 200.0})
     assert "S1" in meta["applied"]
     integerize_monthly_unit_fields_in_demand_by_sku(demand)
-    assert demand["S1"]["monthly_units_est_mid"] == 50
-    assert demand["S1"]["monthly_units_est_low"] == 38
-    assert demand["S1"]["monthly_units_est_high"] == 66
-    assert demand["S1"]["planning_monthly_units_override"]["user_monthly_units_mid"] == 50
+    assert demand["S1"]["monthly_units_est_mid"] == 200
+    assert demand["S1"]["monthly_units_est_low"] == 150
+    assert demand["S1"]["monthly_units_est_high"] == 266
+    assert demand["S1"]["planning_monthly_units_override"]["user_monthly_units_mid"] == 200
+
+
+def test_monthly_override_below_minimum_skipped():
+    demand = {"S1": {"monthly_units_est_mid": 100.0}}
+    meta = apply_planning_monthly_units_overrides(demand, {"S1": 100.0})
+    assert "S1" not in meta["applied"]
+    assert any(
+        s.get("sku") == "S1" and s.get("reason") == "below_manual_override_minimum" for s in meta["skipped"]
+    )
+    assert demand["S1"]["monthly_units_est_mid"] == 100.0

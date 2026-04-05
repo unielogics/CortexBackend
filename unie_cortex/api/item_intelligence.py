@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from unie_cortex.config import settings
 from unie_cortex.db.deps import get_store
 from unie_cortex.network.facility_freight_profile import FacilityFreightProfile
 from unie_cortex.db.store import CortexStore
@@ -255,7 +256,8 @@ class ItemIntelligenceRunBody(BaseModel):
         description=(
             "Per-SKU monthly planning velocity (units/mo) for this run only — overrides Keepa-derived "
             "monthly_units_est_* before allocation, warehouse trim, LTL, and placement summary. "
-            "Takes priority over modeled forecasts when set."
+            "Each value must be >= planning_manual_monthly_units_override_minimum (default 150); "
+            "omit this field to use Keepa + buy-box modeled velocity."
         ),
     )
     planning_marketplace_seller_id_by_sku: dict[str, str] | None = Field(
@@ -277,6 +279,30 @@ class ItemIntelligenceRunBody(BaseModel):
             "Applied after SP-API + Keepa; persisted when ITEM_INTELLIGENCE_PERSIST_CATALOG_PACKAGE_HINTS is true."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_planning_override_floor(self) -> "ItemIntelligenceRunBody":
+        o = self.planning_monthly_units_override_by_sku
+        if not o:
+            return self
+        min_u = int(getattr(settings, "planning_manual_monthly_units_override_minimum", 150) or 0)
+        if min_u <= 0:
+            return self
+        bad: dict[str, float] = {}
+        for k, v in o.items():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv < float(min_u):
+                bad[str(k).strip() or str(k)] = fv
+        if bad:
+            raise ValueError(
+                f"planning_monthly_units_override_by_sku values must be >= {min_u} units/mo (manual override floor). "
+                "Omit the field to use Keepa ASIN velocity with buy-box seller statistics. "
+                f"Invalid: {bad!r}"
+            )
+        return self
 
 
 @router.put("/{tenant_id}/catalog/items")

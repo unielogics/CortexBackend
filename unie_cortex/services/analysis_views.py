@@ -35,6 +35,9 @@ def build_maiw_resources(artifact: dict[str, Any]) -> dict[str, Any]:
         "multi_dc_tri_modal_status": (artifact.get("multi_dc_placement_tri_modal") or {}).get("status")
         if isinstance(artifact.get("multi_dc_placement_tri_modal"), dict)
         else None,
+        "green_logistics_impact_status": (artifact.get("green_logistics_impact") or {}).get("status")
+        if isinstance(artifact.get("green_logistics_impact"), dict)
+        else None,
         "sales_tax_modeling": (artifact.get("fulfillment_network_comparison") or {}).get("sales_tax_modeling")
         if isinstance(artifact.get("fulfillment_network_comparison"), dict)
         else None,

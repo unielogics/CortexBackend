@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from unie_cortex.config import settings
 from unie_cortex.integrations.keepa_demand import seller_inputs_from_catalog_row
 
 
@@ -61,6 +62,17 @@ def apply_planning_monthly_units_overrides(
             continue
         if v < 0 or math.isnan(v) or math.isinf(v):
             meta["skipped"].append({"sku": sku, "reason": "out_of_range"})
+            continue
+        min_manual = int(getattr(settings, "planning_manual_monthly_units_override_minimum", 150) or 0)
+        if min_manual > 0 and v < float(min_manual):
+            meta["skipped"].append(
+                {
+                    "sku": sku,
+                    "reason": "below_manual_override_minimum",
+                    "minimum_units": min_manual,
+                    "value": v,
+                }
+            )
             continue
         dem = demand_by_sku[sku]
         if not isinstance(dem, dict):

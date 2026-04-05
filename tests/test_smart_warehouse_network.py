@@ -185,6 +185,28 @@ def test_max_warehouses_cap_respected(mock_grid):
     assert out["selected_warehouse_count"] <= 3
 
 
+def test_product_origin_selects_closest_warehouse_as_primary():
+    """07055 (NJ) is much closer to 07001 than to 90001; primary should be the NJ node, not request hub."""
+    ctx = _build_warehouse_priority_order(
+        seed_warehouses=[
+            {"id": "west", "postal": "90001"},
+            {"id": "nj", "postal": "07001"},
+        ],
+        hub_warehouse_id="west",
+        labels=[],
+        catalog_skus=set(),
+        weight_lb=2.0,
+        candidate_pool=[],
+        product_origin_postal="07055",
+    )
+    assert ctx is not None
+    assert ctx["hub"] == "nj"
+    assert ctx["priority"][0] == "nj"
+    meta = ctx.get("warehouse_priority_rank_meta") or {}
+    assert meta.get("warehouse_ranking_mode") == "supplier_proximity_primary_then_fee_plus_last_mile"
+    assert meta.get("primary_dc_supplier_distance_km") is not None
+
+
 def test_hot_zip3_priority_fallback_blended_top_states_without_labels():
     blended, _ = build_blended_state_demand_weights_from_labels([])
     eff, src = _hot_zip3_for_priority_scoring(blended, [])

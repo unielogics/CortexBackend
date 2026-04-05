@@ -370,6 +370,38 @@ class Settings(BaseSettings):
         ),
         description="Star replenishment $/lb from hub to each spoke when auto-building lanes",
     )
+    smart_network_primary_dc_by_supplier_proximity: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_PRIMARY_DC_BY_SUPPLIER_PROXIMITY",
+            "smart_network_primary_dc_by_supplier_proximity",
+        ),
+        description=(
+            "When product_origin_postal is set on the run, pick the primary stocking DC (hub) as the candidate "
+            "warehouse closest to that ZIP (great-circle on resolved lat/lon). Additional DCs rank by contract "
+            "fee proxy + demand-weighted mock last mile."
+        ),
+    )
+    smart_network_secondary_rank_contract_fee_weight: float = Field(
+        1.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_SECONDARY_RANK_CONTRACT_FEE_WEIGHT",
+            "smart_network_secondary_rank_contract_fee_weight",
+        ),
+        ge=0.0,
+        le=100.0,
+        description="Weight on inbound+outbound+storage fee proxy when ranking 2nd+ warehouses (with origin) or spokes after request hub.",
+    )
+    smart_network_secondary_rank_last_mile_weight: float = Field(
+        1.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_SECONDARY_RANK_LAST_MILE_WEIGHT",
+            "smart_network_secondary_rank_last_mile_weight",
+        ),
+        ge=0.0,
+        le=100.0,
+        description="Weight on demand-weighted mock parcel (+ hot ZIP3 proxy) when ranking secondary warehouses.",
+    )
     seller_planning_rate_shop_max_warehouses: int = Field(
         6,
         ge=1,
@@ -404,6 +436,19 @@ class Settings(BaseSettings):
         ge=1.0,
         le=365.0,
         description="Default ~60–90d stocking target for placement summaries and allocation baselines (units = daily × days).",
+    )
+    planning_manual_monthly_units_override_minimum: int = Field(
+        150,
+        validation_alias=AliasChoices(
+            "PLANNING_MANUAL_MONTHLY_UNITS_OVERRIDE_MINIMUM",
+            "planning_manual_monthly_units_override_minimum",
+        ),
+        ge=0,
+        le=1_000_000,
+        description=(
+            "Manual planning_monthly_units_override_by_sku must be >= this value (units/mo) when sent; "
+            "omit override to use Keepa + buy-box modeled velocity. Set 0 to disable the floor (not recommended)."
+        ),
     )
     network_placement_adjustment_max_days_cover: float = Field(
         90.0,
@@ -1111,6 +1156,31 @@ class Settings(BaseSettings):
         description=(
             "Scales only direct multi-origin mile totals in transport_miles_v1 (geodesic + road proxy); "
             "1.0 = off. Optional heuristic (~1.1–1.25) when direct O→D understates parcel hub circuit miles."
+        ),
+    )
+    green_last_mile_kg_co2e_per_package_mile: float = Field(
+        0.00012,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "GREEN_LAST_MILE_KG_CO2E_PER_PACKAGE_MILE",
+            "green_last_mile_kg_co2e_per_package_mile",
+        ),
+        description=(
+            "Illustrative kg CO₂e per package-mile for green_logistics_impact last-mile delta (not audited). "
+            "Default matches transport_geo.CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE."
+        ),
+    )
+    green_linehaul_kg_co2e_per_mile: float = Field(
+        0.00015,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "GREEN_LINEHAUL_KG_CO2E_PER_MILE",
+            "green_linehaul_kg_co2e_per_mile",
+        ),
+        description=(
+            "Illustrative kg CO₂e per hub→spoke mile×units month total for green_logistics_impact (not audited)."
         ),
     )
 

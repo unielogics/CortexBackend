@@ -20,7 +20,14 @@ def build_item_intelligence_synthesis(
     One object clients can surface as the primary "smart" output alongside raw artifacts.
     """
     per_sku: list[dict[str, Any]] = []
-    run_bullets: list[str] = []
+    run_bullets: list[str] = [
+        (
+            "Planning velocity defaults to Keepa ASIN monthly demand signals, blended with your buy-box time-on-box and "
+            "listing context when the marketplace seller id matches Keepa history. For multi-DC, if flow is tight "
+            "versus inter-warehouse minimum batches, modeled cover may stretch toward multi-month replenishment so "
+            "suggested network stock can support hub→spoke moves (see placement.network_placement_adjustment on each SKU)."
+        ),
+    ]
 
     econ_by_sku = {r["sku"]: r for r in (landed_cost_economics.get("per_sku") or []) if r.get("sku")}
     fnc_by_sku = {r["sku"]: r for r in (fulfillment_network_comparison.get("per_sku") or []) if r.get("sku")}
