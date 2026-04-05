@@ -70,6 +70,10 @@ export default function SellerOrderPlanningPage() {
     <div style={{ fontFamily: "system-ui", maxWidth: 980, margin: "2rem auto", padding: 24 }}>
       <Link to={`/e/${engagementId}`}>← Engagement {engagementId}</Link>
       <h1 style={{ marginTop: 16 }}>Order-financial planning run</h1>
+      <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+        After <code>git pull</code>, rebuild the portal if the API serves <code>portal/dist</code>:{" "}
+        <code>cd portal &amp;&amp; npm run build</code>.
+      </p>
       <p style={{ color: "#475569", lineHeight: 1.55, fontSize: 14 }}>
         Calls <code>POST /v1/assessment/engagements/{"{id}"}/order-financials/planning-run</code>. Response includes FBM/FBA
         integrated scenarios, <code>placement_mock_rate_grids</code> (national rate-shop node expansion for cuOpt),{" "}

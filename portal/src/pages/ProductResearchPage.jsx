@@ -1088,11 +1088,18 @@ export default function ProductResearchPage() {
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
       <h1 style={{ marginTop: 0 }}>Product research</h1>
+      <p style={{ fontSize: 12, color: "#64748b", marginTop: -6, marginBottom: 12 }}>
+        New panels (mock rate shopping counts, allocator-weighted cover in the demand table, cuOpt cross-links) load from
+        this bundle — if you do not see them after a pull, rebuild <code>portal/dist</code>{" "}
+        (<code>cd portal &amp;&amp; npm run build</code>) or run <code>npm run dev</code>.
+      </p>
       <p style={{ color: "#475569", lineHeight: 1.55, fontSize: 14 }}>
         Runs <code>POST …/item-intelligence/run</code> with options aligned to{" "}
         <code>ItemIntelligenceRunBody</code>. The UI surfaces the same artifacts the backend already returns: allocation
         (inventory by DC), <strong>warehouse network scenarios</strong> (single vs multi-DC + MOQ nudges, same response),
-        demand enrichment, synthesis, economics, fulfillment comparison, and optional PRO economics.
+        demand enrichment, synthesis, economics, fulfillment comparison, and optional PRO economics. After you run, scroll to{" "}
+        <strong>Mock placement context</strong> for rate-shop execution summary and to <strong>Demand enrichment</strong> for
+        per-DC cover (allocator badge when the API returns <code>inventory_placement_summary_v2</code>).
       </p>
 
       {!configured && (
