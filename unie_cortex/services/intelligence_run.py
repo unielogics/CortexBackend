@@ -10,6 +10,7 @@ from unie_cortex.db.store import CortexStore
 from unie_cortex.integrations.keepa_demand import extract_demand_from_keepa_payload
 from unie_cortex.services.planning_overrides import (
     apply_planning_monthly_units_overrides,
+    integerize_monthly_unit_fields_in_demand_by_sku,
     merge_planning_seller_inputs,
 )
 from unie_cortex.integrations.keepa import KeepaService
@@ -33,6 +34,10 @@ from unie_cortex.services.product_research_economics import (
     build_product_research_economics,
     normalize_product_research_outputs,
 )
+from unie_cortex.services.cuopt_allocation_hints import (
+    apply_share_nudges_to_warehouses,
+    build_cuopt_allocation_intelligence,
+)
 from unie_cortex.services.warehouse_mock_rate_grid import (
     build_warehouse_mock_placement_grids,
     merge_warehouse_target_shares_for_placement,
@@ -55,9 +60,38 @@ from unie_cortex.services.sku_intelligence_merge import (
 from unie_cortex.services.velocity_rollup import rollup_velocity
 from unie_cortex.network.facility_freight_profile import merge_facility_freight_dicts, to_broker_card
 from unie_cortex.services.parcel_quote_record import record_observations_from_placement_mock_grids
+from unie_cortex.services.asin_package_enrichment import (
+    apply_hints_to_sku_catalog_row,
+    batch_resolve_asin_package_hints,
+)
 from unie_cortex.services.analysis_views import attach_four_views_and_pipeline
-from unie_cortex.services.placement_summary import build_inventory_placement_summary
+from unie_cortex.services.placement_summary import (
+    append_cuopt_tri_modal_note_to_placement_summaries,
+    apply_inventory_cover_splits_from_allocation,
+    build_inventory_placement_summary,
+)
 from unie_cortex.services.placement_tax_context import enrich_sales_tax_modeling_for_placement
+
+
+def _catalog_physical_gap_fields(row: dict[str, Any]) -> list[str]:
+    """Fields still missing for accurate parcel + linehaul cube after SP-API/Keepa/manual merge."""
+    miss: list[str] = []
+    w = row.get("weight_lb")
+    try:
+        wf = float(w) if w is not None else 0.0
+    except (TypeError, ValueError):
+        wf = 0.0
+    if w is None or wf <= 0:
+        miss.append("weight_lb")
+    for k in ("length_in", "width_in", "height_in"):
+        v = row.get(k)
+        try:
+            vf = float(v) if v is not None else 0.0
+        except (TypeError, ValueError):
+            vf = 0.0
+        if v is None or vf <= 0:
+            miss.append(k)
+    return miss
 
 
 def _extra_str(extra: Any, key: str) -> str | None:
@@ -159,6 +193,59 @@ def _normalize_multi_dc_warehouse_rows(selected: list[Any]) -> list[dict[str, An
             continue
         out.append(dict(row))
     return out
+
+
+def _network_inputs_for_cuopt_tri_modal(
+    warehouses_for_alloc: list[dict[str, Any]],
+    lanes: list[dict[str, Any]],
+    hub_warehouse_id: str | None,
+    multi_dc_parallel_scenario: dict[str, Any],
+    warehouse_network_recommendation_options: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None, str]:
+    """
+    cuOpt should optimize the **recommended multi-DC layout** when we have one (same graph as
+    ``multi_dc_parallel_scenario`` / WNO multi_dc row), not only the warehouses the user typed in
+    the request (often a single origin DC).
+    """
+    if (
+        isinstance(multi_dc_parallel_scenario, dict)
+        and str(multi_dc_parallel_scenario.get("status") or "") == "complete"
+    ):
+        wh = multi_dc_parallel_scenario.get("warehouses")
+        if isinstance(wh, list) and len(wh) >= 2:
+            lm = multi_dc_parallel_scenario.get("lanes") or []
+            lm_list = [dict(x) for x in lm if isinstance(x, dict)]
+            hb = multi_dc_parallel_scenario.get("hub_warehouse_id")
+            hub_s = str(hb).strip() if hb else ""
+            return (
+                [dict(w) for w in wh if isinstance(w, dict)],
+                lm_list,
+                hub_s or hub_warehouse_id,
+                "multi_dc_parallel_scenario",
+            )
+
+    if str(warehouse_network_recommendation_options.get("status") or "") == "complete":
+        opt = _multi_dc_option_from_wno(warehouse_network_recommendation_options)
+        if opt:
+            raw_wh = opt.get("selected_warehouses")
+            if isinstance(raw_wh, list):
+                multi_wh = _normalize_multi_dc_warehouse_rows(raw_wh)
+                if len(multi_wh) >= 2:
+                    lanes_m = [dict(ln) for ln in (opt.get("lanes") or []) if isinstance(ln, dict)]
+                    hub_m = str(opt.get("hub_warehouse_id") or "").strip()
+                    return (
+                        [dict(w) for w in multi_wh],
+                        lanes_m,
+                        hub_m or hub_warehouse_id,
+                        "warehouse_network_recommendation_multi_dc",
+                    )
+
+    return (
+        [dict(w) for w in warehouses_for_alloc if isinstance(w, dict)],
+        [dict(ln) for ln in lanes if isinstance(ln, dict)],
+        hub_warehouse_id,
+        "request_payload",
+    )
 
 
 async def _build_multi_dc_parallel_scenario(
@@ -357,6 +444,8 @@ async def run_item_intelligence(
     job_id: str | None = None,
     planning_monthly_units_override_by_sku: dict[str, float] | None = None,
     planning_marketplace_seller_id_by_sku: dict[str, str] | None = None,
+    cuopt_enrichment: dict[str, Any] | None = None,
+    manual_package_by_sku: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     jid = (job_id or "").strip() or str(uuid4())
     planning_context: dict[str, Any] = {
@@ -378,6 +467,76 @@ async def run_item_intelligence(
     if sku_filter:
         allow = {s.strip() for s in sku_filter if s and s.strip()}
         catalog = [r for r in catalog if r.get("sku") in allow]
+
+    package_enrichment_audit: list[dict[str, Any]] = []
+    asins_for_pkg = sorted(
+        {str(r.get("asin") or "").strip().upper() for r in catalog if str(r.get("asin") or "").strip()}
+    )
+    hints_map: dict[str, dict[str, Any]] = {}
+    if asins_for_pkg and (
+        getattr(settings, "order_financial_enrich_package_from_catalog", True)
+        or getattr(settings, "item_intelligence_enrich_package_from_catalog", True)
+    ):
+        hints_map = await batch_resolve_asin_package_hints(
+            store, tenant_id=tenant_id, asins=list(asins_for_pkg), domain=domain
+        )
+    persist_pkg = bool(getattr(settings, "item_intelligence_persist_catalog_package_hints", True))
+    for i, raw in enumerate(catalog):
+        row = dict(raw)
+        asin_u = str(row.get("asin") or "").strip().upper()
+        audit = apply_hints_to_sku_catalog_row(row, hints_map.get(asin_u))
+        if audit.get("filled_fields"):
+            package_enrichment_audit.append(audit)
+            if persist_pkg:
+                await store.sku_catalog_upsert(
+                    tenant_id,
+                    {
+                        "sku": row["sku"],
+                        "asin": row.get("asin"),
+                        "weight_lb": row.get("weight_lb"),
+                        "length_in": row.get("length_in"),
+                        "width_in": row.get("width_in"),
+                        "height_in": row.get("height_in"),
+                        "extra": row.get("extra"),
+                    },
+                )
+        catalog[i] = attach_signature_to_catalog_row(row)
+
+    mop = manual_package_by_sku or {}
+    for i in range(len(catalog)):
+        sku_k = str(catalog[i].get("sku") or "")
+        ovr = mop.get(sku_k)
+        if not isinstance(ovr, dict):
+            continue
+        row = dict(catalog[i])
+        ex = dict(row["extra"]) if isinstance(row.get("extra"), dict) else {}
+        pkg = dict(ex.get("package_enrichment")) if isinstance(ex.get("package_enrichment"), dict) else {}
+        for fld in ("weight_lb", "length_in", "width_in", "height_in"):
+            v = ovr.get(fld)
+            if v is not None:
+                try:
+                    row[fld] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        pkg["manual_entry"] = True
+        ex["package_enrichment"] = pkg
+        row["extra"] = ex
+        if persist_pkg:
+            await store.sku_catalog_upsert(
+                tenant_id,
+                {
+                    "sku": row["sku"],
+                    "asin": row.get("asin"),
+                    "weight_lb": row.get("weight_lb"),
+                    "length_in": row.get("length_in"),
+                    "width_in": row.get("width_in"),
+                    "height_in": row.get("height_in"),
+                    "extra": row.get("extra"),
+                },
+            )
+        catalog[i] = attach_signature_to_catalog_row(row)
+
+    planning_context["package_enrichment_automatic"] = package_enrichment_audit
 
     sig_to_skus: dict[str, list[str]] = {}
     for r in catalog:
@@ -471,6 +630,7 @@ async def run_item_intelligence(
 
     override_meta = apply_planning_monthly_units_overrides(demand_by_sku, planning_monthly_units_override_by_sku)
     planning_context["planning_monthly_units_override_result"] = override_meta
+    integerize_monthly_unit_fields_in_demand_by_sku(demand_by_sku)
 
     alloc_inputs = []
     for row in catalog:
@@ -498,7 +658,7 @@ async def run_item_intelligence(
         alloc_inputs.append(
             {
                 "sku": sku,
-                "monthly_units": float(mid or 0),
+                "monthly_units": max(0, int(round(float(mid or 0)))),
                 "weight_lb": float(w or 0),
                 "cube_cuft": round(cube, 4),
             }
@@ -717,6 +877,8 @@ async def run_item_intelligence(
         inv2["network_placement_adjustment"] = npa
         dem["inventory_placement_summary"] = inv2
 
+    apply_inventory_cover_splits_from_allocation(demand_by_sku, allocation)
+
     flow_model = (inbound_flow_model or getattr(settings, "economics_inbound_flow_model", None) or "hub_spoke_rate_card_v1")
     if isinstance(flow_model, str):
         flow_model = flow_model.strip().lower()
@@ -841,13 +1003,90 @@ async def run_item_intelligence(
     if include_nvidia_cuopt_layer is not None:
         nvidia_layer_on = bool(include_nvidia_cuopt_layer)
 
+    wh_cuopt, lanes_cuopt, hub_cuopt, cuopt_network_source = _network_inputs_for_cuopt_tri_modal(
+        warehouses_for_alloc,
+        lanes,
+        hub_warehouse_id,
+        multi_dc_parallel_scenario,
+        warehouse_network_recommendation_options,
+    )
+
+    use_parallel_intel = (
+        cuopt_network_source == "multi_dc_parallel_scenario"
+        and isinstance(multi_dc_parallel_scenario, dict)
+        and str(multi_dc_parallel_scenario.get("status") or "") == "complete"
+    )
+    allocation_for_cuopt = (
+        multi_dc_parallel_scenario.get("allocation") if use_parallel_intel else allocation
+    )
+    grids_for_cuopt = (
+        multi_dc_parallel_scenario.get("placement_mock_rate_grids")
+        if use_parallel_intel
+        else placement_mock_rate_grids
+    )
+    economics_for_cuopt = (
+        multi_dc_parallel_scenario.get("landed_cost_economics")
+        if use_parallel_intel
+        else economics
+    )
+
+    monthly_catalog_demand_total = sum(
+        float(x.get("monthly_units") or 0.0) for x in alloc_inputs if isinstance(x, dict)
+    )
+
     multi_dc_placement_tri_modal = await build_item_intelligence_multi_dc_tri_modal(
-        warehouses=warehouses_for_alloc,
-        lanes=lanes,
-        hub_warehouse_id=hub_warehouse_id,
+        warehouses=wh_cuopt,
+        lanes=lanes_cuopt,
+        hub_warehouse_id=hub_cuopt,
         include_overview=overview_on,
         include_nvidia_layer=nvidia_layer_on,
+        solver_network_source=cuopt_network_source,
+        allocation=allocation_for_cuopt if isinstance(allocation_for_cuopt, dict) else None,
+        placement_mock_rate_grids=grids_for_cuopt if isinstance(grids_for_cuopt, dict) else None,
+        landed_cost_economics=economics_for_cuopt if isinstance(economics_for_cuopt, dict) else None,
+        alloc_inputs=alloc_inputs,
+        cuopt_enrichment=cuopt_enrichment if isinstance(cuopt_enrichment, dict) else None,
+        monthly_catalog_demand_total=monthly_catalog_demand_total,
+        fulfillment_network_comparison=fulfillment_compare if isinstance(fulfillment_compare, dict) else None,
     )
+    if isinstance(multi_dc_placement_tri_modal, dict):
+        append_cuopt_tri_modal_note_to_placement_summaries(demand_by_sku, multi_dc_placement_tri_modal)
+
+    cuopt_allocation_intelligence: dict[str, Any] | None = None
+    allocation_cuopt_counterfactual: dict[str, Any] | None = None
+    if bool(getattr(settings, "cuopt_inform_allocation_weights", False)) and isinstance(
+        multi_dc_placement_tri_modal, dict
+    ):
+        nvb = multi_dc_placement_tri_modal.get("nvidia_enhanced") or {}
+        if str(nvb.get("status") or "") == "complete":
+            wids = [str(w.get("id") or "").strip() for w in wh_cuopt if w.get("id")]
+            max_nudge = float(getattr(settings, "cuopt_allocation_nudge_max_pct", 2.5) or 2.5)
+            cuopt_allocation_intelligence = build_cuopt_allocation_intelligence(
+                nvidia_block=nvb,
+                warehouse_ids=wids,
+                max_nudge_pct=max_nudge,
+            )
+            nudges = (
+                cuopt_allocation_intelligence.get("target_share_pct_nudges_pct_points")
+                if cuopt_allocation_intelligence.get("status") == "ok"
+                else None
+            )
+            if isinstance(nudges, dict) and nudges:
+                wh_nudged = apply_share_nudges_to_warehouses(wh_cuopt, nudges)
+                allocation_cuopt_counterfactual = allocate_skus(
+                    [x for x in alloc_inputs if x.get("monthly_units", 0) > 0],
+                    wh_nudged,
+                    lanes_cuopt,
+                    hub_id=hub_cuopt,
+                    min_inter_warehouse_transfer_units=min_xfer if min_xfer > 0 else None,
+                    max_months_to_meet_min_transfer=max(1, max_m_xfer),
+                    seller_mixed_pallet_linehaul=seller_lh,
+                    consolidated_linehaul_cost_multiplier=lh_mult,
+                )
+                for line in allocation_cuopt_counterfactual.get("lines") or []:
+                    sku = line.get("sku")
+                    if sku:
+                        line["weight_lb_for_economics"] = weight_by_sku.get(str(sku), 0.0)
 
     product_research_economics: dict[str, Any] | None = None
     if include_product_research_economics:
@@ -916,7 +1155,6 @@ async def run_item_intelligence(
             product_research_core=pr_core,
             upc_catalog_search=upc_catalog_search,
         )
-
     dist_rows = build_distribution_impact_rows(
         job_id=jid,
         allocation=allocation,
@@ -946,6 +1184,41 @@ async def run_item_intelligence(
     distribution_block: dict[str, Any] = {**dist_envelope, "saved_at": saved_at_iso}
     if local_export_path:
         distribution_block["local_export_path"] = local_export_path
+
+    catalog_physical_gaps: list[dict[str, Any]] = []
+    for row in catalog:
+        miss = _catalog_physical_gap_fields(row)
+        if miss:
+            catalog_physical_gaps.append(
+                {
+                    "sku": row.get("sku"),
+                    "asin": row.get("asin"),
+                    "missing_fields": miss,
+                    "requires_manual_input": True,
+                }
+            )
+    planning_context["catalog_physical_gaps"] = catalog_physical_gaps
+
+    data_store_routing: dict[str, Any] = {
+        "schema_version": "data_store_routing_v1",
+        "note": (
+            "USE_MONGODB chooses Mongo vs SQL for the same logical tables. Optional semantic pgvector and "
+            "Aurora DSQL are separate — see settings.semantic_* and use_aurora_dsql."
+        ),
+        "sku_catalog": (
+            "cortex_sku_catalog — tenant item master (weight_lb, length_in, width_in, height_in, extra). "
+            "Authoritative place to persist manual or enriched package data."
+        ),
+        "listing_and_demand_cache": (
+            "cortex_spapi_catalog_snapshots + cortex_keepa_snapshots — ASIN-level API payloads (TTL-driven); "
+            "reduce live SP-API/Keepa calls by reading snapshots first."
+        ),
+        "transport_observations": (
+            "cortex_parcel_quote_observations — rows keyed by origin/dest ZIP, physical_bucket, weight/dim bin, "
+            "carrier, amount_usd (no ASIN). Populate from placement mock grids / rate-shop for biweekly–monthly "
+            "analytics without per-item API churn."
+        ),
+    }
 
     out: dict[str, Any] = {
         "version": 1,
@@ -1010,9 +1283,21 @@ async def run_item_intelligence(
         "facility_freight_by_warehouse_id": facility_freight_by_warehouse_id,
         "keepa_refresh_errors": keepa_errors,
         "planning_context": planning_context,
+        "catalog_physical_gaps": catalog_physical_gaps,
+        "ux": {
+            "requires_manual_package_input": bool(catalog_physical_gaps),
+            "prompt": (
+                "One or more SKUs lack positive weight and/or all three dimensions after SP-API Catalog and Keepa. "
+                "PUT /catalog/items with weight_lb + length_in + width_in + height_in, or re-run with "
+                "manual_package_by_sku in the request body."
+            ),
+        },
+        "data_store_routing": data_store_routing,
         "us_state_demand_forecast": demand_share_metadata(),
         "multi_dc_placement_tri_modal": multi_dc_placement_tri_modal,
         "multi_dc_parallel_scenario": multi_dc_parallel_scenario,
+        "cuopt_allocation_intelligence": cuopt_allocation_intelligence,
+        "allocation_cuopt_counterfactual": allocation_cuopt_counterfactual,
         "product_research_economics": product_research_economics,
         "distribution": distribution_block,
     }

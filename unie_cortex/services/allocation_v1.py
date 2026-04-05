@@ -18,6 +18,9 @@ from unie_cortex.config import settings
 from unie_cortex.network.ftl_mock import choose_linehaul_mode
 from unie_cortex.network.seller_mixed_pallet_linehaul import build_seller_consolidated_linehaul_leg
 
+# Catalog SKUs often lack dimensions → cube_cuft=0. Without imputation, seller mixed-pallet LTL/FTL never runs.
+_NOMINAL_LB_PER_CUFT_FOR_LINEHAUL_IMPUTE = 10.0
+
 
 def _hub_spoke_leg_transfer_usd(
     *,
@@ -43,14 +46,19 @@ def _hub_spoke_leg_transfer_usd(
     linear = round(float(u) * w_lb * float(cost_per_lb_lane), 4)
     cu = max(0.0, float(cube_cuft_per_unit))
     leg_cuft = float(u) * cu
+    cube_imputed_from_leg_weight = False
 
     if not seller_mixed_pallet_linehaul:
         return linear, {"method": "lane_dollar_per_lb_v1", "est_cost_usd_linear_lane_fallback": linear}
 
+    if leg_cuft <= 1e-9 and leg_w > 1e-9:
+        leg_cuft = max(leg_cuft, leg_w / _NOMINAL_LB_PER_CUFT_FOR_LINEHAUL_IMPUTE)
+        cube_imputed_from_leg_weight = True
+
     if leg_cuft <= 1e-9:
         return linear, {
             "method": "lane_dollar_per_lb_v1",
-            "reason": "missing_or_zero_unit_cube_cuft",
+            "reason": "missing_or_zero_unit_cube_cuft_and_weight",
             "est_cost_usd_linear_lane_fallback": linear,
         }
 
@@ -67,13 +75,22 @@ def _hub_spoke_leg_transfer_usd(
         consolidated_linehaul_cost_multiplier=consolidated_linehaul_cost_multiplier,
     )
     usd = float(fr.get("total_usd") or 0.0)
-    return round(usd, 4), {
+    meta = {
         "method": "seller_mixed_pallet_linehaul_v1",
         "linehaul_mode": fr.get("mode"),
         "pallet_slot_fraction": fr.get("pallet_slot_fraction"),
         "baseline_full_reference_pallet_usd": fr.get("baseline_full_reference_pallet_usd"),
         "est_cost_usd_linear_lane_counterfactual": linear,
     }
+    if cube_imputed_from_leg_weight:
+        meta["cube_imputed_from_monthly_leg_weight_lb"] = True
+        meta["cube_imputation_lb_per_cuft_assumed"] = _NOMINAL_LB_PER_CUFT_FOR_LINEHAUL_IMPUTE
+        meta["note"] = (
+            "Monthly hub→spoke cube was 0 (missing item dimensions in catalog). "
+            f"Imputed leg cube as leg_weight_lb / {_NOMINAL_LB_PER_CUFT_FOR_LINEHAUL_IMPUTE} so LTL/FTL mock runs; "
+            "add length_in × width_in × height_in for SKU-accurate pallet fraction."
+        )
+    return round(usd, 4), meta
 
 
 def _integer_split_proportional(total_demand: float, norm_shares: list[float]) -> list[int]:

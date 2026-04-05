@@ -12,6 +12,7 @@ from unie_cortex.integrations.keepa import KeepaService
 from unie_cortex.integrations.keepa_demand import extract_demand_from_keepa_payload
 from unie_cortex.integrations.rate_shopping import RateShoppingService
 from unie_cortex.network.cached_rate_shop import quote_shipment_detail_cached
+from unie_cortex.integrations.nvidia_cuopt_cloud import resolve_cuopt_cloud_bearer_token
 from unie_cortex.integrations.sp_api_catalog import SpApiCatalogService
 from unie_cortex.integrations.sp_api_product_fees import fetch_my_fees_estimate_for_asin
 from unie_cortex.services.tri_modal_envelope import build_tri_modal_block
@@ -350,6 +351,40 @@ async def tax_estimate(
     )
 
 
+@router.get("/cuopt/health")
+async def cuopt_self_hosted_health_check():
+    """Self-hosted Docker cuOpt health, or managed-cloud readiness when URL unset."""
+    base = (getattr(settings, "cuopt_self_hosted_url", None) or "").strip()
+    if not base:
+        cloud_on = bool(getattr(settings, "multi_dc_cuopt_cloud_enabled", False))
+        bearer = bool(resolve_cuopt_cloud_bearer_token())
+        if cloud_on and bearer:
+            return {
+                "configured": True,
+                "mode": "cuopt_cloud",
+                "ok": True,
+                "message": "CUOPT_SELF_HOSTED_URL unset; multi-DC / tri-modal uses NVIDIA managed cuOpt API.",
+                "multi_dc_cuopt_cloud_enabled": True,
+            }
+        return {
+            "configured": False,
+            "ok": False,
+            "message": "Set CUOPT_SELF_HOSTED_URL for Docker cuOpt, or MULTI_DC_CUOPT_CLOUD_ENABLED=true with CUOPT_API_KEY / NVIDIA_API_KEY.",
+        }
+    from unie_cortex.integrations.cuopt_self_hosted import cuopt_self_hosted_health
+
+    h = await cuopt_self_hosted_health(base)
+    body = h.get("body")
+    # ``cuopt_self_hosted_health`` returns {ok: True, body: {...}} on success (no http_status).
+    # Do not ``return {..., **h}`` before ``ok`` or inner ``ok: true`` overwrites the rollup flag.
+    upstream_ok = False
+    if h.get("ok") is True and isinstance(body, dict):
+        upstream_ok = str(body.get("status") or "").upper() in ("RUNNING", "OK", "HEALTHY")
+    elif int(h.get("http_status") or 0) == 200 and isinstance(body, dict):
+        upstream_ok = str(body.get("status") or "").upper() in ("RUNNING", "OK", "HEALTHY")
+    return {"configured": True, "base_url": base, **h, "ok": upstream_ok}
+
+
 @router.get("/capabilities")
 async def integration_capabilities():
     """Which integration backends are configured (no secrets)."""
@@ -376,4 +411,11 @@ async def integration_capabilities():
         ),
         "taxjar": bool(settings.taxjar_api_key and str(settings.taxjar_api_key).strip()),
         "tax_sync_mock_mode": bool(settings.tax_sync_mock_mode),
+        "cuopt_self_hosted_url": bool((getattr(settings, "cuopt_self_hosted_url", None) or "").strip()),
+        "multi_dc_cuopt_cloud_enabled": bool(
+            getattr(settings, "multi_dc_cuopt_cloud_enabled", False)
+        ),
+        "cuopt_cloud_bearer_resolved": bool(resolve_cuopt_cloud_bearer_token()),
+        "tms_cuopt_use_self_hosted": bool(getattr(settings, "tms_cuopt_use_self_hosted", True)),
+        "cuopt_inform_allocation_weights": bool(getattr(settings, "cuopt_inform_allocation_weights", False)),
     }

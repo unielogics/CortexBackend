@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import CuOptTriModalPanel from "../components/CuOptTriModalPanel.jsx";
+import RateShoppingExecutionSummary from "../components/RateShoppingExecutionSummary.jsx";
 
 const tenant = import.meta.env.VITE_DEMO_TENANT || "demo";
 const warehouse = import.meta.env.VITE_DEMO_WAREHOUSE || "w1";
@@ -28,6 +30,20 @@ function tableBase() {
   return { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 }
 
+function formatTransferLegs(line) {
+  const legs = line?.transfer_from_hub;
+  if (!Array.isArray(legs) || !legs.length) return "—";
+  return legs
+    .map((l) => {
+      const from = l.from_warehouse_id ?? "?";
+      const to = l.to_warehouse_id ?? "?";
+      const u = l.units ?? l.monthly_flow_units ?? "?";
+      const usd = l.est_cost_usd != null ? Number(l.est_cost_usd).toFixed(2) : "?";
+      return `${from}→${to}: ${u} u / ~$${usd}/mo`;
+    })
+    .join(" · ");
+}
+
 /** Primary client view: how many units / month per DC from allocation.lines */
 function InventoryPlacementTable({ allocation }) {
   const lines = allocation?.lines;
@@ -42,6 +58,7 @@ function InventoryPlacementTable({ allocation }) {
             <th style={{ padding: 10 }}>SKU</th>
             <th style={{ padding: 10 }}>Monthly demand (units)</th>
             <th style={{ padding: 10 }}>Recommended placement by warehouse</th>
+            <th style={{ padding: 10 }}>Hub → spoke (mock)</th>
             <th style={{ padding: 10 }}>Est. monthly inter-DC transfer $</th>
           </tr>
         </thead>
@@ -51,6 +68,7 @@ function InventoryPlacementTable({ allocation }) {
               <td style={{ padding: 10, fontFamily: "monospace" }}>{line.sku}</td>
               <td style={{ padding: 10 }}>{line.monthly_demand_units ?? "—"}</td>
               <td style={{ padding: 10, fontSize: 12, lineHeight: 1.45 }}>{formatPlacement(line.placement)}</td>
+              <td style={{ padding: 10, fontSize: 11, lineHeight: 1.45, maxWidth: 320 }}>{formatTransferLegs(line)}</td>
               <td style={{ padding: 10 }}>{line.transfer_cost_est_usd ?? "—"}</td>
             </tr>
           ))}
@@ -61,8 +79,147 @@ function InventoryPlacementTable({ allocation }) {
         {allocation?.warehouse_share_normalized
           ? JSON.stringify(allocation.warehouse_share_normalized)
           : "—"}
+        {allocation?.transfer_linehaul_model && (
+          <>
+            {" "}
+            · linehaul model: <code>{allocation.transfer_linehaul_model}</code>
+            {allocation.seller_mixed_pallet_linehaul_applied ? " (mixed pallet applied)" : ""}
+          </>
+        )}
+        {allocation?.min_inter_warehouse_transfer_units != null && (
+          <>
+            {" "}
+            · min transfer batch: <strong>{allocation.min_inter_warehouse_transfer_units}</strong> u/mo
+          </>
+        )}
       </p>
     </div>
+  );
+}
+
+/** planning_context.package_enrichment_automatic — rows filled from SP-API / Keepa on this run */
+function PackageEnrichmentAutomaticTable({ rows }) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return <p style={{ color: "#64748b", fontSize: 13 }}>No automatic package fills on this run (catalog already had dims, or enrichment disabled).</p>;
+  }
+  return (
+    <div style={{ overflow: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+      <table style={tableBase()}>
+        <thead>
+          <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+            <th style={{ padding: 8 }}>SKU</th>
+            <th style={{ padding: 8 }}>ASIN</th>
+            <th style={{ padding: 8 }}>Filled fields</th>
+            <th style={{ padding: 8 }}>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={`${r.sku}-${i}`} style={{ borderTop: "1px solid #e2e8f0", verticalAlign: "top" }}>
+              <td style={{ padding: 8, fontFamily: "monospace", fontSize: 12 }}>{r.sku ?? "—"}</td>
+              <td style={{ padding: 8, fontSize: 12 }}>{r.asin || "—"}</td>
+              <td style={{ padding: 8, fontSize: 12 }}>{Array.isArray(r.filled_fields) ? r.filled_fields.join(", ") : "—"}</td>
+              <td style={{ padding: 8, fontSize: 12 }}>{r.enrichment_source ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** placement_mock_rate_grids.warehouses_routing_summary */
+function WarehousesRoutingSummaryTable({ summary }) {
+  if (!Array.isArray(summary) || !summary.length) {
+    return <p style={{ color: "#64748b", fontSize: 13 }}>No warehouses_routing_summary (grid may be skipped).</p>;
+  }
+  return (
+    <div style={{ overflow: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+      <table style={tableBase()}>
+        <thead>
+          <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+            <th style={{ padding: 8 }}>Warehouse</th>
+            <th style={{ padding: 8 }}>States (primary)</th>
+            <th style={{ padding: 8 }}>Demand share served</th>
+            <th style={{ padding: 8 }}>DW mean mock parcel $</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.map((r) => {
+            const states = Array.isArray(r.states_served) ? r.states_served : [];
+            const preview = states.slice(0, 14).join(", ");
+            const more = states.length > 14 ? ` … +${states.length - 14}` : "";
+            return (
+              <tr key={r.warehouse_id} style={{ borderTop: "1px solid #e2e8f0", verticalAlign: "top" }}>
+                <td style={{ padding: 8, fontFamily: "monospace", fontSize: 12 }}>{r.warehouse_id}</td>
+                <td style={{ padding: 8, fontSize: 11, lineHeight: 1.4, maxWidth: 360 }} title={states.join(", ")}>
+                  {states.length ? `${preview}${more}` : "—"}
+                  {r.states_served_count != null && (
+                    <span style={{ color: "#64748b" }}> ({r.states_served_count})</span>
+                  )}
+                </td>
+                <td style={{ padding: 8, fontVariantNumeric: "tabular-nums" }}>{r.demand_share_served ?? "—"}</td>
+                <td style={{ padding: 8, fontVariantNumeric: "tabular-nums" }}>
+                  {r.demand_weighted_mean_mock_parcel_usd_among_primary_served_states ?? "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** First columns of mock_parcel_usd_by_warehouse_by_state (full matrix is large). */
+function MockParcelMatrixSample({ matrix }) {
+  if (!matrix || typeof matrix !== "object") return null;
+  const wids = Object.keys(matrix);
+  if (!wids.length) return null;
+  const stateSet = new Set();
+  for (const wid of wids) {
+    const row = matrix[wid];
+    if (row && typeof row === "object") Object.keys(row).forEach((s) => stateSet.add(s));
+  }
+  const states = Array.from(stateSet).sort().slice(0, 12);
+  if (!states.length) return null;
+  return (
+    <details style={{ marginTop: 12, fontSize: 12 }}>
+      <summary style={{ cursor: "pointer", fontWeight: 600 }}>Mock parcel $ sample by state (first 12 states × warehouses)</summary>
+      <div style={{ overflow: "auto", marginTop: 8 }}>
+        <table style={tableBase()}>
+          <thead>
+            <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+              <th style={{ padding: 6 }}>Warehouse</th>
+              {states.map((st) => (
+                <th key={st} style={{ padding: 6, fontSize: 11 }}>
+                  {st}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {wids.map((wid) => (
+              <tr key={wid} style={{ borderTop: "1px solid #e2e8f0" }}>
+                <td style={{ padding: 6, fontFamily: "monospace", fontSize: 11 }}>{wid}</td>
+                {states.map((st) => {
+                  const v = matrix[wid]?.[st];
+                  return (
+                    <td key={st} style={{ padding: 6, fontSize: 11, fontVariantNumeric: "tabular-nums" }}>
+                      {v != null && typeof v === "number" ? v.toFixed(3) : v ?? "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ margin: "8px 0 0", fontSize: 11, color: "#64748b" }}>
+        Full N×48 matrix is in <code>placement_mock_rate_grids.mock_parcel_usd_by_warehouse_by_state</code> (see raw JSON
+        below).
+      </p>
+    </details>
   );
 }
 
@@ -267,6 +424,49 @@ function WarehouseNetworkScenariosPanel({ wno, trim, recommendedNetwork }) {
   );
 }
 
+function formatMonthlyUnitsInteger(row) {
+  const v = row.monthly_units_est_mid;
+  if (v == null || v === "") return row.status ?? "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return String(Math.round(n));
+}
+
+function formatInventoryCoverHint(inv) {
+  if (!inv || typeof inv !== "object") return { badge: null, text: "—" };
+  if (inv.human_readable_one_liner) return { badge: null, text: inv.human_readable_one_liner };
+  const splits = Array.isArray(inv.warehouse_splits) ? inv.warehouse_splits : Array.isArray(inv.splits) ? inv.splits : [];
+  if (!splits.length) return { badge: null, text: "—" };
+  const parts = splits.map((s) => {
+    const wid = s.warehouse_id ?? "?";
+    const cov = s.suggested_units_for_target_cover ?? "?";
+    const mo = s.allocation_monthly_flow_units;
+    const share = s.allocation_share_of_flow;
+    if (mo != null && share != null) {
+      return `${wid}: ${cov}u @ ${mo}/mo (${(Number(share) * 100).toFixed(1)}% flow)`;
+    }
+    return `${wid}: ~${cov} u (${s.target_days_cover ?? "?"}d)`;
+  });
+  const badge =
+    inv.cover_split_basis === "allocation_monthly_flow_integer_split" ? (
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          padding: "2px 6px",
+          borderRadius: 4,
+          background: "#dbeafe",
+          color: "#1e40af",
+          marginRight: 6,
+        }}
+        title="Cover split from allocation monthly flows (not even divide)"
+      >
+        allocator cover
+      </span>
+    ) : null;
+  return { badge, text: parts.join(" · ") };
+}
+
 function DemandEnrichmentTable({ demandBySku }) {
   const rows = useMemo(() => {
     if (!demandBySku || typeof demandBySku !== "object") return [];
@@ -280,26 +480,23 @@ function DemandEnrichmentTable({ demandBySku }) {
           <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
             <th style={{ padding: 10 }}>SKU</th>
             <th style={{ padding: 10 }}>ASIN</th>
-            <th style={{ padding: 10 }}>Est. monthly units (mid)</th>
-            <th style={{ padding: 10 }}>Inventory / cover hints</th>
+            <th style={{ padding: 10 }}>Est. monthly units (integer)</th>
+            <th style={{ padding: 10 }}>Inventory / cover (by DC)</th>
           </tr>
         </thead>
         <tbody>
           {rows.slice(0, 60).map((r) => {
             const inv = r.inventory_placement_summary;
-            let hint = "—";
-            if (inv?.human_readable_one_liner) hint = inv.human_readable_one_liner;
-            else if (Array.isArray(inv?.splits) && inv.splits.length) {
-              hint = inv.splits
-                .map((s) => `${s.warehouse_id}: ~${s.suggested_units_for_target_cover ?? "?"} u (${s.target_days_cover ?? "?"}d)`)
-                .join(" · ");
-            }
+            const { badge, text } = formatInventoryCoverHint(inv);
             return (
               <tr key={r.sku} style={{ borderTop: "1px solid #e2e8f0", verticalAlign: "top" }}>
                 <td style={{ padding: 10, fontFamily: "monospace" }}>{r.sku}</td>
                 <td style={{ padding: 10 }}>{r.asin || "—"}</td>
-                <td style={{ padding: 10 }}>{r.monthly_units_est_mid ?? r.status ?? "—"}</td>
-                <td style={{ padding: 10, fontSize: 12, lineHeight: 1.45 }}>{hint}</td>
+                <td style={{ padding: 10, fontVariantNumeric: "tabular-nums" }}>{formatMonthlyUnitsInteger(r)}</td>
+                <td style={{ padding: 10, fontSize: 12, lineHeight: 1.45 }}>
+                  {badge}
+                  {text}
+                </td>
               </tr>
             );
           })}
@@ -505,9 +702,91 @@ function RunResults({ data }) {
   const synth = data.item_intelligence_synthesis;
   const pmg = data.placement_mock_rate_grids;
   const means = pmg?.mean_mock_parcel_usd_by_warehouse;
+  const sellerPmg = pmg?.seller_order_planning_source;
+  const gaps = data.catalog_physical_gaps || [];
+  const ux = data.ux;
 
   return (
     <>
+      {ux?.requires_manual_package_input && (
+        <section
+          style={{
+            marginTop: 20,
+            padding: "14px 16px",
+            borderRadius: 8,
+            border: "2px solid #f97316",
+            background: "#fff7ed",
+          }}
+        >
+          <h2 style={{ margin: "0 0 8px", fontSize: 16, color: "#9a3412" }}>Manual package input needed</h2>
+          <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.55, color: "#431407" }}>{ux.prompt}</p>
+          <p style={{ margin: "0 0 8px", fontSize: 13, color: "#7c2d12" }}>
+            SP-API Catalog (env credentials) and Keepa did not supply usable weight + dimensions for:
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>
+            {gaps.map((g) => (
+              <li key={g.sku}>
+                <code>{g.sku}</code> ({g.asin || "no ASIN"}) — missing: {Array.isArray(g.missing_fields) ? g.missing_fields.join(", ") : "—"}
+              </li>
+            ))}
+          </ul>
+          <p style={{ margin: "12px 0 0", fontSize: 13, color: "#431407" }}>
+            Use <strong>Advanced → manual_package_by_sku JSON</strong> below, or{" "}
+            <code>PUT …/catalog/items</code> with <code>weight_lb</code> and <code>length_in</code> / <code>width_in</code> /{" "}
+            <code>height_in</code>, then run again.
+          </p>
+        </section>
+      )}
+
+      {data.data_store_routing && (
+        <Section
+          title="Where data is stored (DB routing)"
+          subtitle="Use this when deciding what to refresh every 2–4 weeks vs live API calls."
+        >
+          <ul style={{ fontSize: 13, lineHeight: 1.6, paddingLeft: 20, color: "#334155" }}>
+            <li>
+              <strong>SKU catalog</strong> — {data.data_store_routing.sku_catalog}
+            </li>
+            <li>
+              <strong>Listing / demand cache</strong> — {data.data_store_routing.listing_and_demand_cache}
+            </li>
+            <li>
+              <strong>Transport observations</strong> — {data.data_store_routing.transport_observations}
+            </li>
+            <li style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>{data.data_store_routing.note}</li>
+          </ul>
+        </Section>
+      )}
+
+      {data.planning_context && (
+        <Section
+          title="Planning context (server)"
+          subtitle="planning_context on the response — automatic ASIN package fills, overrides, and gap list mirrored from the run."
+        >
+          <PackageEnrichmentAutomaticTable rows={data.planning_context.package_enrichment_automatic} />
+          {data.planning_context.planning_monthly_units_override_result &&
+            Object.keys(data.planning_context.planning_monthly_units_override_result).length > 0 && (
+              <details style={{ marginTop: 12, fontSize: 12 }}>
+                <summary style={{ cursor: "pointer" }}>planning_monthly_units_override_result</summary>
+                <pre
+                  style={{
+                    marginTop: 8,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 11,
+                    overflow: "auto",
+                    maxHeight: 200,
+                  }}
+                >
+                  {JSON.stringify(data.planning_context.planning_monthly_units_override_result, null, 2)}
+                </pre>
+              </details>
+            )}
+        </Section>
+      )}
+
       <Section
         title="Inventory: how much to position and where"
         subtitle="From allocation.lines — recommended_monthly_units per warehouse_id (model uses monthly demand × target shares; integer split). Use with client ops, not as a WMS pick list."
@@ -556,7 +835,7 @@ function RunResults({ data }) {
 
       <Section
         title="Demand enrichment (marketplace + placement hints)"
-        subtitle="demand_by_sku from Keepa/cache; inventory_placement_summary sizes cover targets when velocity is known."
+        subtitle="demand_by_sku from Keepa/cache; monthly_units_est_mid is shown as a whole number. Per-DC cover uses warehouse_splits — after item-intelligence allocation, splits follow monthly allocator flows (badge «allocator cover») when the backend emits inventory_placement_summary_v2."
       >
         <DemandEnrichmentTable demandBySku={data.demand_by_sku} />
       </Section>
@@ -568,20 +847,73 @@ function RunResults({ data }) {
         <p style={{ margin: "0 0 8px", fontSize: 13 }}>
           Status: <code>{pmg?.status ?? "—"}</code> · <code>{String(data.placement_allocation_share_source ?? "—")}</code>
         </p>
+        <RateShoppingExecutionSummary rss={pmg?.rate_shopping_execution_summary} lastMile={pmg?.last_mile_optimization_context} />
+        {pmg?.warehouse_input_dedupe?.applied && (
+          <p style={{ margin: "0 0 10px", fontSize: 12, color: "#92400e" }}>
+            Warehouse list deduped to one node per contiguous-US state (see{" "}
+            <code>placement_mock_rate_grids.warehouse_input_dedupe</code>).
+          </p>
+        )}
+        {sellerPmg && (
+          <div
+            style={{
+              marginBottom: 12,
+              fontSize: 13,
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #a5b4fc",
+              background: "#eef2ff",
+            }}
+          >
+            <strong>Seller order-planning placement source</strong> (when present on planning-run responses):{" "}
+            <code style={{ fontSize: 12 }}>{sellerPmg.rate_shop_warehouse_node_count ?? "—"}</code> rate-shop nodes · cap{" "}
+            <code>{sellerPmg.rate_shop_max_warehouses_cap ?? "—"}</code>
+            {sellerPmg.state_demand_weighting && (
+              <span style={{ color: "#4338ca" }}>
+                {" "}
+                · <code>{sellerPmg.state_demand_weighting}</code>
+              </span>
+            )}
+            {sellerPmg.note && <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.5, color: "#3730a3" }}>{sellerPmg.note}</p>}
+          </div>
+        )}
+        <h3 style={{ fontSize: 13, margin: "16px 0 8px", fontWeight: 600 }}>Per-warehouse routing (demand-weighted primary)</h3>
+        <p style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+          Which DC is primary for which states under the grid’s assignment, and demand-weighted mean mock parcel among states
+          where that DC wins.
+        </p>
+        <WarehousesRoutingSummaryTable summary={pmg?.warehouses_routing_summary} />
+
         {means && typeof means === "object" ? (
-          <table style={tableBase()}>
-            <tbody>
-              {Object.entries(means).map(([wid, v]) => (
-                <tr key={wid} style={{ borderTop: "1px solid #e2e8f0" }}>
-                  <td style={{ padding: 8, fontFamily: "monospace" }}>{wid}</td>
-                  <td style={{ padding: 8 }}>{typeof v === "number" ? v.toFixed(4) : String(v)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <h3 style={{ fontSize: 13, margin: "16px 0 8px", fontWeight: 600 }}>Mean mock parcel $ by origin warehouse</h3>
+            <table style={tableBase()}>
+              <tbody>
+                {Object.entries(means).map(([wid, v]) => (
+                  <tr key={wid} style={{ borderTop: "1px solid #e2e8f0" }}>
+                    <td style={{ padding: 8, fontFamily: "monospace" }}>{wid}</td>
+                    <td style={{ padding: 8 }}>{typeof v === "number" ? v.toFixed(4) : String(v)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         ) : (
           <p style={{ color: "#64748b", fontSize: 13 }}>No mean mock parcel map.</p>
         )}
+
+        <MockParcelMatrixSample matrix={pmg?.mock_parcel_usd_by_warehouse_by_state} />
+      </Section>
+
+      <Section
+        title="Multi-DC placement / NVIDIA cuOpt (tri-modal)"
+        subtitle="multi_dc_placement_tri_modal — fusion of allocation + mock grids + optional matrix extensions; baseline vs NVIDIA solve. Omitted when disabled in request or settings, or when the solver graph has insufficient DCs."
+      >
+        <CuOptTriModalPanel
+          triModal={data.multi_dc_placement_tri_modal}
+          rateShoppingRss={pmg?.rate_shopping_execution_summary}
+          rateShoppingLastMile={pmg?.last_mile_optimization_context}
+        />
       </Section>
 
       <Section title="Economics & fulfillment comparison" subtitle="landed_cost_economics + fulfillment_network_comparison.">
@@ -646,6 +978,10 @@ export default function ProductResearchPage() {
   const [outOurs, setOutOurs] = useState(true);
   const [outPlus, setOutPlus] = useState(false);
   const [outNvidia, setOutNvidia] = useState(false);
+  const [omitCuoptTriModal, setOmitCuoptTriModal] = useState(false);
+  const [omitNvidiaCuoptLayer, setOmitNvidiaCuoptLayer] = useState(false);
+  const [cuoptEnrichmentJson, setCuoptEnrichmentJson] = useState("");
+  const [manualPackageBySkuJson, setManualPackageBySkuJson] = useState("");
 
   const configured = Boolean(tenant && warehouse);
 
@@ -660,6 +996,16 @@ export default function ProductResearchPage() {
     if (!preserveShares) body.preserve_warehouse_target_shares = false;
     if (autoExpand) body.auto_expand_warehouse_network = true;
     if (!includeProEcon) body.include_product_research_economics = false;
+    if (omitCuoptTriModal) body.include_cuopt_tri_modal = false;
+    if (omitNvidiaCuoptLayer) body.include_nvidia_cuopt_layer = false;
+    const ceRaw = cuoptEnrichmentJson.trim();
+    if (ceRaw) {
+      try {
+        body.cuopt_enrichment = JSON.parse(ceRaw);
+      } catch {
+        /* invalid JSON ignored here; runItemIntelligence validates */
+      }
+    }
     if (hubId.trim()) body.hub_warehouse_id = hubId.trim();
     const skus = skuFilter
       .split(",")
@@ -676,6 +1022,15 @@ export default function ProductResearchPage() {
       if (outPlus) outs.push("ours_plus_nvidia_enhancements");
       if (outNvidia) outs.push("nvidia_only");
       if (outs.length) body.product_research_outputs = outs;
+    }
+
+    const mpRaw = manualPackageBySkuJson.trim();
+    if (mpRaw) {
+      try {
+        body.manual_package_by_sku = JSON.parse(mpRaw);
+      } catch {
+        /* validated in runItemIntelligence */
+      }
     }
 
     return body;
@@ -698,7 +1053,19 @@ export default function ProductResearchPage() {
     setMsg("");
     setRunResult(null);
     try {
+      const ceRaw = cuoptEnrichmentJson.trim();
+      if (ceRaw) {
+        JSON.parse(ceRaw);
+      }
+      const mpRaw = manualPackageBySkuJson.trim();
+      if (mpRaw) {
+        JSON.parse(mpRaw);
+      }
       const body = buildRunBody();
+      if (mpRaw && body.manual_package_by_sku === undefined) {
+        setMsg("manual_package_by_sku JSON is invalid — fix or clear the field.");
+        return;
+      }
       const r = await api(`/v1/operational/${tenant}/${warehouse}/item-intelligence/run`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -706,6 +1073,14 @@ export default function ProductResearchPage() {
       setRunResult(r);
       setMsg("Run complete — intelligence below matches this request and backend defaults where omitted.");
     } catch (e) {
+      if (e instanceof SyntaxError && cuoptEnrichmentJson.trim()) {
+        setMsg(`cuOpt enrichment JSON: ${e.message}`);
+        return;
+      }
+      if (e instanceof SyntaxError && manualPackageBySkuJson.trim()) {
+        setMsg(`manual_package_by_sku JSON: ${e.message}`);
+        return;
+      }
       setMsg(String(e.message));
     }
   }
@@ -744,6 +1119,7 @@ export default function ProductResearchPage() {
                 <th style={{ padding: 8 }}>SKU</th>
                 <th style={{ padding: 8 }}>ASIN</th>
                 <th style={{ padding: 8 }}>weight_lb</th>
+                <th style={{ padding: 8 }}>L×W×H in</th>
               </tr>
             </thead>
             <tbody>
@@ -752,6 +1128,11 @@ export default function ProductResearchPage() {
                   <td style={{ padding: 8, fontFamily: "monospace" }}>{row.sku}</td>
                   <td style={{ padding: 8 }}>{row.asin || "—"}</td>
                   <td style={{ padding: 8 }}>{row.weight_lb ?? "—"}</td>
+                  <td style={{ padding: 8, fontSize: 12 }}>
+                    {[row.length_in, row.width_in, row.height_in].every((x) => x != null && x !== "")
+                      ? `${row.length_in}×${row.width_in}×${row.height_in}`
+                      : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -787,6 +1168,37 @@ export default function ProductResearchPage() {
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input type="checkbox" checked={spApiFees} onChange={(e) => setSpApiFees(e.target.checked)} />
             product_research_include_sp_api_fees (default true)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={omitCuoptTriModal} onChange={(e) => setOmitCuoptTriModal(e.target.checked)} />
+            include_cuopt_tri_modal: false (omit tri-modal block; default follows server settings)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={omitNvidiaCuoptLayer} onChange={(e) => setOmitNvidiaCuoptLayer(e.target.checked)} />
+            include_nvidia_cuopt_layer: false (baseline-only tri-modal)
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span>cuopt_enrichment (optional JSON — parcel overrides, forbidden arcs, linehaul legs, demand band, parcel_sensitivity_pct)</span>
+            <textarea
+              value={cuoptEnrichmentJson}
+              onChange={(e) => setCuoptEnrichmentJson(e.target.value)}
+              rows={5}
+              placeholder='e.g. { "parcel_sensitivity_pct": 10 }'
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8 }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span>
+              manual_package_by_sku (optional JSON — third fallback after SP-API + Keepa; positive weight_lb and all three
+              dims in inches)
+            </span>
+            <textarea
+              value={manualPackageBySkuJson}
+              onChange={(e) => setManualPackageBySkuJson(e.target.value)}
+              rows={4}
+              placeholder='e.g. { "MY-SKU": { "weight_lb": 2.1, "length_in": 12, "width_in": 9, "height_in": 5 } }'
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8 }}
+            />
           </label>
           <div>
             <span style={{ display: "block", marginBottom: 6 }}>product_research_outputs (empty = server default original + ours)</span>

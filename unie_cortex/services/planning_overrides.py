@@ -105,3 +105,42 @@ def apply_planning_monthly_units_overrides(
         dem["planning_monthly_units_override"] = block
         meta["applied"][sku] = block
     return meta
+
+
+def integerize_monthly_unit_fields_in_demand_by_sku(demand_by_sku: dict[str, dict[str, Any]]) -> None:
+    """
+    Demand and reference bands are counted in whole sellable units (no fractional SKUs in API output).
+
+    Internal modeling may use floats until this runs — typically immediately after Keepa extract + overrides,
+    before allocation inputs are built.
+    """
+    keys = ("monthly_units_est_mid", "monthly_units_est_low", "monthly_units_est_high")
+
+    def _round_keys(d: dict[str, Any]) -> None:
+        for key in keys:
+            if key not in d or d[key] is None:
+                continue
+            try:
+                d[key] = max(0, int(round(float(d[key]))))
+            except (TypeError, ValueError):
+                continue
+
+    for dem in demand_by_sku.values():
+        if not isinstance(dem, dict):
+            continue
+        _round_keys(dem)
+        ref = dem.get("keepa_marketplace_monthly_reference")
+        if isinstance(ref, dict):
+            _round_keys(ref)
+        raw_mid = dem.get("keepa_market_monthly_units_mid")
+        if raw_mid is not None:
+            try:
+                dem["keepa_market_monthly_units_mid"] = max(0, int(round(float(raw_mid))))
+            except (TypeError, ValueError):
+                pass
+        pov = dem.get("planning_monthly_units_override")
+        if isinstance(pov, dict) and pov.get("user_monthly_units_mid") is not None:
+            try:
+                pov["user_monthly_units_mid"] = max(0, int(round(float(pov["user_monthly_units_mid"]))))
+            except (TypeError, ValueError):
+                pass

@@ -115,6 +115,25 @@ def test_fbm_consolidated_pallet_assembly_from_profile():
     assert tw == pytest.approx(round(recv_sub + out_sub + expected_asm, 2), rel=1e-4)
 
 
+def test_allocate_skus_seller_mixed_imputes_cube_when_zero_but_weight_present():
+    skus = [{"sku": "S1", "monthly_units": 100, "weight_lb": 2.0, "cube_cuft": 0.0}]
+    wh = [{"id": "hub", "target_share_pct": 50}, {"id": "east", "target_share_pct": 50}]
+    lanes = [{"from_id": "hub", "to_id": "east", "cost_per_lb": 0.1}]
+    out = allocate_skus(
+        skus,
+        wh,
+        lanes,
+        hub_id="hub",
+        seller_mixed_pallet_linehaul=True,
+        consolidated_linehaul_cost_multiplier=1.0,
+    )
+    assert out["transfer_linehaul_model"] == "seller_mixed_pallet_linehaul_v1"
+    leg = out["lines"][0]["transfer_from_hub"][0]
+    assert leg["transfer_pricing"]["method"] == "seller_mixed_pallet_linehaul_v1"
+    assert leg["transfer_pricing"].get("cube_imputed_from_monthly_leg_weight_lb") is True
+    assert "linehaul_mode" in leg["transfer_pricing"]
+
+
 def test_allocate_skus_seller_mixed_pallet_matches_transfer_model():
     skus = [{"sku": "S1", "monthly_units": 100, "weight_lb": 2.0, "cube_cuft": 0.5}]
     wh = [{"id": "hub", "target_share_pct": 50}, {"id": "east", "target_share_pct": 50}]

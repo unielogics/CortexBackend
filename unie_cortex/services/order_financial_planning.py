@@ -117,6 +117,169 @@ def state_demand_weights_from_order_financial_rows(rows: list[dict[str, Any]]) -
     return {k: v / s for k, v in blended.items()}
 
 
+def expand_placement_rate_shop_nodes_for_seller_planning(
+    *,
+    selected_warehouses: list[dict[str, Any]],
+    engagement_network_context: dict[str, Any] | None,
+    cfg: Settings | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Build grid/cuOpt node list: **always include** smart-network selected DCs, then fill to
+    ``seller_planning_rate_shop_max_warehouses`` from engagement + default US archetypes.
+
+    Seller optimization compares **hot-zone / 48-state hub** mock parcels across many candidate sites even when
+    linehaul economics keep a **single active** stocking node in ``selected_warehouses``.
+    """
+    from unie_cortex.services.warehouse_mock_rate_grid import resolve_warehouse_lat_lon
+
+    cfg = cfg or default_settings
+    cap = int(getattr(cfg, "seller_planning_rate_shop_max_warehouses", 6) or 6)
+    cap = max(1, min(25, cap))
+    dpid = str(getattr(cfg, "economics_default_pricing_profile_id", "profile_nj_v1") or "").strip() or None
+    seen: set[str] = set()
+    nodes: list[dict[str, Any]] = []
+
+    def _push(w: dict[str, Any]) -> None:
+        wid = str(w.get("id") or w.get("warehouse_id") or "").strip()
+        if not wid or wid in seen or len(nodes) >= cap:
+            return
+        po = _norm_postal_5(str(w.get("postal") or ""))
+        node: dict[str, Any] = {"id": wid, "postal": po}
+        if w.get("pricing_profile_id") or dpid:
+            node["pricing_profile_id"] = w.get("pricing_profile_id") or dpid
+        for coord in ("lat", "lon"):
+            v = w.get(coord)
+            if v is not None:
+                try:
+                    node[coord] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        if "lat" not in node or "lon" not in node:
+            ll = resolve_warehouse_lat_lon(node)
+            if ll:
+                node["lat"], node["lon"] = ll[0], ll[1]
+        seen.add(wid)
+        nodes.append(node)
+
+    for w in selected_warehouses:
+        if isinstance(w, dict):
+            _push(w)
+    pool = _merged_receiving_candidate_pool(engagement_network_context)
+    for c in pool:
+        if len(nodes) >= cap:
+            break
+        if isinstance(c, dict):
+            _push(c)
+    from unie_cortex.services.warehouse_mock_rate_grid import dedupe_warehouses_one_per_contiguous_state
+
+    nodes, _meta = dedupe_warehouses_one_per_contiguous_state(
+        nodes,
+        enabled=bool(getattr(cfg, "placement_one_warehouse_per_contiguous_state", True)),
+    )
+    return nodes
+
+
+def build_cuopt_warehouse_rows_for_order_planning(
+    *,
+    warehouse_network: dict[str, Any],
+    placement_mock_rate_grids: dict[str, Any] | None,
+    engagement_network_context: dict[str, Any] | None,
+    cfg: Settings | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """
+    cuOpt rows: use selected warehouses when there are ≥2; otherwise use every warehouse present in the
+    expanded placement grid's ``mean_mock_parcel_usd_by_warehouse`` (national rate-shop set).
+    Returns (rows, solver_network_source_tag).
+    """
+    from unie_cortex.services.warehouse_mock_rate_grid import resolve_warehouse_lat_lon
+
+    cfg = cfg or default_settings
+    dpid = str(getattr(cfg, "economics_default_pricing_profile_id", "profile_nj_v1") or "").strip() or None
+    sel_rows: list[dict[str, Any]] = []
+    for w in warehouse_network.get("selected_warehouses") or []:
+        if not isinstance(w, dict):
+            continue
+        wid = str(w.get("id") or w.get("warehouse_id") or "").strip()
+        if not wid:
+            continue
+        po = _norm_postal_5(str(w.get("postal") or ""))
+        row: dict[str, Any] = {
+            "id": wid,
+            "postal": po,
+            "target_share_pct": w.get("target_share_pct"),
+            "pricing_profile_id": w.get("pricing_profile_id") or dpid,
+        }
+        for coord in ("lat", "lon"):
+            v = w.get(coord)
+            if v is not None:
+                try:
+                    row[coord] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        if "lat" not in row or "lon" not in row:
+            ll = resolve_warehouse_lat_lon(row)
+            if ll:
+                row["lat"], row["lon"] = ll[0], ll[1]
+        sel_rows.append(row)
+
+    if len(sel_rows) >= 2:
+        return sel_rows, "order_financial_planning_fbm_selected_multi_dc"
+
+    grid = placement_mock_rate_grids if isinstance(placement_mock_rate_grids, dict) else {}
+    if grid.get("status") != "complete":
+        return sel_rows, "order_financial_planning_fbm_insufficient_nodes"
+    mm = grid.get("mean_mock_parcel_usd_by_warehouse") or {}
+    if not isinstance(mm, dict) or len(mm) < 2:
+        return sel_rows, "order_financial_planning_fbm_insufficient_nodes"
+
+    pool_by_id = {str(w.get("id") or ""): w for w in _merged_receiving_candidate_pool(engagement_network_context)}
+    wh_grids = grid.get("warehouse_grids") or {}
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for wid_raw in mm.keys():
+        wid = str(wid_raw).strip()
+        if not wid or wid in seen:
+            continue
+        seen.add(wid)
+        row: dict[str, Any] = {"id": wid, "pricing_profile_id": dpid}
+        sel = next(
+            (
+                x
+                for x in (warehouse_network.get("selected_warehouses") or [])
+                if str(x.get("id") or x.get("warehouse_id") or "").strip() == wid
+            ),
+            None,
+        )
+        if isinstance(sel, dict):
+            row["postal"] = _norm_postal_5(str(sel.get("postal") or ""))
+            row["target_share_pct"] = sel.get("target_share_pct")
+            for coord in ("lat", "lon"):
+                v = sel.get(coord)
+                if v is not None:
+                    try:
+                        row[coord] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+        elif wid in pool_by_id:
+            pm = pool_by_id[wid]
+            row["postal"] = _norm_postal_5(str(pm.get("postal") or ""))
+        g = wh_grids.get(wid) if isinstance(wh_grids, dict) else None
+        if isinstance(g, list) and g:
+            q0 = g[0]
+            oz = str(q0.get("origin_postal") or "").strip()
+            if oz and not row.get("postal"):
+                row["postal"] = _norm_postal_5(oz)
+        if "lat" not in row or "lon" not in row:
+            ll = resolve_warehouse_lat_lon(row)
+            if ll:
+                row["lat"], row["lon"] = ll[0], ll[1]
+        out.append(row)
+
+    if len(out) >= 2:
+        return out, "order_financial_planning_fbm_national_rate_shop_pool"
+    return sel_rows, "order_financial_planning_fbm_insufficient_nodes"
+
+
 def build_placement_mock_rate_grids_for_order_planning(
     *,
     warehouse_network: dict[str, Any] | None,
@@ -126,10 +289,15 @@ def build_placement_mock_rate_grids_for_order_planning(
     width_in: float = 7.0,
     height_in: float = 5.0,
     cfg: Settings | None = None,
+    engagement_network_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """
-    Product Research–compatible ``placement_mock_rate_grids`` for the recommended FBM nodes:
-    mock parcel quotes to 48 contiguous state hubs, demand-weighted primary DC per state.
+    Product Research–compatible ``placement_mock_rate_grids``: mock parcel quotes to 48 contiguous state hubs
+    (one hot metro per state), demand-weighted primary DC per state.
+
+    Nodes = smart-network **selected** DCs **plus** additional candidate archetypes up to
+    ``seller_planning_rate_shop_max_warehouses`` so ZIP / state demand trends drive a **national** rate-shop
+    surface even when the FBM linehaul path uses one stocking node.
     """
     from unie_cortex.services.warehouse_mock_rate_grid import build_warehouse_mock_placement_grids
 
@@ -139,23 +307,11 @@ def build_placement_mock_rate_grids_for_order_planning(
     sel = warehouse_network.get("selected_warehouses")
     if not isinstance(sel, list) or not sel:
         return None
-    nodes: list[dict[str, Any]] = []
-    for w in sel:
-        if not isinstance(w, dict):
-            continue
-        wid = str(w.get("id") or w.get("warehouse_id") or "").strip()
-        if not wid:
-            continue
-        po = _norm_postal_5(str(w.get("postal") or ""))
-        node: dict[str, Any] = {"id": wid, "postal": po}
-        for coord in ("lat", "lon"):
-            v = w.get(coord)
-            if v is not None:
-                try:
-                    node[coord] = float(v)
-                except (TypeError, ValueError):
-                    pass
-        nodes.append(node)
+    nodes = expand_placement_rate_shop_nodes_for_seller_planning(
+        selected_warehouses=[w for w in sel if isinstance(w, dict)],
+        engagement_network_context=engagement_network_context,
+        cfg=cfg,
+    )
     if len(nodes) < 1:
         return None
 
@@ -179,10 +335,16 @@ def build_placement_mock_rate_grids_for_order_planning(
     out = dict(grid)
     out["seller_order_planning_source"] = {
         "note": (
-            "Same placement_mock_rate_grids engine as Product Research: 48 contiguous state hub ZIPs, "
-            "mock parcel among carriers, demand mix from order-financial ship-to rollup blended with US prior."
+            "Same placement_mock_rate_grids engine as Product Research: 48 contiguous state hub ZIPs (hot metros), "
+            "mock parcel among carriers, demand mix from order-financial ship-to rollup blended with US prior. "
+            "Multiple DC rows include selected smart-network nodes plus engagement/default archetypes (capped) "
+            "so national zone comparison runs even when linehaul scenario uses a single active warehouse."
         ),
         "state_demand_weighting": "order_financial_quantity_rollup_blended_with_prior",
+        "rate_shop_warehouse_node_count": len(nodes),
+        "rate_shop_max_warehouses_cap": int(
+            getattr(cfg, "seller_planning_rate_shop_max_warehouses", 6) or 6
+        ),
     }
     return out
 

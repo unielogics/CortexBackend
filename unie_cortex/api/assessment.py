@@ -12,7 +12,12 @@ from pydantic import BaseModel, Field
 from unie_cortex.config import settings
 from unie_cortex.db.deps import get_store
 from unie_cortex.db.store import CortexStore
+from unie_cortex.api.item_intelligence import ItemIntelligenceCuOptEnrichment
 from unie_cortex.services.cuopt_scenario import run_multi_dc_scenario
+from unie_cortex.services.item_intelligence_cuopt_overview import (
+    matrix_extensions_from_cuopt_enrichment_request,
+)
+from unie_cortex.services.order_financial_cuopt import run_order_planning_cuopt_tri_modal
 from unie_cortex.services.nim_narrative import fallback_narrative, generate_narrative_from_artifact
 from unie_cortex.services.semantic_memory.pipeline import queue_audit_run_embedding
 from unie_cortex.spine.ingest import ingest_labels_csv, ingest_tasks_csv
@@ -181,9 +186,17 @@ class AuditRunOut(BaseModel):
 class MultiDcBody(BaseModel):
     warehouses: list[dict] = Field(default_factory=list)
     lanes: list[dict] = Field(default_factory=list)
+    hub_warehouse_id: str | None = Field(
+        None,
+        description="Optional depot/hub id: that warehouse becomes matrix index 0 for cuOpt when present.",
+    )
     allow_nvidia_enhancements: bool | None = Field(
         None,
         description="When False, internal lane heuristic only. When True or omitted, try cuOpt NIM/cloud then fallback.",
+    )
+    cuopt_enrichment: ItemIntelligenceCuOptEnrichment | None = Field(
+        None,
+        description="Optional forbidden arcs, linehaul legs, parcel overrides — same contract as item-intelligence run.",
     )
 
 
@@ -276,6 +289,18 @@ class OrderFinancialPlanningRunBody(BaseModel):
     marketplace_code: str | None = Field(
         None,
         description="Override engagement network_context.marketplace_code for labeling and Keepa domain selection.",
+    )
+    include_cuopt_tri_modal: bool | None = Field(
+        None,
+        description="When False, omit multi_dc_placement_tri_modal on this planning run. Default: ITEM_INTELLIGENCE_CUOPT_OVERVIEW_ENABLED.",
+    )
+    include_nvidia_cuopt_layer: bool | None = Field(
+        None,
+        description="When False, skip NVIDIA cuOpt attempt for seller planning tri-modal. Default: ITEM_INTELLIGENCE_NVIDIA_CUOPT_ENABLED.",
+    )
+    cuopt_enrichment: ItemIntelligenceCuOptEnrichment | None = Field(
+        None,
+        description="cuOpt matrix extensions and parcel overrides (aligned with Product Research item-intelligence run).",
     )
 
 
@@ -847,6 +872,12 @@ async def order_financial_planning_run_route(
     """
     Velocity + smart network + compare-v2-integrated (rate shopping when ``SHIPPO_API_KEY`` is set)
     and ``fulfillment_comparison`` vs CSV baseline totals.
+
+    When the **national placement rate-shop grid** includes **two or more** DCs (selected smart-network nodes
+    plus engagement / default archetypes up to ``seller_planning_rate_shop_max_warehouses``), attaches
+    ``multi_dc_placement_tri_modal`` (same cuOpt contract as Product Research): hot-zone / 48-state hub
+    mock parcels, suggested-share allocation, optional ``cuopt_enrichment``, and ``tri_modal.nvidia_enhanced``.
+    This runs even if linehaul economics keep a **single** ``selected_warehouse`` in the FBM scenario.
     """
     e = await store.engagement_get(engagement_id)
     if not e:
@@ -984,9 +1015,29 @@ async def order_financial_planning_run_route(
             width_in=float(b.width_in),
             height_in=float(b.height_in),
             cfg=settings,
+            engagement_network_context=nc_ctx,
         )
         if pmg:
             out["placement_mock_rate_grids"] = pmg
+
+    cuopt_tm = await run_order_planning_cuopt_tri_modal(
+        scenario_fbm=out.get("scenario_integrated_fbm"),
+        placement_mock_rate_grids=out.get("placement_mock_rate_grids"),
+        analysis=analysis,
+        weight_lb_per_unit=float(b.weight_lb_per_unit),
+        length_in=float(b.length_in),
+        width_in=float(b.width_in),
+        height_in=float(b.height_in),
+        engagement_network_context=nc_ctx,
+        cfg=settings,
+        include_overview=b.include_cuopt_tri_modal,
+        include_nvidia_layer=b.include_nvidia_cuopt_layer,
+        cuopt_enrichment=b.cuopt_enrichment.model_dump(exclude_none=True) if b.cuopt_enrichment else None,
+    )
+    if cuopt_tm:
+        out["multi_dc_placement_tri_modal"] = cuopt_tm
+
+    tri_base = {k: v for k, v in out.items() if k not in ("tri_modal", "multi_dc_placement_tri_modal")}
     out["tri_modal"] = build_tri_modal_block(
         original_input={
             "entry_mode": "direct_api",
@@ -995,8 +1046,8 @@ async def order_financial_planning_run_route(
             "fulfillment_modes": list(b.fulfillment_modes),
             "csv_baseline_fulfillment": b.csv_baseline_fulfillment,
         },
-        baseline_unie=dict(out),
-        nvidia_enhanced=None,
+        baseline_unie=tri_base,
+        nvidia_enhanced=out.get("multi_dc_placement_tri_modal"),
     )
     out["ai_metrics"] = build_planning_run_ai_metrics_payload(
         out, engagement_id=engagement_id, analysis=analysis
@@ -1009,7 +1060,15 @@ async def multi_dc_preview(body: MultiDcBody):
     allow = body.allow_nvidia_enhancements
     if allow is None:
         allow = True
-    return await run_multi_dc_scenario(body.warehouses, body.lanes, allow_nvidia_enhancements=allow)
+    ce = body.cuopt_enrichment.model_dump(exclude_none=True) if body.cuopt_enrichment else None
+    mx = matrix_extensions_from_cuopt_enrichment_request(ce)
+    return await run_multi_dc_scenario(
+        body.warehouses,
+        body.lanes,
+        allow_nvidia_enhancements=allow,
+        depot_warehouse_id=body.hub_warehouse_id,
+        matrix_extensions=mx,
+    )
 
 
 @router.post("/engagements/{engagement_id}/suggest-mapping")

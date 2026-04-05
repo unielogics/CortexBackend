@@ -14,7 +14,7 @@ def test_mock_grid_48_state_hubs_and_shared_flags():
         relative_midpoint_tie_band=0.08,
     )
     assert grid["status"] == "complete"
-    assert grid["assumptions_version"] == "warehouse_mock_rate_grid_v6_demand_weighted_state_coverage"
+    assert grid["assumptions_version"] == "warehouse_mock_rate_grid_v7_matrix_and_last_mile_context"
     assert len(grid["state_shipping_coverage"]) == 48
     assert abs(sum(r["demand_share"] for r in grid["state_shipping_coverage"]) - 1.0) < 0.02
     assert "demand_weighted_expected_mock_parcel_usd_network" in grid
@@ -34,6 +34,16 @@ def test_mock_grid_48_state_hubs_and_shared_flags():
     assert agg["mean_mock_parcel_usd"] == grid["mean_mock_parcel_usd_by_warehouse"]["E"]
     assert agg["mean_carrier_zone_od"] is not None
     assert abs(sum(grid["suggested_target_share_pct_by_warehouse"].values()) - 100.0) < 0.1
+    mm = grid["mock_parcel_usd_by_warehouse_by_state"]
+    assert set(mm.keys()) == {"E", "W"}
+    assert len(mm["E"]) == 48
+    assert isinstance(mm["E"]["CA"], (int, float))
+    assert grid["last_mile_optimization_context"]["matrix_shape"]["warehouse_count"] == 2
+    rss = grid["rate_shopping_execution_summary"]
+    assert rss["schema_version"] == "rate_shopping_execution_summary_v1"
+    assert rss["mock_parcel_od_cells_evaluated"] == 2 * 48
+    assert rss["carrier_quote_comparisons_executed"] == 2 * 48 * 3
+    assert sum(rss["states_where_each_warehouse_is_demand_weighted_primary"].values()) == 48
 
 
 def test_merge_respects_preserve_when_all_shares_set():

@@ -2,6 +2,7 @@
 
 from unie_cortex.services.planning_overrides import (
     apply_planning_monthly_units_overrides,
+    integerize_monthly_unit_fields_in_demand_by_sku,
     merge_planning_seller_inputs,
 )
 
@@ -29,7 +30,8 @@ def test_monthly_override_scales_band():
     }
     meta = apply_planning_monthly_units_overrides(demand, {"S1": 50.0})
     assert "S1" in meta["applied"]
-    assert demand["S1"]["monthly_units_est_mid"] == 50.0
-    assert demand["S1"]["monthly_units_est_low"] == 37.5
-    assert demand["S1"]["monthly_units_est_high"] == 66.5
-    assert demand["S1"]["planning_monthly_units_override"]["user_monthly_units_mid"] == 50.0
+    integerize_monthly_unit_fields_in_demand_by_sku(demand)
+    assert demand["S1"]["monthly_units_est_mid"] == 50
+    assert demand["S1"]["monthly_units_est_low"] == 38
+    assert demand["S1"]["monthly_units_est_high"] == 66
+    assert demand["S1"]["planning_monthly_units_override"]["user_monthly_units_mid"] == 50

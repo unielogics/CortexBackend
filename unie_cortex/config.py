@@ -1,4 +1,9 @@
-from typing import Self
+from __future__ import annotations
+
+try:
+    from typing import Self
+except ImportError:  # Python < 3.11
+    from typing_extensions import Self
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,175 +49,95 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MONGODB_DB", "mongodb_db"),
     )
 
-    # SQLite/Postgres only when MONGODB_URI is empty (unless Aurora DSQL host is set)
+    # SQLite/Postgres only when MONGODB_URI is empty
     database_url: str = Field(
         "sqlite+aiosqlite:///./unie_cortex.db",
         validation_alias=AliasChoices("DATABASE_URL", "database_url"),
     )
-
-    # Amazon Aurora DSQL — IAM auth via aurora-dsql-python-connector + asyncpg.
-    # When AURORA_DSQL_CLUSTER_HOST is set, SQLAlchemy uses DSQL (DATABASE_URL ignored for connections).
     aurora_dsql_cluster_host: str | None = Field(
         None,
-        validation_alias=AliasChoices(
-            "AURORA_DSQL_CLUSTER_HOST",
-            "aurora_dsql_cluster_host",
-        ),
-        description="Cluster endpoint, e.g. xxx.dsql.us-east-1.on.aws (or short cluster id + region)",
+        validation_alias=AliasChoices("AURORA_DSQL_CLUSTER_HOST", "aurora_dsql_cluster_host"),
+        description="When set, SQLAlchemy uses Aurora DSQL async creator instead of DATABASE_URL.",
     )
-    aurora_dsql_region: str | None = Field(
+    aurora_dsql_user: str | None = Field(
         None,
-        validation_alias=AliasChoices("AURORA_DSQL_REGION", "aurora_dsql_region"),
-        description="AWS region if not inferable from hostname (required for short cluster id)",
-    )
-    aurora_dsql_user: str = Field(
-        "admin",
         validation_alias=AliasChoices("AURORA_DSQL_USER", "aurora_dsql_user"),
     )
     aurora_dsql_dbname: str = Field(
         "postgres",
         validation_alias=AliasChoices("AURORA_DSQL_DBNAME", "aurora_dsql_dbname"),
     )
-    aurora_dsql_token_duration_secs: int | None = Field(
+    aurora_dsql_region: str | None = Field(
         None,
-        validation_alias=AliasChoices(
-            "AURORA_DSQL_TOKEN_DURATION_SECS",
-            "aurora_dsql_token_duration_secs",
-        ),
-        description="IAM token lifetime in seconds; omit for connector default",
+        validation_alias=AliasChoices("AURORA_DSQL_REGION", "aurora_dsql_region"),
     )
     aurora_dsql_aws_profile: str | None = Field(
         None,
+        validation_alias=AliasChoices("AURORA_DSQL_AWS_PROFILE", "aurora_dsql_aws_profile"),
+    )
+    aurora_dsql_token_duration_secs: int | None = Field(
+        None,
+        ge=60,
         validation_alias=AliasChoices(
-            "AURORA_DSQL_AWS_PROFILE",
-            "aurora_dsql_aws_profile",
+            "AURORA_DSQL_TOKEN_DURATION_SECS", "aurora_dsql_token_duration_secs"
         ),
-        description="Optional shared credentials profile for local dev; on EC2 use instance role and leave unset",
     )
     aurora_dsql_pool_recycle: int = Field(
-        3300,
-        validation_alias=AliasChoices(
-            "AURORA_DSQL_POOL_RECYCLE",
-            "aurora_dsql_pool_recycle",
-        ),
-        description="pool_recycle seconds; keep below Aurora DSQL max connection duration (~1h)",
+        3600,
+        ge=60,
+        validation_alias=AliasChoices("AURORA_DSQL_POOL_RECYCLE", "aurora_dsql_pool_recycle"),
     )
-
-    # --- Aurora Postgres (pgvector) semantic memory ---
     semantic_memory_enabled: bool = Field(
         False,
-        validation_alias=AliasChoices(
-            "SEMANTIC_MEMORY_ENABLED",
-            "semantic_memory_enabled",
-        ),
+        validation_alias=AliasChoices("SEMANTIC_MEMORY_ENABLED", "semantic_memory_enabled"),
     )
     semantic_database_url: str | None = Field(
         None,
-        validation_alias=AliasChoices(
-            "SEMANTIC_DATABASE_URL",
-            "semantic_database_url",
-        ),
-        description="postgresql+asyncpg://... for Aurora Postgres + pgvector",
+        validation_alias=AliasChoices("SEMANTIC_DATABASE_URL", "semantic_database_url"),
     )
     semantic_database_secret_arn: str | None = Field(
         None,
-        validation_alias=AliasChoices(
-            "SEMANTIC_DATABASE_SECRET_ARN",
-            "semantic_database_secret_arn",
-        ),
-        description="Secrets Manager secret JSON: username, password, host, port, dbname",
+        validation_alias=AliasChoices("SEMANTIC_DATABASE_SECRET_ARN", "semantic_database_secret_arn"),
     )
     semantic_database_region: str | None = Field(
         None,
-        validation_alias=AliasChoices(
-            "SEMANTIC_DATABASE_REGION",
-            "semantic_database_region",
-        ),
+        validation_alias=AliasChoices("SEMANTIC_DATABASE_REGION", "semantic_database_region"),
     )
     semantic_pool_recycle: int = Field(
-        3300,
-        validation_alias=AliasChoices(
-            "SEMANTIC_POOL_RECYCLE",
-            "semantic_pool_recycle",
-        ),
-    )
-    semantic_embed_dimensions: int = Field(
-        1536,
-        validation_alias=AliasChoices(
-            "SEMANTIC_EMBED_DIMENSIONS",
-            "semantic_embed_dimensions",
-        ),
-        description="Must match embedding model output size (e.g. text-embedding-3-small = 1536)",
-    )
-    semantic_embed_max_chars_audit: int = Field(
-        8000,
-        validation_alias=AliasChoices(
-            "SEMANTIC_EMBED_MAX_CHARS_AUDIT",
-            "semantic_embed_max_chars_audit",
-        ),
-    )
-    semantic_embed_max_chars_proposal: int = Field(
-        4000,
-        validation_alias=AliasChoices(
-            "SEMANTIC_EMBED_MAX_CHARS_PROPOSAL",
-            "semantic_embed_max_chars_proposal",
-        ),
+        3600,
+        ge=60,
+        validation_alias=AliasChoices("SEMANTIC_POOL_RECYCLE", "semantic_pool_recycle"),
     )
     semantic_embed_max_concurrency: int = Field(
         4,
+        ge=1,
+        le=64,
+        validation_alias=AliasChoices("SEMANTIC_EMBED_MAX_CONCURRENCY", "semantic_embed_max_concurrency"),
+    )
+    semantic_embed_max_chars_audit: int = Field(
+        8000,
+        ge=256,
+        validation_alias=AliasChoices("SEMANTIC_EMBED_MAX_CHARS_AUDIT", "semantic_embed_max_chars_audit"),
+    )
+    semantic_embed_max_chars_proposal: int = Field(
+        4000,
+        ge=256,
         validation_alias=AliasChoices(
-            "SEMANTIC_EMBED_MAX_CONCURRENCY",
-            "semantic_embed_max_concurrency",
+            "SEMANTIC_EMBED_MAX_CHARS_PROPOSAL", "semantic_embed_max_chars_proposal"
         ),
     )
-    embedding_provider: str = Field(
-        "openai",
-        validation_alias=AliasChoices("EMBEDDING_PROVIDER", "embedding_provider"),
-        description="openai (default) — extend for bedrock later",
-    )
-    openai_api_key: str | None = Field(
+    aws_region: str | None = Field(
         None,
-        validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
-        description="Used for text embeddings when EMBEDDING_PROVIDER=openai",
+        validation_alias=AliasChoices("AWS_REGION", "aws_region"),
     )
-    openai_embedding_model: str = Field(
-        "text-embedding-3-small",
-        validation_alias=AliasChoices(
-            "OPENAI_EMBEDDING_MODEL",
-            "openai_embedding_model",
-        ),
-    )
-    openai_embedding_base_url: str = Field(
-        "https://api.openai.com/v1",
-        validation_alias=AliasChoices(
-            "OPENAI_EMBEDDING_BASE_URL",
-            "openai_embedding_base_url",
-        ),
-    )
-    rag_top_k: int = Field(
-        6,
-        validation_alias=AliasChoices("RAG_TOP_K", "rag_top_k"),
-    )
-    rag_min_similarity: float = Field(
-        0.25,
-        validation_alias=AliasChoices("RAG_MIN_SIMILARITY", "rag_min_similarity"),
-        description="Min cosine similarity 0–1 (1=identical); below = drop chunk",
-    )
-
-    # --- S3 optional blob tier ---
     s3_artifacts_bucket: str | None = Field(
         None,
         validation_alias=AliasChoices("S3_ARTIFACTS_BUCKET", "s3_artifacts_bucket"),
     )
-    s3_artifacts_prefix: str = Field(
-        "",
+    s3_artifacts_prefix: str | None = Field(
+        None,
         validation_alias=AliasChoices("S3_ARTIFACTS_PREFIX", "s3_artifacts_prefix"),
     )
-    aws_region: str | None = Field(
-        None,
-        validation_alias=AliasChoices("AWS_REGION", "AWS_DEFAULT_REGION", "aws_region"),
-    )
-
     upload_dir: str = Field(
         "./uploads",
         validation_alias=AliasChoices("UPLOAD_DIR", "upload_dir"),
@@ -444,6 +369,20 @@ class Settings(BaseSettings):
             "smart_network_default_lane_cost_per_lb",
         ),
         description="Star replenishment $/lb from hub to each spoke when auto-building lanes",
+    )
+    seller_planning_rate_shop_max_warehouses: int = Field(
+        6,
+        ge=1,
+        le=25,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_RATE_SHOP_MAX_WAREHOUSES",
+            "seller_planning_rate_shop_max_warehouses",
+        ),
+        description=(
+            "Seller order-financial placement grids: mock parcel / zone comparison across up to this many DCs "
+            "(smart-network selected nodes first, then engagement default archetypes). Feeds cuOpt fusion when "
+            "the FBM scenario still uses one linehaul-active node but national hot-zone rate shopping spans several."
+        ),
     )
     smart_network_auto_trim_client_warehouses: bool = Field(
         True,
@@ -706,6 +645,30 @@ class Settings(BaseSettings):
         ),
         description="When CSV omits package weight/dims, fill from SP-API catalog (cache/live) then Keepa per ASIN.",
     )
+    item_intelligence_enrich_package_from_catalog: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "ITEM_INTELLIGENCE_ENRICH_PACKAGE_FROM_CATALOG",
+            "item_intelligence_enrich_package_from_catalog",
+        ),
+        description="Item intelligence / PRO: before allocation, fill missing catalog weight/dims from SP-API then Keepa.",
+    )
+    item_intelligence_persist_catalog_package_hints: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "ITEM_INTELLIGENCE_PERSIST_CATALOG_PACKAGE_HINTS",
+            "item_intelligence_persist_catalog_package_hints",
+        ),
+        description="When automatic package hints fill gaps, write back to cortex_sku_catalog (Mongo or SQL).",
+    )
+    placement_one_warehouse_per_contiguous_state: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "PLACEMENT_ONE_WAREHOUSE_PER_CONTIGUOUS_STATE",
+            "placement_one_warehouse_per_contiguous_state",
+        ),
+        description="Mock placement / seller rate-shop node lists: at most one warehouse per contiguous-US state (ZIP3→state).",
+    )
     amazon_seller_professional_plan: bool = Field(
         True,
         validation_alias=AliasChoices(
@@ -857,25 +820,18 @@ class Settings(BaseSettings):
     nvidia_api_key: str | None = Field(
         None,
         validation_alias=AliasChoices("NVIDIA_API_KEY", "nvidia_api_key"),
-    )
-    nim_model: str = Field(
-        "nvidia/llama-3.3-nemotron-super-49b-v1",
-        validation_alias=AliasChoices("NIM_MODEL", "nim_model"),
-    )
-    nim_base_url: str = Field(
-        "https://integrate.api.nvidia.com/v1",
-        validation_alias=AliasChoices("NIM_BASE_URL", "nim_base_url"),
+        description="Bearer for NVIDIA managed cuOpt cloud (optimize.api.nvidia.com) when used; not used for LLM chat.",
     )
     nim_csv_mapping_enabled: bool = Field(
-        True,
+        False,
         validation_alias=AliasChoices("NIM_CSV_MAPPING_ENABLED", "nim_csv_mapping_enabled"),
-        description="When false, infer-mapping-nim uses heuristics only (no NIM HTTP call).",
+        description="Legacy flag; CSV column inference uses heuristics only (no LLM).",
     )
 
     ai_observability_enabled: bool = Field(
         True,
         validation_alias=AliasChoices("AI_OBSERVABILITY_ENABLED", "ai_observability_enabled"),
-        description="When true, NIM chat/completions may persist AiInvocation rows when a store is provided.",
+        description="When true, observability hooks may persist AiInvocation rows where applicable.",
     )
     ai_observability_preview_max_chars: int = Field(
         0,
@@ -891,6 +847,49 @@ class Settings(BaseSettings):
     cuopt_nim_url: str | None = Field(
         None,
         validation_alias=AliasChoices("CUOPT_NIM_URL", "cuopt_nim_url"),
+    )
+    cuopt_self_hosted_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "CUOPT_SELF_HOSTED_URL",
+            "cuopt_self_hosted_url",
+        ),
+        description=(
+            "Base URL for self-hosted cuOpt REST server (e.g. http://127.0.0.1:8787). "
+            "Uses POST /cuopt/request and GET /cuopt/solution/{reqId}. Takes precedence over "
+            "CUOPT_NIM_URL /optimize when set."
+        ),
+    )
+    cuopt_matrix_lane_cost_weight: float = Field(
+        0.35,
+        ge=0.0,
+        le=2.0,
+        validation_alias=AliasChoices(
+            "CUOPT_MATRIX_LANE_COST_WEIGHT",
+            "cuopt_matrix_lane_cost_weight",
+        ),
+        description="Scale haversine cost matrix by lane cost_per_lb when building multi-DC cuOpt jobs (0=geo only).",
+    )
+    cuopt_inform_allocation_weights: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "CUOPT_INFORM_ALLOCATION_WEIGHTS",
+            "cuopt_inform_allocation_weights",
+        ),
+        description=(
+            "When true, after PRO tri-modal cuOpt completes, compute a counterfactual allocation from nudged "
+            "target_share_pct (visit-order heuristic) and attach allocation_cuopt_counterfactual."
+        ),
+    )
+    cuopt_allocation_nudge_max_pct: float = Field(
+        2.5,
+        ge=0.1,
+        le=15.0,
+        validation_alias=AliasChoices(
+            "CUOPT_ALLOCATION_NUDGE_MAX_PCT",
+            "cuopt_allocation_nudge_max_pct",
+        ),
+        description="Max ± percentage-point nudge per warehouse when deriving cuOpt-informed share adjustments.",
     )
     cuopt_api_key: str | None = Field(
         None,
@@ -964,6 +963,17 @@ class Settings(BaseSettings):
         ),
         description="When true, propose_routes may call NVIDIA cuOpt cloud and append an alternative route_variants entry.",
     )
+    tms_cuopt_use_self_hosted: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "TMS_CUOPT_USE_SELF_HOSTED",
+            "tms_cuopt_use_self_hosted",
+        ),
+        description=(
+            "When true and CUOPT_SELF_HOSTED_URL is set, TMS propose_routes uses self-hosted cuOpt REST "
+            "before NVIDIA managed cloud."
+        ),
+    )
     tms_nvidia_cuopt_max_nodes: int = Field(
         25,
         ge=3,
@@ -983,6 +993,81 @@ class Settings(BaseSettings):
             "tms_nvidia_cuopt_time_limit_seconds",
         ),
     )
+    cuopt_storage_monthly_usd_to_matrix: float = Field(
+        0.012,
+        ge=0.0,
+        validation_alias=AliasChoices(
+            "CUOPT_STORAGE_MONTHLY_USD_TO_MATRIX",
+            "cuopt_storage_monthly_usd_to_matrix",
+        ),
+        description="Scale storage $/month proxy into cost-matrix additive (destination column).",
+    )
+    cuopt_inbound_monthly_usd_to_matrix: float = Field(
+        0.015,
+        ge=0.0,
+        validation_alias=AliasChoices(
+            "CUOPT_INBOUND_MONTHLY_USD_TO_MATRIX",
+            "cuopt_inbound_monthly_usd_to_matrix",
+        ),
+        description="Scale inbound receive $/month proxy into matrix (destination column).",
+    )
+    cuopt_physical_cube_arc_factor: float = Field(
+        0.00025,
+        ge=0.0,
+        validation_alias=AliasChoices(
+            "CUOPT_PHYSICAL_CUBE_ARC_FACTOR",
+            "cuopt_physical_cube_arc_factor",
+        ),
+        description="Off-diagonal *= 1+min(0.25, max_network_cube_cuft×factor) for dimensional stress.",
+    )
+    cuopt_dual_capacity_cube_dimension_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "CUOPT_DUAL_CAPACITY_CUBE_DIMENSION_ENABLED",
+            "cuopt_dual_capacity_cube_dimension_enabled",
+        ),
+        description="Second demand/capacity dimension uses allocated monthly cuft (cube) vs units.",
+    )
+    cuopt_task_service_time_seconds_base: int = Field(
+        0,
+        ge=0,
+        le=3600,
+        validation_alias=AliasChoices(
+            "CUOPT_TASK_SERVICE_TIME_SECONDS_BASE",
+            "cuopt_task_service_time_seconds_base",
+        ),
+    )
+    cuopt_task_service_time_seconds_per_demand_unit: float = Field(
+        0.4,
+        ge=0.0,
+        le=60.0,
+        validation_alias=AliasChoices(
+            "CUOPT_TASK_SERVICE_TIME_SECONDS_PER_DEMAND_UNIT",
+            "cuopt_task_service_time_seconds_per_demand_unit",
+        ),
+    )
+    cuopt_forbidden_arc_cost: float = Field(
+        1e9,
+        ge=1e6,
+        le=1e12,
+        validation_alias=AliasChoices("CUOPT_FORBIDDEN_ARC_COST", "cuopt_forbidden_arc_cost"),
+    )
+    cuopt_linehaul_monthly_usd_to_matrix: float = Field(
+        0.018,
+        ge=0.0,
+        validation_alias=AliasChoices(
+            "CUOPT_LINEHAUL_MONTHLY_USD_TO_MATRIX",
+            "cuopt_linehaul_monthly_usd_to_matrix",
+        ),
+        description="Monthly modeled linehaul $ on a leg → additive matrix cost on that directed arc.",
+    )
+    cuopt_sensitivity_parcel_pct: float = Field(
+        10.0,
+        ge=0.0,
+        le=50.0,
+        validation_alias=AliasChoices("CUOPT_SENSITIVITY_PARCEL_PCT", "cuopt_sensitivity_parcel_pct"),
+        description="±% for client-side parcel proxy sensitivity rows (no extra NVIDIA HTTP).",
+    )
     tms_nvidia_cuopt_poll_cap_seconds: float = Field(
         120.0,
         ge=10.0,
@@ -993,15 +1078,6 @@ class Settings(BaseSettings):
         ),
         description="Cap status polling duration for TMS-triggered cuOpt calls.",
     )
-    tms_nim_dispatch_summary_enabled: bool = Field(
-        False,
-        validation_alias=AliasChoices(
-            "TMS_NIM_DISPATCH_SUMMARY_ENABLED",
-            "tms_nim_dispatch_summary_enabled",
-        ),
-        description="When true and NVIDIA_API_KEY set, propose_routes may include nim_dispatch_summary (sync NIM call).",
-    )
-
     road_matrix_provider: str = Field(
         "none",
         validation_alias=AliasChoices("ROAD_MATRIX_PROVIDER", "road_matrix_provider"),
@@ -1177,11 +1253,11 @@ class Settings(BaseSettings):
         "audit_complementary_network_enabled",
         "tms_cuopt_sequencing",
         "tms_nvidia_cuopt_cloud_enabled",
-        "tms_nim_dispatch_summary_enabled",
         "multi_dc_cuopt_cloud_enabled",
         "eia_enabled",
         "nim_csv_mapping_enabled",
         "ai_observability_enabled",
+        "semantic_memory_enabled",
         mode="before",
     )
     @classmethod
@@ -1230,18 +1306,19 @@ class Settings(BaseSettings):
 
     @property
     def semantic_brain_configured(self) -> bool:
-        """True when semantic memory flag is on and a URL or secret ARN is set."""
         if not self.semantic_memory_enabled:
             return False
-        u = (self.semantic_database_url or "").strip()
-        if u:
-            return True
-        arn = (self.semantic_database_secret_arn or "").strip()
-        return bool(arn)
+        return bool(
+            (self.semantic_database_url and str(self.semantic_database_url).strip())
+            or (
+                self.semantic_database_secret_arn
+                and str(self.semantic_database_secret_arn).strip()
+            )
+        )
 
     @property
     def s3_artifacts_configured(self) -> bool:
-        return bool((self.s3_artifacts_bucket or "").strip())
+        return bool(self.s3_artifacts_bucket and str(self.s3_artifacts_bucket).strip())
 
     @property
     def shippo_configured(self) -> bool:

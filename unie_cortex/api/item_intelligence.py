@@ -21,6 +21,15 @@ from unie_cortex.services.physical_similarity import attach_signature_to_catalog
 router = APIRouter()
 
 
+class ManualPackageDimensions(BaseModel):
+    """Third-fallback package data when SP-API Catalog and Keepa do not populate catalog rows."""
+
+    weight_lb: float | None = Field(None, gt=0)
+    length_in: float | None = Field(None, gt=0)
+    width_in: float | None = Field(None, gt=0)
+    height_in: float | None = Field(None, gt=0)
+
+
 class CatalogItemBody(BaseModel):
     sku: str = Field(..., min_length=1, max_length=128)
     asin: str | None = Field(None, max_length=20)
@@ -82,6 +91,60 @@ class LaneCost(BaseModel):
     from_id: str = Field(..., min_length=1, max_length=64)
     to_id: str = Field(..., min_length=1, max_length=64)
     cost_per_lb: float = Field(0.0, ge=0)
+
+
+class CuOptForbiddenArc(BaseModel):
+    from_warehouse_id: str = Field(..., min_length=1, max_length=64)
+    to_warehouse_id: str = Field(..., min_length=1, max_length=64)
+
+
+class CuOptLinehaulLeg(BaseModel):
+    from_warehouse_id: str = Field(..., min_length=1, max_length=64)
+    to_warehouse_id: str = Field(..., min_length=1, max_length=64)
+    monthly_usd: float = Field(..., ge=0)
+
+
+class ItemIntelligenceCuOptEnrichment(BaseModel):
+    parcel_usd_by_warehouse_id: dict[str, float] | None = Field(
+        None,
+        description="Override mean mock parcel USD per warehouse id (rate shop / contract).",
+    )
+    observed_label_buy_usd_by_warehouse_id: dict[str, float] | None = Field(
+        None,
+        description="Observed label-buy proxy per warehouse id; wins after parcel_usd overrides when both set.",
+    )
+    forbidden_directed_arcs: list[CuOptForbiddenArc] | None = Field(
+        None,
+        description="Directed arcs penalized with cuopt_forbidden_arc_cost in the cuOpt cost matrix.",
+    )
+    linehaul_monthly_usd_legs: list[CuOptLinehaulLeg] | None = Field(
+        None,
+        description="Add directed monthly USD × cuopt_linehaul_monthly_usd_to_matrix on each leg.",
+    )
+    demand_seasonality_index: float | None = Field(
+        None,
+        gt=0,
+        le=5,
+        description="Multiplies fused allocated_monthly_cuft per warehouse before integer demands.",
+    )
+    demand_band_low_multiplier: float | None = Field(
+        None,
+        gt=0,
+        le=2,
+        description="Lower bound for hypothetical demand-band integer demand preview (no extra NVIDIA call).",
+    )
+    demand_band_high_multiplier: float | None = Field(
+        None,
+        gt=0,
+        le=3,
+        description="Upper bound for hypothetical demand-band integer demand preview.",
+    )
+    parcel_sensitivity_pct: float | None = Field(
+        None,
+        ge=0,
+        le=50,
+        description="Parcel last-mile ±% for cuopt_enrichment_analysis.parcel_rate_sensitivity (default from settings).",
+    )
 
 
 class ItemIntelligenceRunBody(BaseModel):
@@ -203,6 +266,17 @@ class ItemIntelligenceRunBody(BaseModel):
             "planning uses that seller's time-on-buy-box share × ASIN velocity (see seller_planning_velocity)."
         ),
     )
+    cuopt_enrichment: ItemIntelligenceCuOptEnrichment | None = Field(
+        None,
+        description="Optional cuOpt matrix extensions, parcel overrides, seasonality, and analysis hints (tri-modal).",
+    )
+    manual_package_by_sku: dict[str, ManualPackageDimensions] | None = Field(
+        None,
+        description=(
+            "Per-SKU manual weight (lb) and dimensions (in) when automatic enrichment did not fill catalog. "
+            "Applied after SP-API + Keepa; persisted when ITEM_INTELLIGENCE_PERSIST_CATALOG_PACKAGE_HINTS is true."
+        ),
+    )
 
 
 @router.put("/{tenant_id}/catalog/items")
@@ -308,6 +382,12 @@ async def item_intelligence_run(
         product_origin_region=body.product_origin_region,
         planning_monthly_units_override_by_sku=body.planning_monthly_units_override_by_sku,
         planning_marketplace_seller_id_by_sku=body.planning_marketplace_seller_id_by_sku,
+        cuopt_enrichment=body.cuopt_enrichment.model_dump(exclude_none=True) if body.cuopt_enrichment else None,
+        manual_package_by_sku=(
+            {k: v.model_dump(exclude_none=True) for k, v in body.manual_package_by_sku.items()}
+            if body.manual_package_by_sku
+            else None
+        ),
     )
     if body.engagement_id:
         eg = await store.engagement_get(body.engagement_id)

@@ -24,6 +24,9 @@ export default function App() {
     <div style={{ fontFamily: "system-ui", maxWidth: 720, margin: "2rem auto", padding: 24 }}>
       <h1>Unie Cortex</h1>
       <p>Pre-conversion warehouse audit — upload labels/tasks, map columns, run spine, view savings.</p>
+      <p style={{ fontSize: 14 }}>
+        <Link to="/pro">Product research &amp; item intelligence</Link>
+      </p>
       <input
         placeholder="Engagement name"
         value={name}
@@ -36,7 +39,8 @@ export default function App() {
       {err && <p style={{ color: "coral" }}>{err}</p>}
       {created && (
         <p>
-          Created <Link to={`/e/${created.engagement_id}`}>{created.engagement_id}</Link>
+          Created <Link to={`/e/${created.engagement_id}`}>{created.engagement_id}</Link> ·{" "}
+          <Link to={`/e/${created.engagement_id}/planning`}>Order-financial planning run</Link>
         </p>
       )}
     </div>

@@ -1,8 +1,8 @@
 """
-Build a minimal NVIDIA cuOpt cloud job from the first multi-stop Cortex route (v1).
+Build a minimal NVIDIA cuOpt job from the first multi-stop Cortex route (v1).
 
-Maps leg endpoints to matrix indices; does **not** remap Cortex ``routes`` (solver output
-is advisory). Cap nodes at ``TMS_NVIDIA_CUOPT_MAX_NODES`` (default 25).
+Prefers self-hosted REST (CUOPT_SELF_HOSTED_URL) when TMS_CUOPT_USE_SELF_HOSTED is true;
+otherwise optional managed cloud when TMS_NVIDIA_CUOPT_CLOUD_ENABLED and Bearer token present.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from unie_cortex.config import settings
+from unie_cortex.integrations.cuopt_self_hosted import CuOptSelfHostedError, cuopt_self_hosted_run_sync
 from unie_cortex.integrations.nvidia_cuopt_cloud import (
     CuOptCloudError,
     build_optimized_routing_payload,
@@ -21,8 +22,8 @@ from unie_cortex.network.road_matrix import haversine_km
 from unie_cortex.network.tms_geo import address_lat_lon
 from unie_cortex.network.tms_resolution_envelope import NVIDIA_VARIANT_ID, compute_route_metrics
 
-# Truncate external_raw JSON size for API responses
 _EXTERNAL_RAW_MAX_CHARS = 24_000
+_SELF_HOSTED_VARIANT_ID = "nvidia_cuopt_self_hosted"
 
 
 def _leg_lat_lon(leg: dict[str, Any]) -> tuple[float, float] | None:
@@ -72,26 +73,33 @@ def _trim_for_api(obj: Any, max_chars: int = _EXTERNAL_RAW_MAX_CHARS) -> Any:
     return {"_truncated": True, "preview": s[:max_chars], "total_chars": len(s)}
 
 
+def _skipped_variant(status_detail: str, *, self_hosted: bool) -> dict[str, Any]:
+    vid = _SELF_HOSTED_VARIANT_ID if self_hosted else NVIDIA_VARIANT_ID
+    prod = "nvidia_cuopt_self_hosted" if self_hosted else "nvidia_cuopt_cloud"
+    return {
+        "variant_id": vid,
+        "role": "alternative",
+        "producer": prod,
+        "status": "skipped",
+        "status_detail": status_detail,
+        "routes": None,
+        "metrics": None,
+        "diff_vs_variant_id": None,
+        "delta": None,
+        "external_raw": None,
+    }
+
+
 def try_nvidia_cuopt_route_variant(routes_out: list[dict[str, Any]]) -> dict[str, Any] | None:
     """
-    If disabled or no key, return None.
-    Otherwise return an ``alternative`` variant dict (may be status failed/skipped).
+    Self-hosted cuOpt when URL + flag; else managed cloud when enabled + Bearer.
     """
-    if not settings.tms_nvidia_cuopt_cloud_enabled:
+    sh = (getattr(settings, "cuopt_self_hosted_url", None) or "").strip()
+    use_sh = bool(getattr(settings, "tms_cuopt_use_self_hosted", True))
+    cloud_on = bool(settings.tms_nvidia_cuopt_cloud_enabled)
+
+    if not ((sh and use_sh) or (cloud_on and resolve_cuopt_cloud_bearer_token())):
         return None
-    if not resolve_cuopt_cloud_bearer_token():
-        return {
-            "variant_id": NVIDIA_VARIANT_ID,
-            "role": "alternative",
-            "producer": "nvidia_cuopt_cloud",
-            "status": "failed",
-            "status_detail": "missing_CUOPT_API_KEY_or_NVIDIA_API_KEY_for_bearer",
-            "routes": None,
-            "metrics": None,
-            "diff_vs_variant_id": None,
-            "delta": None,
-            "external_raw": None,
-        }
 
     max_n = max(3, min(settings.tms_nvidia_cuopt_max_nodes, 25))
     chosen: dict[str, Any] | None = None
@@ -102,23 +110,19 @@ def try_nvidia_cuopt_route_variant(routes_out: list[dict[str, Any]]) -> dict[str
             nodes = ns[:max_n]
             break
     if not chosen:
-        return {
-            "variant_id": NVIDIA_VARIANT_ID,
-            "role": "alternative",
-            "producer": "nvidia_cuopt_cloud",
-            "status": "skipped",
-            "status_detail": "no_route_with_three_or_more_distinct_geocoded_stops",
-            "routes": None,
-            "metrics": None,
-            "diff_vs_variant_id": None,
-            "delta": None,
-            "external_raw": None,
-        }
+        if sh and use_sh:
+            return _skipped_variant(
+                "no_route_with_three_or_more_distinct_geocoded_stops", self_hosted=True
+            )
+        if cloud_on:
+            return _skipped_variant(
+                "no_route_with_three_or_more_distinct_geocoded_stops", self_hosted=False
+            )
+        return None
 
     mat = _matrix_from_nodes(nodes)
     n = len(nodes)
-    # Demo-shaped payload: one vehicle type, tasks at nodes 1..min(2,n-1) when n>=3
-    task_locs = list(range(1, min(n, 3)))  # at least tasks at 1 and 2 if possible
+    task_locs = list(range(1, min(n, 3)))
     if len(task_locs) < 2 and n > 2:
         task_locs = [1, 2]
     n_tasks = len(task_locs)
@@ -161,8 +165,56 @@ def try_nvidia_cuopt_route_variant(routes_out: list[dict[str, Any]]) -> dict[str
             "error_logging": True,
         },
     }
-    payload = build_optimized_routing_payload(data, client_version="unie_cortex_tms_v1")
 
+    if sh and use_sh:
+        try:
+            raw = cuopt_self_hosted_run_sync(
+                data,
+                base_url=sh,
+                poll_timeout_seconds=min(
+                    float(settings.nvidia_cuopt_cloud_poll_timeout_seconds),
+                    float(settings.tms_nvidia_cuopt_poll_cap_seconds),
+                ),
+                client_version="custom",
+            )
+        except CuOptSelfHostedError as e:
+            return {
+                "variant_id": _SELF_HOSTED_VARIANT_ID,
+                "role": "alternative",
+                "producer": "nvidia_cuopt_self_hosted",
+                "status": "failed",
+                "status_detail": str(e)[:500],
+                "routes": None,
+                "metrics": None,
+                "diff_vs_variant_id": None,
+                "delta": None,
+                "external_raw": None,
+            }
+        sr = (raw.get("response") or {}).get("solver_response") or raw.get("solver_response")
+        sol_cost = None
+        if isinstance(sr, dict):
+            sol_cost = sr.get("solution_cost")
+        metrics = compute_route_metrics([chosen])
+        metrics["nvidia_solver_solution_cost"] = sol_cost
+        metrics["matrix_node_count"] = n
+        metrics["source_route_wms_shipment_ids"] = chosen.get("wms_shipment_ids")
+        return {
+            "variant_id": _SELF_HOSTED_VARIANT_ID,
+            "role": "alternative",
+            "producer": "nvidia_cuopt_self_hosted",
+            "status": "complete",
+            "status_detail": None,
+            "routes": None,
+            "metrics": metrics,
+            "diff_vs_variant_id": None,
+            "delta": None,
+            "external_raw": _trim_for_api(raw),
+        }
+
+    if not cloud_on or not resolve_cuopt_cloud_bearer_token():
+        return None
+
+    payload = build_optimized_routing_payload(data, client_version="unie_cortex_tms_v1")
     try:
         raw = cuopt_cloud_run(
             payload,
@@ -190,13 +242,10 @@ def try_nvidia_cuopt_route_variant(routes_out: list[dict[str, Any]]) -> dict[str
     sol_cost = None
     if isinstance(sr, dict):
         sol_cost = sr.get("solution_cost")
-
-    # Optional: approximate leg km from same chosen route for delta compatibility
     metrics = compute_route_metrics([chosen])
     metrics["nvidia_solver_solution_cost"] = sol_cost
     metrics["matrix_node_count"] = n
     metrics["source_route_wms_shipment_ids"] = chosen.get("wms_shipment_ids")
-
     return {
         "variant_id": NVIDIA_VARIANT_ID,
         "role": "alternative",

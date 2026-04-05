@@ -179,6 +179,38 @@ def package_hints_from_spapi_catalog_payload(payload: dict[str, Any]) -> dict[st
     return out
 
 
+def apply_hints_to_sku_catalog_row(row: dict[str, Any], hints: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Fill ``weight_lb`` / ``length_in`` / ``width_in`` / ``height_in`` on a catalog row from
+    ``batch_resolve_asin_package_hints`` output. Mutates ``row`` (and ``extra`` provenance). Returns audit dict.
+    """
+    audit: dict[str, Any] = {"sku": row.get("sku"), "asin": row.get("asin"), "filled_fields": []}
+    if not hints:
+        return audit
+    pairs = (
+        ("package_weight_lb", "weight_lb"),
+        ("package_length_in", "length_in"),
+        ("package_width_in", "width_in"),
+        ("package_height_in", "height_in"),
+    )
+    for src_k, dest_k in pairs:
+        if row.get(dest_k) is not None:
+            continue
+        v = hints.get(src_k)
+        if v is not None:
+            row[dest_k] = v
+            audit["filled_fields"].append(dest_k)
+    if hints.get("enrichment_source"):
+        audit["enrichment_source"] = hints["enrichment_source"]
+    ex = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+    ex = dict(ex)
+    pkg = dict(ex.get("package_enrichment") if isinstance(ex.get("package_enrichment"), dict) else {})
+    pkg["automatic_sources"] = hints.get("enrichment_source")
+    ex["package_enrichment"] = pkg
+    row["extra"] = ex
+    return audit
+
+
 async def batch_resolve_asin_package_hints(
     store: Any,
     *,
@@ -190,7 +222,9 @@ async def batch_resolve_asin_package_hints(
     Per ASIN: package hints dict (canonical keys + enrichment_source).
     Uses SP-API catalog cache/fetch first, then Keepa product.
     """
-    if not getattr(settings, "order_financial_enrich_package_from_catalog", True):
+    if not getattr(settings, "order_financial_enrich_package_from_catalog", True) and not getattr(
+        settings, "item_intelligence_enrich_package_from_catalog", True
+    ):
         return {}
 
     uniq = sorted({a.strip().upper() for a in asins if a and str(a).strip()})

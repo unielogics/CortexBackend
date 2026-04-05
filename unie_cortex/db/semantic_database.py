@@ -52,7 +52,11 @@ def resolve_semantic_database_url(settings: Settings) -> str | None:
         logger.info("Resolved SEMANTIC_DATABASE_SECRET_ARN to async Postgres URL")
         return url
     except Exception as e:
-        logger.exception("Failed to resolve semantic database secret: %s", e)
+        logger.warning(
+            "Semantic memory is enabled but the database URL could not be built from SEMANTIC_DATABASE_SECRET_ARN "
+            "(check the secret JSON and IAM). The API still starts; RAG/semantic features stay off. Detail: %s",
+            e,
+        )
         _semantic_url_resolved = None
         return None
 

@@ -51,7 +51,6 @@ from unie_cortex.network.tms_resolution_envelope import (
     build_input_echo,
     build_primary_route_variant,
     build_resolution_metadata,
-    try_nim_dispatch_summary,
 )
 from unie_cortex.network.tms_nvidia_cuopt_adapter import try_nvidia_cuopt_route_variant
 from unie_cortex.config import settings
@@ -706,7 +705,10 @@ async def propose_routes(
 
     layers_present = ["cortex_linehaul_primary", "draft_tms_admin", "opportunity_intel"]
     if nvidia_invoked:
-        layers_present.append("nvidia_cuopt_cloud")
+        prod = (nvidia_variant or {}).get("producer")
+        layers_present.append(
+            "nvidia_cuopt_self_hosted" if prod == "nvidia_cuopt_self_hosted" else "nvidia_cuopt_cloud"
+        )
 
     resolution_metadata = build_resolution_metadata(
         req, routes_out, layers_present=list(layers_present)
@@ -745,22 +747,6 @@ async def propose_routes(
         "opportunity_intelligence": opportunity_intel,
         "draft_intelligence_for_tms_admin": draft_intel,
     }
-
-    if settings.tms_nim_dispatch_summary_enabled:
-        nim = await try_nim_dispatch_summary(
-            {
-                "resolution_metadata": done["resolution_metadata"],
-                "route_variants": done["route_variants"],
-            },
-            store=store,
-            tenant_id=tenant_id or getattr(req, "tenant_id", None),
-        )
-        if nim is not None:
-            done["nim_dispatch_summary"] = nim
-            if nim.get("plain_text"):
-                done["resolution_metadata"]["layers_present"] = list(
-                    done["resolution_metadata"]["layers_present"]
-                ) + ["nim_dispatch_summary"]
 
     if req.include_tuning_narrative:
         done["tuning_narrative"] = build_tuning_narrative(req, done)

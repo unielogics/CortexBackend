@@ -85,6 +85,25 @@ def _placement_grids_summary(placement_mock_rate_grids: dict[str, Any] | None) -
     }
 
 
+def _rollup_tri_modal_ui_status(tri_modal: dict[str, Any]) -> str:
+    """
+    tri_modal from item intelligence usually has no root ``status``; we must not default to ``ok``,
+    which implied NVIDIA succeeded. Surface nvidia_enhanced.status + source for the comparison UI.
+    """
+    root = tri_modal.get("status")
+    if root:
+        return str(root)
+    nv = tri_modal.get("nvidia_enhanced")
+    if not isinstance(nv, dict):
+        return "tri_modal_present"
+    st, src = nv.get("status"), nv.get("source")
+    if st is None:
+        return "tri_modal_present"
+    if src:
+        return f"{st}:{src}"
+    return str(st)
+
+
 def _optimization_enrichment_from_tri_modal(
     tri_modal: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -94,9 +113,13 @@ def _optimization_enrichment_from_tri_modal(
             "message": "multi_dc_placement_tri_modal was not produced for this run (disabled or no warehouses).",
         }
     return {
-        "status": tri_modal.get("status") or "ok",
+        "status": _rollup_tri_modal_ui_status(tri_modal),
         "schema_version": tri_modal.get("schema_version"),
         "original_input": tri_modal.get("original_input"),
+        "solver_inputs_original_vs_enhanced": tri_modal.get("solver_inputs_original_vs_enhanced"),
+        "microscopic_placement_expenses": tri_modal.get("microscopic_placement_expenses"),
+        "cuopt_fusion_audit": tri_modal.get("cuopt_fusion_audit"),
+        "cuopt_enrichment_analysis": tri_modal.get("cuopt_enrichment_analysis"),
         "baseline_without_nvidia": tri_modal.get("baseline_without_nvidia"),
         "nvidia_enhanced": tri_modal.get("nvidia_enhanced"),
         "eligibility": tri_modal.get("eligibility"),
@@ -250,7 +273,7 @@ def build_product_research_economics(
             "nvidia_parallel_narrative": nvidia_parallel,
             "note": (
                 "Convenience merge: same economics as outputs.ours plus NVIDIA/cuOpt enrichment. "
-                "Does not replace outputs.ours; nim_enhancement / parallel narrative reserved for future NIM wiring."
+                "Does not replace outputs.ours; nim_enhancement is reserved and always null (no hosted LLM)."
             ),
         }
 

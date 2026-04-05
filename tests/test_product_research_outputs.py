@@ -32,7 +32,7 @@ def _minimal_tri_modal() -> dict:
     return {
         "schema_version": "item_intelligence_multi_dc_tri_modal_v1",
         "original_input": {"warehouses": [], "lanes": [], "hub_warehouse_id": None},
-        "baseline_without_nvidia": {"source": "internal", "status": "ok"},
+        "baseline_without_nvidia": {"source": "internal", "status": "heuristic"},
         "nvidia_enhanced": {"status": "skipped", "source": "disabled"},
         "eligibility": {},
     }
@@ -78,8 +78,11 @@ def test_build_four_outputs_fingerprint_and_isolation():
     assert "optimization_enrichment" not in outs["ours"]
     assert outs["ours_plus_nvidia_enhancements"]["optimization_enrichment"]["baseline_without_nvidia"] == {
         "source": "internal",
-        "status": "ok",
+        "status": "heuristic",
     }
+    assert (
+        outs["ours_plus_nvidia_enhancements"]["optimization_enrichment"]["status"] == "skipped:disabled"
+    )
     nv = outs["nvidia_only"]
     assert nv["references_outputs_ours"] is True
     assert nv["fingerprint_of_ours"].startswith("sha256:")

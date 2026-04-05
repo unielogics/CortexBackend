@@ -47,6 +47,19 @@ def build_item_intelligence_synthesis(
             placement_note = (
                 "Inter-DC batch cannot reach configured minimum within the planning horizon — consolidate freight or revisit MOQ before recurring transfers."
             )
+        elif placement_note is None and isinstance(inv, dict):
+            if inv.get("cover_split_basis") == "allocation_monthly_flow_integer_split":
+                splits = inv.get("warehouse_splits") or []
+                bits = [
+                    f"{s.get('warehouse_id')}:{s.get('suggested_units_for_target_cover')}u"
+                    for s in splits
+                    if isinstance(s, dict) and s.get("warehouse_id") is not None
+                ][:6]
+                if bits:
+                    placement_note = (
+                        "Stock cover is split by monthly allocator flows (mock parcel grid + target shares), "
+                        "not evenly across DCs: " + ", ".join(bits) + "."
+                    )
 
         neg = landed_cost_economics.get("negotiation_suggestions") or []
         neg_focus = []

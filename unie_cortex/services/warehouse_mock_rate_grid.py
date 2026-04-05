@@ -12,6 +12,7 @@ Quotes use ``network.parcel_mock`` (carrier-specific O/D zone mocks).
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 from unie_cortex.network.parcel_mock import best_mock_parcel_among_carriers
@@ -147,6 +148,50 @@ def warehouse_origin_postal(node: dict[str, Any]) -> str | None:
     return "10001"
 
 
+def placement_dedupe_one_per_state_enabled() -> bool:
+    """Mirrors ``settings.placement_one_warehouse_per_contiguous_state`` without importing config (keeps grid tests light)."""
+    v = (os.environ.get("PLACEMENT_ONE_WAREHOUSE_PER_CONTIGUOUS_STATE") or "true").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def dedupe_warehouses_one_per_contiguous_state(
+    warehouses: list[dict[str, Any]],
+    *,
+    enabled: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """
+    Keep at most one warehouse per contiguous-US state (resolved from origin ZIP3).
+    Preserves list order; later duplicates in the same state are dropped.
+    """
+    from unie_cortex.network.zip_geo import nearest_contiguous_state_for_zip3
+
+    if not enabled:
+        return [dict(w) for w in warehouses if isinstance(w, dict)], {"applied": False}
+    out: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    seen_states: set[str] = set()
+    for w in warehouses:
+        if not isinstance(w, dict):
+            continue
+        wid = str(w.get("id") or w.get("warehouse_id") or "").strip()
+        po = normalize_zip5(str(w.get("postal") or "")) or ""
+        st: str | None = None
+        if len(po) >= 3:
+            st = nearest_contiguous_state_for_zip3(po[:3])
+        if st and st in seen_states:
+            dropped.append({"warehouse_id": wid or None, "state": st, "reason": "duplicate_contiguous_state"})
+            continue
+        if st:
+            seen_states.add(st)
+        out.append(dict(w))
+    return out, {
+        "applied": True,
+        "kept_count": len(out),
+        "dropped": dropped,
+        "note": "At most one warehouse per contiguous-US state (ZIP3 → nearest state hub proxy); earlier entries win.",
+    }
+
+
 def build_warehouse_mock_placement_grids(
     warehouses: list[dict[str, Any]],
     *,
@@ -167,8 +212,17 @@ def build_warehouse_mock_placement_grids(
     ``n_destinations_per_warehouse`` is clamped to the hub set size (48).
     """
     cars: list[CarrierCode] = carriers or ["usps", "ups", "fedex"]
+    wh_list, warehouse_input_dedupe = dedupe_warehouses_one_per_contiguous_state(
+        [dict(w) for w in warehouses if isinstance(w, dict)],
+        enabled=placement_dedupe_one_per_state_enabled(),
+    )
+    warehouses = wh_list
     if not warehouses:
-        return {"status": "skipped", "message": "no warehouses"}
+        return {
+            "status": "skipped",
+            "message": "no warehouses",
+            "warehouse_input_dedupe": warehouse_input_dedupe,
+        }
 
     wh_ids: list[str] = []
     coords: dict[str, tuple[float, float]] = {}
@@ -183,6 +237,7 @@ def build_warehouse_mock_placement_grids(
                 "status": "partial",
                 "message": f"warehouse {wid!r} needs postal or lat/lon for mock rate grid",
                 "warehouse_id": wid,
+                "warehouse_input_dedupe": warehouse_input_dedupe,
             }
         wh_ids.append(wid)
         coords[wid] = ll
@@ -190,7 +245,11 @@ def build_warehouse_mock_placement_grids(
         origin_zip[wid] = oz or "10001"
 
     if len(wh_ids) < 1:
-        return {"status": "skipped", "message": "no valid warehouse ids"}
+        return {
+            "status": "skipped",
+            "message": "no valid warehouse ids",
+            "warehouse_input_dedupe": warehouse_input_dedupe,
+        }
 
     pool = CONTIGUOUS_STATE_HUB_DESTINATIONS_48
     n_use = min(int(n_destinations_per_warehouse), len(pool))
@@ -469,9 +528,59 @@ def build_warehouse_mock_placement_grids(
     ]
     global_mean_usd = round(sum(mean_cost[w] for w in wh_ids) / len(wh_ids), 4) if wh_ids else None
 
+    n_wh = len(wh_ids)
+    n_state_hubs = len(pool_use)
+    n_carriers = len(cars)
+    od_cells = n_wh * n_state_hubs
+    carrier_comparisons_total = od_cells * n_carriers
+    primary_win_counts: dict[str, int] = {wid: 0 for wid in wh_ids}
+    for _st, prim in state_dw_primary.items():
+        if prim in primary_win_counts:
+            primary_win_counts[prim] += 1
+    primary_win_counts_out = {wid: primary_win_counts.get(wid, 0) for wid in wh_ids}
+
+    if assign_mode == "distance_tie_band":
+        primary_how = (
+            "For each state hub ZIP, warehouses within the haversine midpoint tie band are eligible; "
+            "the primary DC is the closest node (stable tie-break). Mock parcel $ then ranks economics; "
+            "alternates are other band members. Demand weights roll up to geographic_routing_share_demand_weighted."
+        )
+    else:
+        primary_how = (
+            "For each state hub, every origin warehouse’s mock parcel $ (best of all carriers) is compared; "
+            "the warehouse with the lowest $ wins primary for that state. Ties break on warehouse id order. "
+            "Alternates are other warehouses within floating-point equality of the minimum. "
+            "Demand weights apply to those primaries for network expected mock parcel $."
+        )
+
+    rate_shopping_execution_summary: dict[str, Any] = {
+        "schema_version": "rate_shopping_execution_summary_v1",
+        "mock_parcel_od_cells_evaluated": od_cells,
+        "carrier_quote_comparisons_executed": carrier_comparisons_total,
+        "dimensions": {
+            "origin_warehouse_count": n_wh,
+            "state_hub_destinations": n_state_hubs,
+            "carriers_evaluated_per_od_cell": n_carriers,
+            "carrier_codes": [str(c) for c in cars],
+        },
+        "formula_human": (
+            f"{n_wh} origin warehouse(s) × {n_state_hubs} state metro hub ZIP(s) × {n_carriers} carrier mock(s) "
+            f"= {carrier_comparisons_total} carrier-level quotes considered; "
+            f"{od_cells} O/D cells each pick the winning carrier (min mock parcel $)."
+        ),
+        "state_primary_assignment_mode": assign_mode,
+        "how_primary_ship_from_dc_is_chosen_per_state": primary_how,
+        "states_where_each_warehouse_is_demand_weighted_primary": primary_win_counts_out,
+        "note": (
+            "Each O/D cell calls the parcel mock stack (all carriers) at the grid’s weight and DIMs. "
+            "warehouse_grids below samples up to n_destinations_per_warehouse quotes per DC for UI density; "
+            "the full state matrix is mock_parcel_usd_by_warehouse_by_state."
+        ),
+    }
+
     return {
         "status": "complete",
-        "assumptions_version": "warehouse_mock_rate_grid_v6_demand_weighted_state_coverage",
+        "assumptions_version": "warehouse_mock_rate_grid_v7_matrix_and_last_mile_context",
         "n_destinations_per_warehouse": n_use,
         "relative_midpoint_tie_band": relative_midpoint_tie_band,
         "state_primary_assignment": assign_mode,
@@ -502,12 +611,42 @@ def build_warehouse_mock_placement_grids(
         "demand_weighted_mock_parcel_usd_if_all_from_warehouse": dw_if_all_from_warehouse,
         "state_shipping_coverage": state_shipping_coverage,
         "warehouses_routing_summary": warehouses_routing_summary,
+        "mock_parcel_usd_by_warehouse_by_state": {
+            wid: {st: round(float(parcel_usd_by_warehouse_by_state[wid][st]), 6) for st in sorted(demand_w.keys())}
+            for wid in wh_ids
+        },
+        "warehouse_input_dedupe": warehouse_input_dedupe,
+        "rate_shopping_execution_summary": rate_shopping_execution_summary,
+        "last_mile_optimization_context": {
+            "schema_version": "last_mile_optimization_context_v1",
+            "deterministic_primary_per_state": (
+                "state_demand_primary_warehouse_id picks cheapest mock parcel to that state's hub per "
+                "state_primary_assignment (min_mock_parcel vs distance_tie_band)."
+            ),
+            "nvidia_cuopt_role": (
+                "When multi_dc_placement_tri_modal.nvidia_enhanced completes, cuOpt uses fused solver rows that "
+                "include these mock parcel signals (plus allocation economics) — a joint positioning solve, not a "
+                "re-quote of every O/D. For carrier-accurate last mile, set SHIPPO_API_KEY and use integrated parcel "
+                "paths where supported."
+            ),
+            "matrix_shape": {"warehouse_count": len(wh_ids), "state_count": len(demand_w)},
+            "estimated_mock_parcel_carrier_comparisons": carrier_comparisons_total,
+            "quote_topology_note": (
+                "One intelligence run builds **one** national grid for the catalog median (or chosen) weight/DIMs: "
+                "comparisons ≈ N_warehouses × 48_state_hubs × N_carriers (each cell picks best carrier). "
+                "Three SKUs with **different** sizes do **not** multiply that count unless you run three separate "
+                "intelligence passes or re-quote; per-SKU economics can re-mean from stored O/D rows when weight "
+                "differs slightly."
+            ),
+        },
         "note": (
             "Same 48 contiguous-state hub ZIPs for every warehouse (one hot metro per state; no AK/HI). "
             "Each DC is rate-shopped to all hubs including its own state's hub. "
             "carrier_zone_origin_to_destination is mock O/D zone for the winning carrier. "
             "demand_weighted_expected_mock_parcel_usd_network uses state demand weights and "
-            "state_primary_assignment (min_mock_parcel or distance_tie_band)."
+            "state_primary_assignment (min_mock_parcel or distance_tie_band). "
+            "mock_parcel_usd_by_warehouse_by_state is the full N_warehouse × 48_state mock last-mile matrix for the "
+            "parcel_assumptions used to build this grid."
         ),
     }
 

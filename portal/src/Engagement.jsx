@@ -70,6 +70,9 @@ export default function Engagement() {
     <div style={{ fontFamily: "system-ui", maxWidth: 900, margin: "2rem auto", padding: 24 }}>
       <Link to="/">← Home</Link>
       <h2>Engagement {id}</h2>
+      <p style={{ fontSize: 14 }}>
+        <Link to={`/e/${id}/planning`}>Order-financial planning run</Link> (cuOpt tri-modal + national rate-shop grids)
+      </p>
 
       <h3>1. Column mapping (JSON)</h3>
       <textarea

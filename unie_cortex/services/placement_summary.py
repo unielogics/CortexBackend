@@ -135,3 +135,184 @@ def build_inventory_placement_summary(
     if product_origin_region:
         out["product_origin_region"] = str(product_origin_region).strip()
     return out
+
+
+def _hamilton_integer_split_total(total: int, norm_shares: list[float]) -> list[int]:
+    """
+    Largest-remainder split of ``total`` across normalized shares (same family as allocation_v1).
+    """
+    total_int = max(0, int(total))
+    n = len(norm_shares)
+    if n == 0:
+        return []
+    if total_int == 0:
+        return [0] * n
+    raw = [total_int * float(ns) for ns in norm_shares]
+    floors = [int(math.floor(r + 1e-9)) for r in raw]
+    leftover = total_int - sum(floors)
+    fracs = [(raw[i] - floors[i], i) for i in range(n)]
+    fracs.sort(key=lambda t: (-t[0], t[1]))
+    out = list(floors)
+    for k in range(max(0, leftover)):
+        out[fracs[k][1]] += 1
+    return out
+
+
+def apply_inventory_cover_splits_from_allocation(
+    demand_by_sku: dict[str, Any],
+    allocation: dict[str, Any] | None,
+) -> None:
+    """
+    Replace even warehouse cover splits with weights from ``allocation.lines[].placement``
+    (``recommended_monthly_units`` per DC). Matches item-intelligence monthly flow used for
+    economics and transfer legs.
+
+    Mutates ``demand_by_sku[*].inventory_placement_summary`` in place.
+    """
+    if not allocation or not isinstance(allocation, dict):
+        return
+    lines = allocation.get("lines")
+    if not isinstance(lines, list):
+        return
+
+    for line in lines:
+        if not isinstance(line, dict):
+            continue
+        sku = line.get("sku")
+        if sku is None:
+            continue
+        sku_s = str(sku)
+        dem = demand_by_sku.get(sku_s)
+        if not isinstance(dem, dict):
+            continue
+        inv = dem.get("inventory_placement_summary")
+        if not isinstance(inv, dict):
+            continue
+        cover_raw = inv.get("suggested_total_units_for_target_cover")
+        if cover_raw is None:
+            continue
+        try:
+            cover_i = int(cover_raw)
+        except (TypeError, ValueError):
+            continue
+        if cover_i <= 0:
+            continue
+
+        placement = line.get("placement") or []
+        if not isinstance(placement, list) or not placement:
+            continue
+
+        rows: list[tuple[str, int, dict[str, Any]]] = []
+        for p in placement:
+            if not isinstance(p, dict):
+                continue
+            wid = str(p.get("warehouse_id") or "").strip()
+            if not wid:
+                continue
+            try:
+                wu = int(p.get("recommended_monthly_units") or 0)
+            except (TypeError, ValueError):
+                wu = 0
+            rows.append((wid, max(0, wu), p))
+
+        if not rows:
+            continue
+
+        ordered_wids = [r[0] for r in rows]
+        weights = [r[1] for r in rows]
+
+        sum_w = sum(weights)
+        if sum_w <= 0:
+            n = len(ordered_wids)
+            shares = [1.0 / n] * n if n else []
+        else:
+            shares = [float(w) / float(sum_w) for w in weights]
+
+        cover_parts = _hamilton_integer_split_total(cover_i, shares)
+        if len(cover_parts) != len(rows):
+            continue
+
+        old_splits = inv.get("warehouse_splits") if isinstance(inv.get("warehouse_splits"), list) else []
+        postal_by_wid: dict[str, Any] = {}
+        for s in old_splits:
+            if isinstance(s, dict) and s.get("warehouse_id"):
+                postal_by_wid[str(s["warehouse_id"])] = s.get("postal")
+
+        td = float(inv.get("target_days_cover") or 75.0)
+        new_splits: list[dict[str, Any]] = []
+        for i, (wid, flow_u, p_ent) in enumerate(rows):
+            share_f = round(flow_u / sum_w, 6) if sum_w > 0 else round(1.0 / len(rows), 6)
+            pc = postal_by_wid.get(wid) if postal_by_wid.get(wid) is not None else p_ent.get("postal")
+            new_splits.append(
+                {
+                    "warehouse_id": wid,
+                    "postal": pc,
+                    "suggested_units_for_target_cover": cover_parts[i],
+                    "target_days_cover": td,
+                    "allocation_monthly_flow_units": flow_u,
+                    "allocation_share_of_flow": share_f,
+                    "note": (
+                        f"~{td:.0f}d network cover at this node: {cover_parts[i]} units — "
+                        f"{flow_u} of {sum_w} units/mo monthly flow from Cortex allocator "
+                        f"(target shares merged with mock parcel grid; integer demand split)."
+                    ),
+                }
+            )
+
+        inv2 = dict(inv)
+        inv2["warehouse_splits"] = new_splits
+        inv2["cover_split_basis"] = "allocation_monthly_flow_integer_split"
+        inv2["assumptions_version"] = "inventory_placement_summary_v2"
+        nb = list(inv2.get("narrative_bullets") or [])
+        split_line = (
+            f"Cover units split by monthly allocator flows across {len(new_splits)} node(s) "
+            f"({sum_w} units/mo modeled) — not an even divide; weights come from merged target shares and "
+            "48-state mock parcel rate-shopping primary routing."
+        )
+        if len(nb) >= 4:
+            nb[3] = split_line
+        else:
+            while len(nb) < 3:
+                nb.append("")
+            nb.append(split_line)
+        inv2["narrative_bullets"] = nb
+        dem["inventory_placement_summary"] = inv2
+
+
+def append_cuopt_tri_modal_note_to_placement_summaries(
+    demand_by_sku: dict[str, Any],
+    tri_modal: dict[str, Any] | None,
+) -> None:
+    """Append one narrative bullet clarifying cuOpt vs monthly allocator (read-only UX aid)."""
+    if not isinstance(tri_modal, dict):
+        return
+    overview_status = str(tri_modal.get("status") or "").strip()
+    if not overview_status and isinstance(tri_modal.get("baseline_without_nvidia"), dict):
+        overview_status = "complete"
+    nvb = tri_modal.get("nvidia_enhanced")
+    nvidia_st = str(nvb.get("status") or "").strip() if isinstance(nvb, dict) else ""
+    elig = tri_modal.get("eligibility") if isinstance(tri_modal.get("eligibility"), dict) else {}
+    src = str(elig.get("cuopt_solver_network_source") or "").strip()
+    bullet = (
+        f"cuOpt tri-modal: overview status «{overview_status or '—'}», NVIDIA layer «{nvidia_st or 'off/skipped'}»"
+        + (f", solver network source «{src}»." if src else ".")
+        + " Monthly placement and cover split use the deterministic SKU allocator and 48-state mock parcel grid "
+        "(rate-shopped per O/D). cuOpt runs a separate fused-cost network solve — compare "
+        "`multi_dc_placement_tri_modal` to this run. Set `cuopt_inform_allocation_weights` for optional share "
+        "nudges and `allocation_cuopt_counterfactual`."
+    )
+
+    for dem in demand_by_sku.values():
+        if not isinstance(dem, dict):
+            continue
+        inv = dem.get("inventory_placement_summary")
+        if not isinstance(inv, dict):
+            continue
+        inv2 = dict(inv)
+        nb = list(inv2.get("narrative_bullets") or [])
+        nb.append(bullet)
+        inv2["narrative_bullets"] = nb
+        inv2["multi_dc_placement_tri_modal_status"] = overview_status or None
+        if nvidia_st:
+            inv2["multi_dc_placement_tri_modal_nvidia_status"] = nvidia_st
+        dem["inventory_placement_summary"] = inv2
