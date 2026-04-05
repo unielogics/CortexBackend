@@ -15,6 +15,7 @@ from unie_cortex.config import settings
 from unie_cortex.db.deps import get_store
 from unie_cortex.network.facility_freight_profile import FacilityFreightProfile
 from unie_cortex.db.store import CortexStore
+from unie_cortex.integrations.volume_calibration_store import load_calibration_state, record_volume_observation
 from unie_cortex.services.intelligence_run import run_item_intelligence
 from unie_cortex.services.product_research_economics import PRODUCT_RESEARCH_OUTPUT_KEYS
 from unie_cortex.services.physical_similarity import attach_signature_to_catalog_row
@@ -349,6 +350,94 @@ async def catalog_get(
     if not row:
         raise HTTPException(404, detail="SKU not in catalog")
     return attach_signature_to_catalog_row(row)
+
+
+class VolumeCalibrationFeedbackBody(BaseModel):
+    """
+    Feed observed monthly unit velocity to tighten per-category scale_ema.
+
+    Use ``category_key`` from ``demand_by_sku.*.volume_intelligence.signals.category_key`` when available.
+    """
+
+    category_key: str = Field(
+        "unknown",
+        max_length=512,
+        description="Category bucket key (root|productGroup|binding) from volume intelligence signals.",
+    )
+    predicted_monthly_mid: float = Field(
+        ...,
+        gt=0,
+        description="Model baseline to compare against actuals — prefer demand_by_sku.*.volume_intelligence."
+        "asin_monthly_mid_before_volume_model (pre relational + calibration), else keepa_marketplace_monthly_reference.monthly_units_est_mid.",
+    )
+    actual_monthly_units: float = Field(
+        ...,
+        ge=0,
+        description="Observed or POS monthly units for the same window.",
+    )
+
+
+@router.post(
+    "/{tenant_id}/volume-calibration/feedback",
+    summary="Record actual vs predicted monthly units to tune category volume scale",
+)
+async def volume_calibration_feedback(
+    tenant_id: str,
+    body: VolumeCalibrationFeedbackBody,
+):
+    path = settings.volume_calibration_store_path
+    if not path or not str(path).strip():
+        raise HTTPException(
+            400,
+            detail="volume_calibration_store_path is not configured — set VOLUME_CALIBRATION_STORE_PATH to enable learning",
+        )
+    out = record_volume_observation(
+        str(path).strip(),
+        category_key=body.category_key.strip() or "unknown",
+        predicted_monthly_mid=body.predicted_monthly_mid,
+        actual_monthly_units=body.actual_monthly_units,
+        alpha=float(settings.volume_calibration_alpha),
+    )
+    if out.get("status") == "rejected":
+        raise HTTPException(400, detail=out.get("note", "rejected"))
+    return {"tenant_id": tenant_id, **out}
+
+
+@router.get(
+    "/{tenant_id}/volume-calibration/state",
+    summary="Read learned per-category volume scale (scale_ema, sample counts)",
+)
+async def volume_calibration_state_get(
+    tenant_id: str,
+    category_key: str | None = Query(
+        None,
+        description="When set, return only this category row (same key as volume_intelligence.signals.category_key).",
+    ),
+):
+    """Reads the JSON file from ``VOLUME_CALIBRATION_STORE_PATH`` (one global file unless you vary the path per tenant)."""
+    path = settings.volume_calibration_store_path
+    if not path or not str(path).strip():
+        raise HTTPException(
+            400,
+            detail="volume_calibration_store_path is not configured — set VOLUME_CALIBRATION_STORE_PATH",
+        )
+    st = load_calibration_state(str(path).strip())
+    cats = st.get("categories") if isinstance(st.get("categories"), dict) else {}
+    if category_key and str(category_key).strip():
+        ck = str(category_key).strip()
+        row = cats.get(ck)
+        return {
+            "tenant_id": tenant_id,
+            "category_key": ck,
+            "category_row": row,
+            "store_version": st.get("version"),
+        }
+    return {
+        "tenant_id": tenant_id,
+        "store_version": st.get("version"),
+        "category_count": len(cats),
+        "categories": cats,
+    }
 
 
 @router.post(

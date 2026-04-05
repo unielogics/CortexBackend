@@ -185,7 +185,52 @@ class Settings(BaseSettings):
     keepa_ttl_days: int = Field(
         30,
         validation_alias=AliasChoices("KEEPA_TTL_DAYS", "keepa_ttl_days"),
-        description="Per-ASIN Keepa cache TTL in days (full product JSON reuses until expiry)",
+        description=(
+            "Per-ASIN Keepa cache TTL in days (full product JSON reuses until expiry). "
+            "For fresher listings, set e.g. KEEPA_TTL_DAYS=2. Time-series signals come from each "
+            "payload's csv/stats, not from offer row counts."
+        ),
+    )
+    keepa_assume_unknown_condition_is_new: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "KEEPA_ASSUME_UNKNOWN_CONDITION_IS_NEW",
+            "keepa_assume_unknown_condition_is_new",
+        ),
+        description=(
+            "When true, Keepa offer rows with missing/unparseable condition count toward new-path "
+            "merchant metrics (legacy). When false, they are 'unknown' and excluded from new-path counts."
+        ),
+    )
+    keepa_offers_digest_max_sellers: int = Field(
+        250,
+        validation_alias=AliasChoices(
+            "KEEPA_OFFERS_DIGEST_MAX_SELLERS",
+            "keepa_offers_digest_max_sellers",
+        ),
+        ge=1,
+        le=10_000,
+        description="Cap offers_by_seller[] length in keepa_offers_digest for API/Mongo size",
+    )
+    keepa_trend_bundle_max_points: int = Field(
+        160,
+        validation_alias=AliasChoices(
+            "KEEPA_TREND_BUNDLE_MAX_POINTS",
+            "keepa_trend_bundle_max_points",
+        ),
+        ge=24,
+        le=500,
+        description="Max downsampled points in keepa_trend_bundle chart series",
+    )
+    keepa_trend_risk_discount: float = Field(
+        1.0,
+        validation_alias=AliasChoices(
+            "KEEPA_TREND_RISK_DISCOUNT",
+            "keepa_trend_risk_discount",
+        ),
+        ge=0.1,
+        le=2.0,
+        description="Multiplies suggested_cover_units in keepa_trend_bundle (<1 = more conservative)",
     )
     keepa_product_offers: int = Field(
         20,
@@ -259,6 +304,40 @@ class Settings(BaseSettings):
             "keepa_planning_peer_distance_epsilon",
         ),
         description="Peers within d_min + epsilon are averaged for reference buy-box win %",
+    )
+    keepa_volume_intelligence_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "KEEPA_VOLUME_INTELLIGENCE_ENABLED",
+            "keepa_volume_intelligence_enabled",
+        ),
+        description="Blend sales-rank + review momentum with optional learned category scale before seller planning",
+    )
+    keepa_volume_model_version: str = Field(
+        "cortex_volume_v1",
+        validation_alias=AliasChoices(
+            "KEEPA_VOLUME_MODEL_VERSION",
+            "keepa_volume_model_version",
+        ),
+        description="Version tag stored on demand.volume_intelligence for audits",
+    )
+    volume_calibration_store_path: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "VOLUME_CALIBRATION_STORE_PATH",
+            "volume_calibration_store_path",
+        ),
+        description="Optional JSON path for per-category scale_ema learning (actual vs predicted monthly units)",
+    )
+    volume_calibration_alpha: float = Field(
+        0.15,
+        validation_alias=AliasChoices(
+            "VOLUME_CALIBRATION_ALPHA",
+            "volume_calibration_alpha",
+        ),
+        ge=0.01,
+        le=0.5,
+        description="EMA weight for each volume calibration observation",
     )
     placement_mock_destinations_per_warehouse: int = Field(
         48,

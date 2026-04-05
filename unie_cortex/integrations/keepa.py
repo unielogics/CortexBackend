@@ -75,8 +75,37 @@ class KeepaService:
             return {"ok": False, "error": type(e).__name__, "message": str(e)[:200]}
 
         if self._store and data:
+            offers_digest: dict[str, Any] | None = None
+            digest_version: str | None = None
+            products = data.get("products")
+            if isinstance(products, list) and products and isinstance(products[0], dict):
+                from unie_cortex.integrations.keepa_demand import normalize_offers_by_seller
+
+                p0 = products[0]
+                ol = p0.get("offers") if isinstance(p0.get("offers"), list) else None
+                lu = p0.get("lastUpdate")
+                try:
+                    lu_m = int(lu) if lu is not None else None
+                except (TypeError, ValueError):
+                    lu_m = None
+                if lu_m is not None and lu_m <= 0:
+                    lu_m = None
+                offers_digest = normalize_offers_by_seller(
+                    ol,
+                    assume_unknown_condition_is_new=bool(
+                        getattr(settings, "keepa_assume_unknown_condition_is_new", True)
+                    ),
+                    max_sellers=int(getattr(settings, "keepa_offers_digest_max_sellers", 250) or 250),
+                    lu_minute=lu_m,
+                )
+                digest_version = str(offers_digest.get("digest_version") or "") or None
             await self._store.keepa_snapshot_upsert(
-                tenant_id=tenant_id, asin=asin, data=data, domain=domain
+                tenant_id=tenant_id,
+                asin=asin,
+                data=data,
+                domain=domain,
+                offers_digest=offers_digest,
+                offers_digest_version=digest_version,
             )
 
         return {"ok": True, "data": data}

@@ -26,6 +26,8 @@ def test_monthly_override_scales_band():
             "monthly_units_est_mid": 100.0,
             "monthly_units_est_low": 75.0,
             "monthly_units_est_high": 133.0,
+            "keepa_marketplace_monthly_reference": {"monthly_units_est_mid": 400.0},
+            "volume_intelligence": {"regime": "neutral", "model_version": "cortex_volume_v1"},
         }
     }
     meta = apply_planning_monthly_units_overrides(demand, {"S1": 200.0})
@@ -34,7 +36,11 @@ def test_monthly_override_scales_band():
     assert demand["S1"]["monthly_units_est_mid"] == 200
     assert demand["S1"]["monthly_units_est_low"] == 150
     assert demand["S1"]["monthly_units_est_high"] == 266
-    assert demand["S1"]["planning_monthly_units_override"]["user_monthly_units_mid"] == 200
+    pov = demand["S1"]["planning_monthly_units_override"]
+    assert pov["user_monthly_units_mid"] == 200
+    assert pov.get("keepa_marketplace_monthly_mid_at_override") == 400.0
+    assert pov.get("volume_intelligence_regime") == "neutral"
+    assert pov.get("volume_model_version") == "cortex_volume_v1"
 
 
 def test_monthly_override_below_minimum_skipped():

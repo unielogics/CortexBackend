@@ -231,9 +231,16 @@ class CortexStore:
         raise NotImplementedError
 
     async def keepa_snapshot_upsert(
-        self, tenant_id: str, asin: str, data: dict, domain: int = 1
+        self,
+        tenant_id: str,
+        asin: str,
+        data: dict,
+        domain: int = 1,
+        *,
+        offers_digest: dict[str, Any] | None = None,
+        offers_digest_version: str | None = None,
     ) -> None:
-        """Persist Keepa snapshot for tenant+ASIN."""
+        """Persist Keepa snapshot for tenant+ASIN (Mongo may also store normalized offers_digest)."""
         raise NotImplementedError
 
     async def spapi_catalog_snapshot_get(
@@ -1099,8 +1106,16 @@ class SqlCortexStore(CortexStore):
         return {"data": json.loads(row.data_json), "refreshed_at": row.refreshed_at.isoformat()}
 
     async def keepa_snapshot_upsert(
-        self, tenant_id: str, asin: str, data: dict, domain: int = 1
+        self,
+        tenant_id: str,
+        asin: str,
+        data: dict,
+        domain: int = 1,
+        *,
+        offers_digest: dict[str, Any] | None = None,
+        offers_digest_version: str | None = None,
     ):
+        del offers_digest, offers_digest_version  # SQL schema stores full JSON only
         data_json = json.dumps(data)
         r = await self.s.execute(
             select(KeepaSnapshot).where(
@@ -2532,16 +2547,26 @@ class MongoCortexStore(CortexStore):
         return {"data": data, "refreshed_at": d["refreshed_at"].isoformat()}
 
     async def keepa_snapshot_upsert(
-        self, tenant_id: str, asin: str, data: dict, domain: int = 1
+        self,
+        tenant_id: str,
+        asin: str,
+        data: dict,
+        domain: int = 1,
+        *,
+        offers_digest: dict[str, Any] | None = None,
+        offers_digest_version: str | None = None,
     ):
+        payload: dict[str, Any] = {
+            "data": data,
+            "refreshed_at": _utc(),
+        }
+        if offers_digest is not None:
+            payload["offers_digest"] = offers_digest
+        if offers_digest_version is not None:
+            payload["offers_digest_version"] = offers_digest_version
         await self.keepa.update_one(
             {"tenant_id": tenant_id, "asin": asin, "domain": domain},
-            {
-                "$set": {
-                    "data": data,
-                    "refreshed_at": _utc(),
-                }
-            },
+            {"$set": payload},
             upsert=True,
         )
 

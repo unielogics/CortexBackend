@@ -481,6 +481,8 @@ function DemandEnrichmentTable({ demandBySku }) {
             <th style={{ padding: 10 }}>SKU</th>
             <th style={{ padding: 10 }}>ASIN</th>
             <th style={{ padding: 10 }}>Est. monthly units (integer)</th>
+            <th style={{ padding: 10 }}>Reviews (30d)</th>
+            <th style={{ padding: 10 }}>Sales rank (30d)</th>
             <th style={{ padding: 10 }}>Inventory / cover (by DC)</th>
           </tr>
         </thead>
@@ -488,11 +490,27 @@ function DemandEnrichmentTable({ demandBySku }) {
           {rows.slice(0, 60).map((r) => {
             const inv = r.inventory_placement_summary;
             const { badge, text } = formatInventoryCoverHint(inv);
+            const mom =
+              r.momentum_30d_ux && typeof r.momentum_30d_ux === "object" ? r.momentum_30d_ux : null;
+            const rev30 = mom?.new_reviews_last_30d;
+            const rankLine =
+              mom?.sales_rank_delta_30d_plain_language ||
+              (mom?.sales_rank_delta_30d != null ? `Δ ${mom.sales_rank_delta_30d}` : null);
+            const regime = mom?.regime ? String(mom.regime) : null;
             return (
               <tr key={r.sku} style={{ borderTop: "1px solid #e2e8f0", verticalAlign: "top" }}>
                 <td style={{ padding: 10, fontFamily: "monospace" }}>{r.sku}</td>
                 <td style={{ padding: 10 }}>{r.asin || "—"}</td>
                 <td style={{ padding: 10, fontVariantNumeric: "tabular-nums" }}>{formatMonthlyUnitsInteger(r)}</td>
+                <td style={{ padding: 10, fontSize: 12 }}>
+                  {rev30 != null ? String(rev30) : "—"}
+                  {regime ? (
+                    <div style={{ color: "#64748b", marginTop: 4 }}>{regime}</div>
+                  ) : null}
+                </td>
+                <td style={{ padding: 10, fontSize: 12, lineHeight: 1.45, maxWidth: 280 }}>
+                  {rankLine || "—"}
+                </td>
                 <td style={{ padding: 10, fontSize: 12, lineHeight: 1.45 }}>
                   {badge}
                   {text}
@@ -835,7 +853,7 @@ function RunResults({ data }) {
 
       <Section
         title="Demand enrichment (marketplace + placement hints)"
-        subtitle="demand_by_sku from Keepa/cache; monthly_units_est_mid is shown as a whole number. Per-DC cover uses warehouse_splits — after item-intelligence allocation, splits follow monthly allocator flows (badge «allocator cover») when the backend emits inventory_placement_summary_v2."
+        subtitle="demand_by_sku from Keepa/cache; monthly_units_est_mid is a whole number after volume_intelligence (rank↔review + optional calibration). Reviews (30d) and sales-rank change come from momentum_30d_ux. Per-DC cover uses warehouse_splits — allocator cover badge when inventory_placement_summary_v2 is present."
       >
         <DemandEnrichmentTable demandBySku={data.demand_by_sku} />
       </Section>

@@ -106,9 +106,20 @@ def apply_planning_monthly_units_overrides(
         dem["monthly_units_est_mid"] = round(v, 4)
         dem["monthly_units_est_low"] = float(nlow)
         dem["monthly_units_est_high"] = float(nhigh)
+        ref = dem.get("keepa_marketplace_monthly_reference")
+        ref_mid = None
+        if isinstance(ref, dict) and ref.get("monthly_units_est_mid") is not None:
+            try:
+                ref_mid = float(ref["monthly_units_est_mid"])
+            except (TypeError, ValueError):
+                ref_mid = None
+        vi = dem.get("volume_intelligence") if isinstance(dem.get("volume_intelligence"), dict) else None
         block = {
             "user_monthly_units_mid": round(v, 4),
             "baseline_monthly_units_est_mid": baseline,
+            "keepa_marketplace_monthly_mid_at_override": ref_mid,
+            "volume_intelligence_regime": vi.get("regime") if vi else None,
+            "volume_model_version": vi.get("model_version") if vi else None,
             "note": (
                 "Request planning_monthly_units_override_by_sku — replaces modeled seller planning mid for "
                 "this run (allocation, network trim, LTL, placement summary after origin merge)."
