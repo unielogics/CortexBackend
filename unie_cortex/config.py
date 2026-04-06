@@ -191,6 +191,62 @@ class Settings(BaseSettings):
             "payload's csv/stats, not from offer row counts."
         ),
     )
+    product_research_keepa_refresh_hours: int = Field(
+        48,
+        ge=1,
+        le=24 * 30,
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_KEEPA_REFRESH_HOURS",
+            "product_research_keepa_refresh_hours",
+        ),
+        description="Keepa freshness target for Product Research runs (hours).",
+    )
+    product_research_rerun_update_days: int = Field(
+        5,
+        ge=1,
+        le=90,
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_RERUN_UPDATE_DAYS",
+            "product_research_rerun_update_days",
+        ),
+        description="When rerun is older than this age (days), persist fresh Product Research run state.",
+    )
+    product_research_hot_retention_months: int = Field(
+        6,
+        ge=1,
+        le=36,
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_HOT_RETENTION_MONTHS",
+            "product_research_hot_retention_months",
+        ),
+        description="Hot-system retention window before archive lifecycle (months).",
+    )
+    product_research_require_s3_durability_in_prod: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_REQUIRE_S3_DURABILITY_IN_PROD",
+            "product_research_require_s3_durability_in_prod",
+        ),
+        description="When true in production, fail startup if S3 artifacts are not configured.",
+    )
+    product_research_archive_storage_class: str = Field(
+        "STANDARD_IA",
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_ARCHIVE_STORAGE_CLASS",
+            "product_research_archive_storage_class",
+        ),
+        description="Target S3 storage class used by Product Research lifecycle transition job.",
+    )
+    product_research_lifecycle_batch_size: int = Field(
+        200,
+        ge=1,
+        le=5000,
+        validation_alias=AliasChoices(
+            "PRODUCT_RESEARCH_LIFECYCLE_BATCH_SIZE",
+            "product_research_lifecycle_batch_size",
+        ),
+        description="Max Product Research runs processed per lifecycle audit execution.",
+    )
     keepa_assume_unknown_condition_is_new: bool = Field(
         True,
         validation_alias=AliasChoices(
@@ -231,6 +287,56 @@ class Settings(BaseSettings):
         ge=0.1,
         le=2.0,
         description="Multiplies suggested_cover_units in keepa_trend_bundle (<1 = more conservative)",
+    )
+    keepa_trend_forecast_lookback_days: int = Field(
+        60,
+        validation_alias=AliasChoices(
+            "KEEPA_TREND_FORECAST_LOOKBACK_DAYS",
+            "keepa_trend_forecast_lookback_days",
+        ),
+        ge=14,
+        le=365,
+        description="Lookback window used for next-30d Keepa trend forecast factors",
+    )
+    keepa_trend_forecast_horizon_days: int = Field(
+        30,
+        validation_alias=AliasChoices(
+            "KEEPA_TREND_FORECAST_HORIZON_DAYS",
+            "keepa_trend_forecast_horizon_days",
+        ),
+        ge=7,
+        le=120,
+        description="Forward forecast horizon days for keepa_trend_bundle.forecast_next_30d",
+    )
+    keepa_hybrid_buybox_weight: float = Field(
+        0.7,
+        validation_alias=AliasChoices(
+            "KEEPA_HYBRID_BUYBOX_WEIGHT",
+            "keepa_hybrid_buybox_weight",
+        ),
+        ge=0.0,
+        le=1.0,
+        description="Weight for buy-box intelligence in unified sell decision scoring",
+    )
+    keepa_hybrid_trend_weight: float = Field(
+        0.3,
+        validation_alias=AliasChoices(
+            "KEEPA_HYBRID_TREND_WEIGHT",
+            "keepa_hybrid_trend_weight",
+        ),
+        ge=0.0,
+        le=1.0,
+        description="Weight for trend intelligence in unified sell decision scoring",
+    )
+    keepa_hybrid_review_weight: float = Field(
+        0.2,
+        validation_alias=AliasChoices(
+            "KEEPA_HYBRID_REVIEW_WEIGHT",
+            "keepa_hybrid_review_weight",
+        ),
+        ge=0.0,
+        le=1.0,
+        description="Review-signal contribution factor inside trend side of hybrid sell decision",
     )
     keepa_product_offers: int = Field(
         20,
@@ -558,6 +664,37 @@ class Settings(BaseSettings):
             "smart_network_fixed_cost_usd_per_active_node_monthly",
         ),
         description="Optional fixed $/month per active DC added to the subset selection objective (discourages extra nodes).",
+    )
+    smart_network_free_delivery_soft_score_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_FREE_DELIVERY_SOFT_SCORE_ENABLED",
+            "smart_network_free_delivery_soft_score_enabled",
+        ),
+        description="When True, include per-SKU free-delivery policy penalty as a soft term in network subset objective.",
+    )
+    smart_network_free_delivery_coverage_penalty_weight: float = Field(
+        1.0,
+        ge=0.0,
+        le=20.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_FREE_DELIVERY_COVERAGE_PENALTY_WEIGHT",
+            "smart_network_free_delivery_coverage_penalty_weight",
+        ),
+        description=(
+            "Weight on uncovered free-delivery policy monthly-shipping penalty "
+            "for the soft network objective term."
+        ),
+    )
+    smart_network_free_delivery_threshold_gap_penalty_weight: float = Field(
+        1.0,
+        ge=0.0,
+        le=20.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_FREE_DELIVERY_THRESHOLD_GAP_PENALTY_WEIGHT",
+            "smart_network_free_delivery_threshold_gap_penalty_weight",
+        ),
+        description="Weight on minimum-purchase threshold-gap shipping penalty in the soft network objective term.",
     )
     smart_network_learned_rank_weights_enabled: bool = Field(
         False,
@@ -1508,6 +1645,7 @@ class Settings(BaseSettings):
         "nim_csv_mapping_enabled",
         "ai_observability_enabled",
         "semantic_memory_enabled",
+        "product_research_require_s3_durability_in_prod",
         mode="before",
     )
     @classmethod

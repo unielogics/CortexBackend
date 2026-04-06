@@ -92,3 +92,16 @@ class NimMappingResult(BaseModel):
     source: Literal["heuristic", "nim", "merged"] = "heuristic"
     warnings: list[str] = Field(default_factory=list)
     unmapped_columns: list[str] = Field(default_factory=list)
+    mode: Literal["seller_optimization", "warehouse_audit"] | None = None
+    mapping_quality: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Coverage/confidence summary for mapping reliability.",
+    )
+    narration: list[str] = Field(
+        default_factory=list,
+        description="Human-readable explanation of mapping quality and observed risks.",
+    )
+    recommended_actions: list[str] = Field(
+        default_factory=list,
+        description="Follow-up actions to improve confidence before ingestion.",
+    )

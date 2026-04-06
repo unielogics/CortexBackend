@@ -31,7 +31,11 @@ from unie_cortex.services.sku_intelligence_merge import (
     merge_shipping_intelligence,
     pick_donor,
 )
-from unie_cortex.services.intelligence_run import apply_product_origin_to_demand_by_sku
+from unie_cortex.services.intelligence_run import (
+    _build_free_delivery_policy_inputs,
+    _build_seller_ltl_pickup_estimate,
+    apply_product_origin_to_demand_by_sku,
+)
 from unie_cortex.services.placement_summary import build_inventory_placement_summary
 
 
@@ -888,6 +892,44 @@ def test_apply_product_origin_catalog_extra_overridden_by_body():
         warehouse_nodes=[{"warehouse_id": "W", "postal": "11111"}],
     )
     assert demand["S"]["inventory_placement_summary"]["product_origin_postal"] == "33333"
+
+
+def test_free_delivery_policy_inputs_mark_missing_metrics_not_applicable():
+    alloc = [
+        {"sku": "A", "monthly_units": 100, "weight_lb": 2.0},
+        {"sku": "B", "monthly_units": 120, "weight_lb": 1.0},
+    ]
+    catalog = {
+        "A": {"sku": "A", "extra": {"product_origin_postal": "07055"}},
+        "B": {"sku": "B", "extra": {"product_origin_postal": "90001"}},
+    }
+    _rows, applicable, summary = _build_free_delivery_policy_inputs(
+        alloc_inputs=alloc,
+        catalog_by_sku=catalog,
+        body_origin_postal=None,
+        free_delivery_policy_by_sku={"A": {"free_delivery_miles": 75}},
+        free_delivery_policy_mapping={"source": "unit_test"},
+    )
+    by_sku = {r["sku"]: r for r in summary["rows"]}
+    assert by_sku["A"]["free_delivery_policy_applicable"] is False
+    assert by_sku["A"]["free_delivery_policy_reason"] == "missing_metrics"
+    assert by_sku["B"]["free_delivery_policy_applicable"] is False
+    assert len(applicable) == 0
+
+
+def test_seller_ltl_pickup_estimate_always_emits_schema_rows():
+    alloc = [{"sku": "S1", "monthly_units": 60, "weight_lb": 2.0, "cube_cuft": 0.5}]
+    catalog = {"S1": {"sku": "S1", "length_in": 10.0, "width_in": 8.0, "height_in": 6.0}}
+    out = _build_seller_ltl_pickup_estimate(
+        alloc_inputs=alloc,
+        catalog_by_sku=catalog,
+        free_delivery_signals={"estimated_threshold_gap_shipping_cost_usd_monthly": 12.34},
+    )
+    assert out["schema_version"] == "seller_ltl_pickup_estimate_v1"
+    assert out["status"] == "complete"
+    assert out["sku_rows_count"] == 1
+    assert out["estimated_total_ltl_pickup_usd_monthly"] > 0
+    assert out["rows"][0]["sku"] == "S1"
 
 
 def test_inventory_suggestion_guardrails_amazon_new_no_third_party_new():

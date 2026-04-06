@@ -780,6 +780,7 @@ def build_inventory_suggestion_guardrails(
     *,
     buybox_stats_light: dict[str, Any] | None = None,
     buy_box_rotation: dict[str, Any] | None = None,
+    marketplace_seller_id: str | None = None,
 ) -> dict[str, Any]:
     """
     UX / risk flags for procurement and monthly-unit suggestions (Product Research).
@@ -791,6 +792,7 @@ def build_inventory_suggestion_guardrails(
     offers = p.get("offers") if isinstance(p.get("offers"), list) else []
     bsl = buybox_stats_light if isinstance(buybox_stats_light, dict) else {}
     rot = buy_box_rotation if isinstance(buy_box_rotation, dict) else {}
+    req_sid = (marketplace_seller_id or "").strip() or None
 
     from unie_cortex.config import settings as _gs
 
@@ -940,6 +942,22 @@ def build_inventory_suggestion_guardrails(
                 ),
             }
         )
+    if req_sid:
+        win_map = rot.get("win_pct_by_seller") if isinstance(rot.get("win_pct_by_seller"), dict) else {}
+        has_buybox_match = req_sid in win_map if isinstance(win_map, dict) else False
+        if not has_buybox_match:
+            flags.append(
+                {
+                    "code": "marketplace_seller_not_in_buybox_history",
+                    "severity": "critical",
+                    "title": "Your seller id is not in buy-box history",
+                    "detail": (
+                        "The requesting marketplace seller id does not match any seller id with measurable buy-box "
+                        "time in this Keepa history window. Inventory planning suggestions are blocked until "
+                        "brand-owner authorization is confirmed."
+                    ),
+                }
+            )
     elif no_qualified_buy_box_30d:
         flags.append(
             {
@@ -989,6 +1007,14 @@ def build_inventory_suggestion_guardrails(
             "no_qualified_buy_box_90d": bool(no_qualified_buy_box_90d),
             "ephemeral_seller_stints_12m_approx": int(ephemeral_sellers),
             "history_pairs_available": len(pairs),
+        },
+        "seller_match_context": {
+            "requested_marketplace_seller_id": req_sid,
+            "requested_seller_in_buybox_history": (
+                (req_sid in (rot.get("win_pct_by_seller") or {}))
+                if req_sid and isinstance(rot.get("win_pct_by_seller"), dict)
+                else None
+            ),
         },
         "flags": flags,
         "amazon_only_new_listing": bool(amazon_only_new_listing),
@@ -1135,21 +1161,50 @@ def peer_reference_win_pct_for_planning(
     return None, cohort
 
 
-def _parse_keepa_csv_sections(csv_list: list[int]) -> dict[int, list[int]]:
-    """Split Keepa product ``csv`` int array into sections by csv type."""
+def _parse_keepa_csv_sections(csv_obj: Any) -> dict[int, list[int]]:
+    """
+    Parse Keepa product ``csv`` into {csv_type: [t,v,t,v,...]}.
+
+    Supports both shapes seen in payloads:
+    1) Canonical Keepa array-of-arrays where index == csv type.
+    2) Flattened [type, len, ...chunk..., type, len, ...] fallback.
+    """
     sections: dict[int, list[int]] = {}
+    if not isinstance(csv_obj, list):
+        return sections
+
+    # Common shape from Keepa: csv[type_index] = [t,v,t,v,...]
+    array_shape = False
+    for idx, entry in enumerate(csv_obj):
+        if isinstance(entry, list):
+            ints: list[int] = []
+            ok = True
+            for x in entry:
+                try:
+                    ints.append(int(x))
+                except (TypeError, ValueError):
+                    ok = False
+                    break
+            if ok and ints:
+                sections[int(idx)] = ints
+            array_shape = True
+    if array_shape and sections:
+        return sections
+
+    # Fallback: flattened int stream [ctype, len, ...chunk...]
+    try:
+        flat = [int(x) for x in csv_obj]
+    except (TypeError, ValueError):
+        return sections
     i = 0
-    n = len(csv_list)
+    n = len(flat)
     while i + 1 < n:
-        try:
-            ctype = int(csv_list[i])
-            ln = int(csv_list[i + 1])
-        except (TypeError, ValueError):
-            break
+        ctype = int(flat[i])
+        ln = int(flat[i + 1])
         i += 2
         if ln < 0 or i + ln > n:
             break
-        sections[ctype] = list(csv_list[i : i + ln])
+        sections[ctype] = list(flat[i : i + ln])
         i += ln
     return sections
 
@@ -1213,12 +1268,7 @@ def extract_keepa_monthly_sales_history_6m(
             }
         return {"status": "partial", "note": "No Keepa csv or monthlySold for six-month chart."}
 
-    try:
-        as_ints = [int(x) for x in csv_list]
-    except (TypeError, ValueError):
-        as_ints = []
-
-    sections = _parse_keepa_csv_sections(as_ints)
+    sections = _parse_keepa_csv_sections(csv_list)
     # 3 = SALES_RANK in Keepa product csv types (US marketplace)
     rank_chunk = sections.get(3) or []
     if len(rank_chunk) < 4:
@@ -1325,11 +1375,7 @@ def _keepa_csv_pairs_for_type(p: dict[str, Any], csv_type: int) -> list[tuple[in
     csv_list = p.get("csv")
     if not isinstance(csv_list, list):
         return []
-    try:
-        as_ints = [int(x) for x in csv_list]
-    except (TypeError, ValueError):
-        return []
-    sections = _parse_keepa_csv_sections(as_ints)
+    sections = _parse_keepa_csv_sections(csv_list)
     chunk = sections.get(csv_type) or []
     out: list[tuple[int, int]] = []
     for j in range(0, len(chunk) - 1, 2):
@@ -1343,6 +1389,15 @@ def _keepa_csv_pairs_for_type(p: dict[str, Any], csv_type: int) -> list[tuple[in
     return out
 
 
+def _value_at_or_before_pairs(pairs: list[tuple[int, int]], t_target: int) -> int | None:
+    last: int | None = None
+    for t, v in pairs:
+        if t > t_target:
+            break
+        last = v
+    return last
+
+
 def _downsample_pairs(pairs: list[tuple[int, int]], max_pts: int) -> list[tuple[int, int]]:
     if len(pairs) <= max_pts:
         return pairs
@@ -1351,12 +1406,254 @@ def _downsample_pairs(pairs: list[tuple[int, int]], max_pts: int) -> list[tuple[
     return [pairs[j] for j in idxs]
 
 
+def _estimate_daily_orders_series(
+    rank_pairs: list[tuple[int, int]],
+    review_pairs: list[tuple[int, int]],
+    *,
+    category_primary: str | None,
+    max_points: int,
+) -> list[dict[str, Any]]:
+    """
+    Build Keepa-aligned daily order estimate points (units/day) from rank + review deltas.
+    """
+    if not rank_pairs:
+        return []
+    cat_text = str(category_primary or "")
+    factor, _ = _category_review_units_factor(cat_text)
+    ds = _downsample_pairs(rank_pairs, max_points)
+    out: list[dict[str, Any]] = []
+    last_t: int | None = None
+    last_rv: int | None = None
+    for t, r in ds:
+        lo, hi = _rank_to_monthly_units_band(int(max(1, r)))
+        rank_month = math.sqrt(max(lo * hi, 1.0))
+        rank_day = rank_month / 30.0
+        rv = _value_at_or_before_pairs(review_pairs, t) if review_pairs else None
+        review_day = None
+        if rv is not None and last_t is not None and last_rv is not None and t > last_t:
+            days = max(1.0, float(t - last_t) / 1440.0)
+            gained = max(0.0, float(rv - last_rv))
+            review_day = (gained * float(factor)) / days
+        rank_now = int(r)
+        w_review = 0.25
+        if rank_now <= 10:
+            w_review = 0.9
+        elif rank_now <= 100:
+            w_review = 0.8
+        elif rank_now <= 1_000:
+            w_review = 0.65
+        elif rank_now <= 10_000:
+            w_review = 0.5
+        w_rank = 1.0 - w_review
+        daily = rank_day if review_day is None else ((w_rank * rank_day) + (w_review * review_day))
+        out.append({"t": int(t), "daily_orders_est": int(round(max(0.0, daily)))})
+        last_t = int(t)
+        if rv is not None:
+            last_rv = int(rv)
+    return out
+
+
+def _category_review_units_factor(category_primary: str | None) -> tuple[float, str]:
+    """
+    Review-to-units factor by category speed:
+    - fast-moving categories: 10
+    - slow-moving categories: 100
+    """
+    if not category_primary:
+        return 40.0, "default"
+    s = str(category_primary).lower()
+    fast = (
+        "grocery",
+        "food",
+        "beauty",
+        "health",
+        "baby",
+        "pet",
+        "sports",
+        "toy",
+        "kitchen",
+        "household",
+    )
+    slow = (
+        "industrial",
+        "automotive",
+        "appliance",
+        "furniture",
+        "tool",
+        "jewelry",
+        "luxury",
+    )
+    if any(x in s for x in fast):
+        return 10.0, "fast"
+    if any(x in s for x in slow):
+        return 100.0, "slow"
+    return 40.0, "default"
+
+
+def _category_text_for_speed_from_product(p: dict[str, Any], category_primary: str | None) -> str | None:
+    c = str(category_primary or "").strip()
+    if c and any(ch.isalpha() for ch in c):
+        return c
+    pg = p.get("productGroup")
+    if isinstance(pg, str) and pg.strip() and any(ch.isalpha() for ch in pg):
+        return pg.strip()
+    b = p.get("binding")
+    if isinstance(b, str) and b.strip() and any(ch.isalpha() for ch in b):
+        return b.strip()
+    t = p.get("title")
+    if isinstance(t, str) and t.strip() and any(ch.isalpha() for ch in t):
+        return t.strip()
+    return c or None
+
+
+def _estimate_monthly_sales_from_keepa_windows(
+    p: dict[str, Any],
+    *,
+    category_primary: str | None = None,
+    baseline_mid: float | None = None,
+) -> dict[str, Any]:
+    """
+    Explicit monthly estimator using Keepa snapshots:
+    - 90d baseline from BSR-derived monthly proxy (fallback to baseline_mid)
+    - 30d emphasis via rank slope and review velocity
+    - category factor applied at the end
+    """
+    lu = _safe_int(p.get("lastUpdate")) or 0
+    rank_pairs = [(t, v) for t, v in _keepa_csv_pairs_for_type(p, 3) if v > 0]
+    review_pairs = [(t, v) for t, v in _keepa_csv_pairs_for_type(p, 17) if v >= 0]
+    category_for_speed = _category_text_for_speed_from_product(p, category_primary)
+    review_units_factor, speed_profile = _category_review_units_factor(category_for_speed)
+
+    monthly_candidates_90: list[float] = []
+    monthly_candidates_30: list[float] = []
+    rank_now = _sales_rank_from_product(p)
+    if lu > 0 and rank_pairs:
+        t90 = lu - 90 * 1440
+        rank_recent = [r for t, r in rank_pairs if t90 <= t <= lu]
+        for r in rank_recent:
+            lo, hi = _rank_to_monthly_units_band(int(max(1, r)))
+            monthly_candidates_90.append(math.sqrt(max(lo * hi, 1.0)))
+        t30 = lu - 30 * 1440
+        rank_recent_30 = [r for t, r in rank_pairs if t30 <= t <= lu]
+        for r in rank_recent_30:
+            lo, hi = _rank_to_monthly_units_band(int(max(1, r)))
+            monthly_candidates_30.append(math.sqrt(max(lo * hi, 1.0)))
+
+    baseline_90 = None
+    if monthly_candidates_90:
+        srt = sorted(monthly_candidates_90)
+        baseline_90 = float(srt[len(srt) // 2])
+    elif rank_now is not None and rank_now > 0:
+        lo, hi = _rank_to_monthly_units_band(rank_now)
+        baseline_90 = float(math.sqrt(max(lo * hi, 1.0)))
+    elif baseline_mid is not None and float(baseline_mid) > 0:
+        baseline_90 = float(baseline_mid)
+    baseline_30 = None
+    if monthly_candidates_30:
+        srt30 = sorted(monthly_candidates_30)
+        baseline_30 = float(srt30[len(srt30) // 2])
+    elif baseline_90 is not None and baseline_90 > 0:
+        baseline_30 = float(baseline_90) / 3.0
+
+    trend_multiplier_30 = 1.0
+    reviews_30 = None
+    if lu > 0 and review_pairs:
+        t30 = lu - 30 * 1440
+        rv_old = _value_at_or_before_pairs(review_pairs, t30)
+        rv_new = _value_at_or_before_pairs(review_pairs, lu)
+        if rv_old is not None and rv_new is not None:
+            reviews_30 = int(max(0, rv_new - rv_old))
+    baseline_90_month = (float(baseline_90) / 3.0) if baseline_90 is not None and baseline_90 > 0 else None
+    if baseline_90_month is not None and baseline_30 is not None and baseline_30 > baseline_90_month:
+        trend_multiplier_30 = 1.1
+    elif baseline_90_month is not None and baseline_30 is not None and baseline_30 < baseline_90_month:
+        trend_multiplier_30 = (2.0 / 3.0)
+
+    if baseline_90 is None or baseline_90 <= 0:
+        return {
+            "status": "partial",
+            "lookback_days": 90,
+            "focus_days": 30,
+            "message": "insufficient rank/baseline to build monthly estimator",
+            "monthly_units_est_mid": None,
+            "monthly_units_est_low": None,
+            "monthly_units_est_high": None,
+        }
+
+    rank_based_monthly = float(baseline_90) / 3.0
+    trend_adjusted_rank_monthly = rank_based_monthly * float(trend_multiplier_30)
+    review_based_monthly = (
+        float(reviews_30) * float(review_units_factor) if isinstance(reviews_30, int) and reviews_30 > 0 else None
+    )
+    # Dynamic weighting: when BSR is very strong, use reviews as primary signal and rank as guardrail.
+    w_review = 0.3
+    if rank_now is not None and rank_now <= 10:
+        w_review = 0.92
+    elif rank_now is not None and rank_now <= 100:
+        w_review = 0.85
+    elif rank_now is not None and rank_now <= 1_000:
+        w_review = 0.7
+    elif rank_now is not None and rank_now <= 10_000:
+        w_review = 0.55
+    w_rank = max(0.0, 1.0 - w_review)
+
+    if review_based_monthly is not None:
+        raw_mid = max(1.0, (w_rank * trend_adjusted_rank_monthly) + (w_review * review_based_monthly))
+    else:
+        raw_mid = max(1.0, trend_adjusted_rank_monthly)
+
+    # Safety clamp for extreme-rank listings: don't exceed 1.35x review-implied monthly when review signal exists.
+    if review_based_monthly is not None:
+        cap_hi = max(1.0, review_based_monthly * 1.35)
+        cap_lo = max(1.0, review_based_monthly * 0.65)
+        mid = min(max(raw_mid, cap_lo), cap_hi)
+    else:
+        mid = raw_mid
+    low = max(0.0, mid * 0.8)
+    high = max(low, mid * 1.2)
+    confidence = 0.55
+    if monthly_candidates_90:
+        confidence += 0.15
+    if reviews_30 is not None:
+        confidence += 0.1
+    if lu > 0 and rank_pairs:
+        confidence += 0.1
+    confidence = max(0.4, min(0.95, confidence))
+
+    return {
+        "status": "complete",
+        "lookback_days": 90,
+        "focus_days": 30,
+        "monthly_units_est_low": int(round(low)),
+        "monthly_units_est_mid": int(round(mid)),
+        "monthly_units_est_high": int(round(high)),
+        "confidence": round(confidence, 4),
+        "components": {
+            "baseline_90d_monthly_mid_raw": round(float(baseline_90), 2),
+            "baseline_90d_monthly_avg_3m": round(float(rank_based_monthly), 2),
+            "baseline_30d_monthly_mid": round(float(baseline_30), 2) if baseline_30 is not None else None,
+            "trend_multiplier_30d_vs_90d_avg": round(float(trend_multiplier_30), 4),
+            "reviews_gained_30d": int(reviews_30) if reviews_30 is not None else None,
+            "review_based_monthly_units_30d": round(float(review_based_monthly), 2)
+            if review_based_monthly is not None
+            else None,
+            "weight_review": round(float(w_review), 4),
+            "weight_rank": round(float(w_rank), 4),
+            "mid_before_review_cap": round(float(raw_mid), 2),
+            "category_review_units_factor": round(float(review_units_factor), 4),
+            "category_speed_profile": speed_profile,
+            "category_speed_basis": category_for_speed,
+        },
+    }
+
+
 def build_keepa_trend_bundle(
     p: dict[str, Any],
     *,
     plan_mid: float | None,
     plan_low: float | None,
     plan_high: float | None,
+    category_primary: str | None = None,
     target_days_cover: float = 30.0,
 ) -> dict[str, Any]:
     """
@@ -1366,12 +1663,15 @@ def build_keepa_trend_bundle(
 
     max_pts = int(getattr(_ts, "keepa_trend_bundle_max_points", 160) or 160)
     risk_disc = float(getattr(_ts, "keepa_trend_risk_discount", 1.0) or 1.0)
+    lookback_days = int(getattr(_ts, "keepa_trend_forecast_lookback_days", 60) or 60)
+    horizon_days = int(getattr(_ts, "keepa_trend_forecast_horizon_days", 30) or 30)
 
     lu = _safe_int(p.get("lastUpdate")) or 0
     rank_pairs_all = [(t, v) for t, v in _keepa_csv_pairs_for_type(p, 3) if v > 0]
     bb_raw = _keepa_csv_pairs_for_type(p, _KEEPA_CSV_BUY_BOX_SHIPPING)
     new_pairs = _keepa_csv_pairs_for_type(p, _KEEPA_CSV_NEW)
     amz_pairs = _keepa_csv_pairs_for_type(p, _KEEPA_CSV_AMAZON)
+    review_pairs = _keepa_csv_pairs_for_type(p, 17)
 
     drivers: list[dict[str, Any]] = []
     score = 0
@@ -1501,22 +1801,99 @@ def build_keepa_trend_bundle(
         verdict = "neutral"
 
     forecast_band: dict[str, Any] | None = None
+    forecast_next_30d: dict[str, Any] | None = None
     suggested_cover_units: int | None = None
+    baseline_mid: float | None = None
+    baseline_source = "none"
     if plan_mid is not None and float(plan_mid) > 0:
-        pm = float(plan_mid)
-        plf = float(plan_low) if plan_low is not None and float(plan_low) > 0 else round(pm * 0.85, 2)
-        phf = float(plan_high) if plan_high is not None and float(plan_high) > 0 else round(pm * 1.15, 2)
+        baseline_mid = float(plan_mid)
+        baseline_source = "seller_planning_mid"
+    else:
+        ms = _safe_int(p.get("monthlySold"))
+        if ms is not None and ms > 0:
+            baseline_mid = float(ms)
+            baseline_source = "keepa_monthlySold"
+        else:
+            rank_now = _sales_rank_from_product(p)
+            if rank_now is not None and rank_now > 0:
+                lo_r, hi_r = _rank_to_monthly_units_band(rank_now)
+                baseline_mid = float(round(math.sqrt(max(lo_r * hi_r, 1.0)), 2))
+                baseline_source = "sales_rank_heuristic"
+
+    monthly_sales_estimator = _estimate_monthly_sales_from_keepa_windows(
+        p,
+        category_primary=category_primary,
+        baseline_mid=baseline_mid,
+    )
+    est_mid = monthly_sales_estimator.get("monthly_units_est_mid")
+    est_low = monthly_sales_estimator.get("monthly_units_est_low")
+    est_high = monthly_sales_estimator.get("monthly_units_est_high")
+    use_mid = float(est_mid) if isinstance(est_mid, (int, float)) and float(est_mid) > 0 else baseline_mid
+    use_low = float(est_low) if isinstance(est_low, (int, float)) and float(est_low) > 0 else None
+    use_high = float(est_high) if isinstance(est_high, (int, float)) and float(est_high) > 0 else None
+
+    if use_mid is not None and use_mid > 0:
+        pm = float(use_mid)
+        plf = (
+            float(plan_low)
+            if plan_low is not None and float(plan_low) > 0
+            else (float(use_low) if use_low is not None and float(use_low) > 0 else round(pm * 0.85, 2))
+        )
+        phf = (
+            float(plan_high)
+            if plan_high is not None and float(plan_high) > 0
+            else (float(use_high) if use_high is not None and float(use_high) > 0 else round(pm * 1.15, 2))
+        )
         forecast_band = {
             "low": plf,
             "mid": round(pm, 2),
             "high": phf,
             "assumptions": [
-                "Anchored to seller planning monthly mid from Keepa extract (not POS truth).",
+                "Anchored to current demand baseline (seller planning when available; otherwise Keepa baseline).",
                 "Band width reflects listing + buy-box uncertainty.",
             ],
+            "baseline_source": baseline_source,
         }
         cover = max(1.0, float(target_days_cover))
         suggested_cover_units = int(round(pm * (cover / 30.0) * risk_disc))
+        if lu > 0:
+            lookback_mins = max(1, lookback_days) * 1440
+            t_lb = lu - lookback_mins
+            r_old = _value_at_or_before_pairs(rank_pairs_all, t_lb)
+            r_new = _value_at_or_before_pairs(rank_pairs_all, lu)
+            rank_slope = 0.0
+            if r_old is not None and r_new is not None and r_old > 0:
+                rank_slope = (float(r_new) - float(r_old)) / float(max(r_old, 1))
+            trend_factor = 1.0 - max(-0.35, min(0.35, rank_slope * 0.45))
+            mid30 = round(pm * (horizon_days / 30.0) * trend_factor, 2)
+            low30 = round((float(plf) if plf is not None else pm * 0.85) * (horizon_days / 30.0) * trend_factor, 2)
+            high30 = round((float(phf) if phf is not None else pm * 1.15) * (horizon_days / 30.0) * trend_factor, 2)
+            if low30 > high30:
+                low30, high30 = high30, low30
+            forecast_next_30d = {
+                "horizon_days": int(horizon_days),
+                "lookback_days": int(lookback_days),
+                "units_low": max(0.0, low30),
+                "units_mid": max(0.0, mid30),
+                "units_high": max(0.0, high30),
+                "trend_factor": round(trend_factor, 4),
+                "baseline_source": baseline_source,
+                "assumptions": [
+                    "Anchored to baseline monthly demand and projected to horizon.",
+                    "Adjusted by sales-rank slope over lookback window.",
+                ],
+            }
+        else:
+            forecast_next_30d = {
+                "horizon_days": int(horizon_days),
+                "lookback_days": int(lookback_days),
+                "units_low": None,
+                "units_mid": None,
+                "units_high": None,
+                "trend_factor": None,
+                "baseline_source": baseline_source,
+                "assumptions": ["Insufficient Keepa lastUpdate for slope-aware forward projection."],
+            }
 
     chart_series: list[dict[str, Any]] = []
     if rank_pairs_all:
@@ -1549,17 +1926,110 @@ def build_keepa_trend_bundle(
                     best = (d, vv)
             return best[1] if best and best[1] >= 0 else None
 
+        def _nearest_review_count(t: int) -> int | None:
+            if not review_pairs:
+                return None
+            v = _value_at_or_before_pairs(review_pairs, t)
+            return int(v) if v is not None and v >= 0 else None
+
+        def _new_reviews_30d_at_t(t: int) -> int | None:
+            if not review_pairs:
+                return None
+            now_v = _value_at_or_before_pairs(review_pairs, t)
+            then_v = _value_at_or_before_pairs(review_pairs, t - (30 * 1440))
+            if now_v is None or then_v is None:
+                return None
+            return int(max(0, int(now_v) - int(then_v)))
+
+        def _nearest_amazon_price_usd(t: int) -> float | None:
+            if not amz_pairs:
+                return None
+            best: tuple[int, float] | None = None
+            for tt, vv in amz_pairs:
+                if vv <= 0:
+                    continue
+                usd = _keepa_cents_to_usd(vv)
+                if usd is None:
+                    continue
+                d = abs(tt - t)
+                if d > 365 * 1440:
+                    continue
+                if best is None or d < best[0]:
+                    best = (d, usd)
+            return best[1] if best else None
+
         for t, rnk in ds:
+            amz_usd = _nearest_amazon_price_usd(t)
             chart_series.append(
                 {
                     "t": t,
                     "sales_rank": rnk,
                     "buy_box_landed_usd": _nearest_bb_usd(t),
                     "new_offer_count": _nearest_new_count(t),
+                    "review_count": _nearest_review_count(t),
+                    "new_reviews_30d": _new_reviews_30d_at_t(t),
+                    "amazon_price_usd": amz_usd,
+                    "amazon_in_stock": bool(amz_usd is not None and amz_usd > 0),
+                }
+            )
+    elif review_pairs:
+        ds = _downsample_pairs(review_pairs, max_pts)
+        for t, rv in ds:
+            chart_series.append(
+                {
+                    "t": t,
+                    "sales_rank": None,
+                    "buy_box_landed_usd": None,
+                    "new_offer_count": None,
+                    "review_count": int(rv),
+                    "new_reviews_30d": _new_reviews_30d_at_t(t),
+                    "amazon_price_usd": None,
+                    "amazon_in_stock": False,
                 }
             )
 
     status = "complete" if chart_series or drivers else "partial"
+    forecast_series: list[dict[str, Any]] = []
+    daily_orders_series = _estimate_daily_orders_series(
+        rank_pairs_all,
+        review_pairs,
+        category_primary=category_primary,
+        max_points=max_pts,
+    )
+    if lu > 0 and chart_series:
+        t_lb = lu - max(1, lookback_days) * 1440
+        r_old = _value_at_or_before_pairs(rank_pairs_all, t_lb)
+        r_new = _value_at_or_before_pairs(rank_pairs_all, lu)
+        rv_old = _value_at_or_before_pairs(review_pairs, t_lb)
+        rv_new = _value_at_or_before_pairs(review_pairs, lu)
+        t_fc = lu + max(1, horizon_days) * 1440
+        rank_fc = None
+        review_fc = None
+        if r_new is not None:
+            if r_old is not None:
+                rank_slope_per_day = (float(r_new) - float(r_old)) / float(max(1, lookback_days))
+                rank_fc = max(1, int(round(float(r_new) + rank_slope_per_day * float(horizon_days))))
+            else:
+                rank_fc = int(r_new)
+        if rv_new is not None:
+            if rv_old is not None:
+                rv_slope_per_day = (float(rv_new) - float(rv_old)) / float(max(1, lookback_days))
+                review_fc = max(int(rv_new), int(round(float(rv_new) + max(0.0, rv_slope_per_day) * float(horizon_days))))
+            else:
+                review_fc = int(rv_new)
+        forecast_series = [
+            {
+                "t": int(lu),
+                "sales_rank_forecast": int(r_new) if r_new is not None else None,
+                "review_count_forecast": int(rv_new) if rv_new is not None else None,
+            },
+            {
+                "t": int(t_fc),
+                "sales_rank_forecast": rank_fc,
+                "review_count_forecast": review_fc,
+            },
+        ]
+
     return {
         "bundle_version": KEEPA_TREND_BUNDLE_VERSION,
         "status": status,
@@ -1567,13 +2037,17 @@ def build_keepa_trend_bundle(
         "verdict": verdict,
         "drivers": drivers,
         "forecast_band_monthly_units": forecast_band,
+        "forecast_next_30d": forecast_next_30d,
+        "monthly_sales_estimator": monthly_sales_estimator,
         "suggested_cover_units": suggested_cover_units,
         "cover_days_used": float(target_days_cover),
         "risk_discount_applied": round(risk_disc, 4),
         "chart": {
             "max_points": max_pts,
             "series": chart_series,
-            "series_note": "Downsampled Keepa csv (rank type 3; buy box 18; new count 1 when present).",
+            "forecast_series": forecast_series,
+            "daily_orders_series": daily_orders_series,
+            "series_note": "Downsampled Keepa csv (rank=3, buy box=18, new count=1, reviews=17 when present).",
         },
     }
 
@@ -2350,6 +2824,7 @@ def augment_keepa_demand_core(
         p,
         buybox_stats_light=bsl,
         buy_box_rotation=rot,
+        marketplace_seller_id=marketplace_seller_id,
     )
 
 
@@ -2384,8 +2859,11 @@ def _opportunity_summary_for_ui(demand: dict[str, Any]) -> dict[str, Any] | None
         if isinstance(demand.get("keepa_marketplace_monthly_reference"), dict)
         else {}
     )
+    trend = demand.get("keepa_trend_bundle") if isinstance(demand.get("keepa_trend_bundle"), dict) else {}
+    estimator = trend.get("monthly_sales_estimator") if isinstance(trend.get("monthly_sales_estimator"), dict) else {}
     pm = demand.get("monthly_units_est_mid")
     mm = market.get("monthly_units_est_mid")
+    em = estimator.get("monthly_units_est_mid")
     try:
         pmf = float(pm) if pm is not None else None
     except (TypeError, ValueError):
@@ -2394,9 +2872,14 @@ def _opportunity_summary_for_ui(demand: dict[str, Any]) -> dict[str, Any] | None
         mmf = float(mm) if mm is not None else None
     except (TypeError, ValueError):
         mmf = None
+    try:
+        emf = float(em) if em is not None else None
+    except (TypeError, ValueError):
+        emf = None
+    est_for_ui = emf if emf is not None and emf > 0 else pmf
     opp = None
-    if pmf is not None and mmf is not None and mmf > 0:
-        opp = round(100.0 * pmf / mmf, 4)
+    if est_for_ui is not None and mmf is not None and mmf > 0:
+        opp = round(100.0 * est_for_ui / mmf, 4)
     amazon_30 = by30.get("amazon_share_pct") if isinstance(by30, dict) else None
     amazon_selling = bool(isinstance(amazon_30, (int, float)) and float(amazon_30) > 0)
     sellers_30 = by30.get("distinct_real_sellers") if isinstance(by30, dict) else None
@@ -2410,11 +2893,100 @@ def _opportunity_summary_for_ui(demand: dict[str, Any]) -> dict[str, Any] | None
         "amazon_share_30d_pct": round(float(amazon_30), 4) if isinstance(amazon_30, (int, float)) else None,
         "distinct_buybox_sellers_30d": int(sellers_30) if isinstance(sellers_30, (int, float)) else None,
         "opportunity_pct": opp,
-        "est_monthly_units": round(pmf, 2) if pmf is not None else None,
+        "est_monthly_units": round(est_for_ui, 2) if est_for_ui is not None else None,
         "market_monthly_units_reference": round(mmf, 2) if mmf is not None else None,
         "planning_mode": planning_mode,
         "recommended_to_sell": bool(rec_yes),
         "recommended_to_sell_label": "Yes" if rec_yes else "No",
+    }
+
+
+def _build_hybrid_sell_decision(demand: dict[str, Any]) -> dict[str, Any]:
+    from unie_cortex.config import settings as _hs
+
+    bbwa = demand.get("buybox_window_analysis") if isinstance(demand.get("buybox_window_analysis"), dict) else {}
+    by30_raw = (bbwa.get("by_window_days") or {}).get("30") if isinstance(bbwa.get("by_window_days"), dict) else {}
+    by30 = by30_raw if isinstance(by30_raw, dict) else {}
+    trend = demand.get("keepa_trend_bundle") if isinstance(demand.get("keepa_trend_bundle"), dict) else {}
+    spv = demand.get("seller_planning_velocity") if isinstance(demand.get("seller_planning_velocity"), dict) else {}
+    mom = demand.get("momentum_30d_ux") if isinstance(demand.get("momentum_30d_ux"), dict) else {}
+
+    amazon_30 = by30.get("amazon_share_pct") if isinstance(by30.get("amazon_share_pct"), (int, float)) else None
+    sellers_30 = by30.get("distinct_real_sellers") if isinstance(by30.get("distinct_real_sellers"), (int, float)) else None
+    planning_mode = str(spv.get("planning_mode") or "")
+
+    buybox_score = 0.0
+    buybox_reasons: list[str] = []
+    if isinstance(amazon_30, (int, float)) and float(amazon_30) >= 95.0:
+        buybox_score -= 1.0
+        buybox_reasons.append("Amazon buy-box share >=95% over 30d")
+    if planning_mode == "amazon_buybox_30d_only_guardrail":
+        buybox_score -= 1.0
+        buybox_reasons.append("Planning mode hit amazon_buybox_30d_only_guardrail")
+    if isinstance(sellers_30, (int, float)) and float(sellers_30) >= 2:
+        buybox_score += 0.15
+        buybox_reasons.append("More than one real buy-box seller in 30d")
+
+    trend_verdict = str(trend.get("verdict") or "")
+    trend_score = 0.0
+    trend_reasons: list[str] = []
+    if trend_verdict == "favorable":
+        trend_score += 0.6
+        trend_reasons.append("Trend bundle favorable")
+    elif trend_verdict == "cautious":
+        trend_score -= 0.6
+        trend_reasons.append("Trend bundle cautious")
+
+    if mom.get("sales_rank_improved_30d") is True:
+        trend_score += 0.2
+        trend_reasons.append("Sales rank improved over 30d")
+    elif mom.get("sales_rank_delta_30d") is not None and isinstance(mom.get("sales_rank_delta_30d"), (int, float)):
+        if float(mom.get("sales_rank_delta_30d") or 0) > 0:
+            trend_score -= 0.2
+            trend_reasons.append("Sales rank worsened over 30d")
+
+    if isinstance(mom.get("new_reviews_last_30d"), (int, float)) and float(mom.get("new_reviews_last_30d") or 0) > 0:
+        trend_score += 0.1
+        trend_reasons.append("Positive review momentum in 30d")
+
+    wb = float(getattr(_hs, "keepa_hybrid_buybox_weight", 0.7) or 0.7)
+    wt = float(getattr(_hs, "keepa_hybrid_trend_weight", 0.3) or 0.3)
+    wr = float(getattr(_hs, "keepa_hybrid_review_weight", 0.2) or 0.2)
+    norm = max(0.001, wb + wt)
+    wb = wb / norm
+    wt = wt / norm
+    trend_score *= max(0.1, min(2.0, 1.0 + wr))
+    score = wb * buybox_score + wt * trend_score
+
+    forced_no = planning_mode == "amazon_buybox_30d_only_guardrail" or (
+        isinstance(amazon_30, (int, float)) and float(amazon_30) >= 95.0 and (sellers_30 is None or float(sellers_30) <= 1)
+    )
+    recommended = (score > 0.0) and not forced_no
+    if recommended:
+        final_verdict = "favorable" if score >= 0.35 else "neutral"
+    else:
+        final_verdict = "cautious" if forced_no or score <= -0.2 else "neutral"
+
+    confidence = min(0.99, max(0.5, 0.5 + abs(score) * 0.35))
+    positive_reasons = [r for r in (trend_reasons + buybox_reasons) if "improved" in r or "favorable" in r or "More than one" in r]
+    blocking_reasons = [r for r in (buybox_reasons + trend_reasons) if "guardrail" in r or ">=95%" in r or "cautious" in r or "worsened" in r]
+
+    return {
+        "status": "complete",
+        "final_verdict": final_verdict,
+        "recommended_to_sell": bool(recommended),
+        "recommended_to_sell_label": "Yes" if recommended else "No",
+        "decision_confidence": round(confidence, 4),
+        "score": round(score, 4),
+        "weights": {
+            "buybox_weight": round(wb, 4),
+            "trend_weight": round(wt, 4),
+            "review_weight": round(wr, 4),
+        },
+        "forced_no_guardrail": bool(forced_no),
+        "positive_reasons": positive_reasons[:4],
+        "blocking_reasons": blocking_reasons[:4],
+        "note": "Single final verdict from hybrid buy-box + trend decision. Trend factors are evidence, not separate recommendation output.",
     }
 
 
@@ -2553,11 +3125,21 @@ def slim_keepa_planning_for_seller_ui(
             "note": (str(cohort.get("note"))[:400] if cohort.get("note") else None),
         }
     opp = _opportunity_summary_for_ui(demand)
+    hyb = demand.get("sell_decision_hybrid") if isinstance(demand.get("sell_decision_hybrid"), dict) else None
+    rec_val = None
+    rec_lbl = None
+    if hyb:
+        rec_val = bool(hyb.get("recommended_to_sell")) if hyb.get("recommended_to_sell") is not None else None
+        rec_lbl = hyb.get("recommended_to_sell_label")
+    if rec_val is None:
+        rec_val = bool(opp.get("recommended_to_sell")) if opp else None
+    if rec_lbl is None:
+        rec_lbl = opp.get("recommended_to_sell_label") if opp else None
 
     return {
         "status": str(demand.get("status") or "partial"),
-        "recommended_to_sell": (bool(opp.get("recommended_to_sell")) if opp else None),
-        "recommended_to_sell_label": (opp.get("recommended_to_sell_label") if opp else None),
+        "recommended_to_sell": rec_val,
+        "recommended_to_sell_label": rec_lbl,
         "planning_method": demand.get("planning_method"),
         "monthly_units_est_mid": pm,
         "monthly_units_est_low": plf,
@@ -2614,11 +3196,69 @@ def slim_keepa_planning_for_seller_ui(
         "momentum_30d_ux": _slim_volume_momentum_for_ui(demand),
         "volume_intelligence_slim": _volume_intelligence_slim_for_api(demand),
         "opportunity_summary_ux": opp,
+        "sell_decision_hybrid": hyb,
+        "inventory_suggestion_guardrails": (
+            demand.get("inventory_suggestion_guardrails")
+            if isinstance(demand.get("inventory_suggestion_guardrails"), dict)
+            else None
+        ),
+        "monthly_sales_estimator": (
+            demand.get("monthly_sales_estimator")
+            if isinstance(demand.get("monthly_sales_estimator"), dict)
+            else None
+        ),
+        "keepa_trend_bundle": (
+            demand.get("keepa_trend_bundle")
+            if isinstance(demand.get("keepa_trend_bundle"), dict)
+            else None
+        ),
         "buybox_window_analysis": (
             demand.get("buybox_window_analysis")
             if isinstance(demand.get("buybox_window_analysis"), dict)
             else None
         ),
+        "keepa_last_update_minute": _safe_int(demand.get("keepa_last_update_minute")),
+        "keepa_last_update_iso_utc": (
+            str(demand.get("keepa_last_update_iso_utc"))
+            if demand.get("keepa_last_update_iso_utc") is not None
+            else None
+        ),
+        "data_quality": (
+            demand.get("data_quality")
+            if isinstance(demand.get("data_quality"), dict)
+            else None
+        ),
+    }
+
+
+def _keepa_last_update_meta(p: dict[str, Any]) -> tuple[int | None, str | None]:
+    lu_min = _safe_int(p.get("lastUpdate"))
+    if not lu_min:
+        return None, None
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        lu_iso = (datetime(2011, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=int(lu_min))).isoformat()
+        return lu_min, lu_iso
+    except Exception:
+        return lu_min, None
+
+
+def _keepa_data_quality_from_trend_bundle(bundle: dict[str, Any] | None) -> dict[str, bool]:
+    chart = bundle.get("chart") if isinstance(bundle, dict) and isinstance(bundle.get("chart"), dict) else {}
+    series = chart.get("series") if isinstance(chart.get("series"), list) else []
+    forecast_series = chart.get("forecast_series") if isinstance(chart.get("forecast_series"), list) else []
+    has_buybox_windows = bool(
+        isinstance(bundle, dict)
+        and isinstance(bundle.get("buybox_window_analysis"), dict)
+        and isinstance((bundle.get("buybox_window_analysis") or {}).get("by_window_days"), dict)
+        and isinstance(((bundle.get("buybox_window_analysis") or {}).get("by_window_days") or {}).get("30"), dict)
+    )
+    return {
+        "has_rank_series": any(isinstance(x, dict) and x.get("sales_rank") is not None for x in series),
+        "has_review_series": any(isinstance(x, dict) and x.get("new_reviews_30d") is not None for x in series),
+        "has_buybox_windows": has_buybox_windows,
+        "forecast_ready": len(forecast_series) >= 2,
     }
 
 
@@ -2655,6 +3295,7 @@ def extract_demand_from_keepa_payload(
         return {"status": "skipped", "message": "invalid product shape"}
 
     asin = (p.get("asin") or "").strip() or None
+    keepa_last_update_minute, keepa_last_update_iso_utc = _keepa_last_update_meta(p)
     listing_profile = extract_listing_profile(p)
     cat_primary = listing_profile.get("category_primary_for_heuristics")
     cat_factor = category_velocity_factor(cat_primary)
@@ -2748,6 +3389,8 @@ def extract_demand_from_keepa_payload(
             "status": "incomplete",
             "message": "no monthlySold or usable sales rank",
             "asin": asin,
+            "keepa_last_update_minute": keepa_last_update_minute,
+            "keepa_last_update_iso_utc": keepa_last_update_iso_utc,
             "recommended_to_sell": (bool(_opp_partial.get("recommended_to_sell")) if _opp_partial else None),
             "recommended_to_sell_label": (_opp_partial.get("recommended_to_sell_label") if _opp_partial else None),
             "listing_profile": listing_profile,
@@ -2767,9 +3410,47 @@ def extract_demand_from_keepa_payload(
             "opportunity_summary_ux": _opp_partial,
             "keepa_offers_digest": offers_digest,
             "keepa_trend_bundle": build_keepa_trend_bundle(
-                p, plan_mid=None, plan_low=None, plan_high=None, target_days_cover=30.0
+                p,
+                plan_mid=None,
+                plan_low=None,
+                plan_high=None,
+                category_primary=cat_primary,
+                target_days_cover=30.0,
             ),
         }
+        _inc_tb = inc.get("keepa_trend_bundle") if isinstance(inc.get("keepa_trend_bundle"), dict) else None
+        _inc_quality = _keepa_data_quality_from_trend_bundle(_inc_tb)
+        _inc_quality["has_buybox_windows"] = bool(
+            isinstance(inc.get("buybox_window_analysis"), dict)
+            and isinstance((inc.get("buybox_window_analysis") or {}).get("by_window_days"), dict)
+            and isinstance(
+                ((inc.get("buybox_window_analysis") or {}).get("by_window_days") or {}).get("30"), dict
+            )
+        )
+        inc["data_quality"] = _inc_quality
+        _est_inc = (
+            (inc.get("keepa_trend_bundle") or {}).get("monthly_sales_estimator")
+            if isinstance(inc.get("keepa_trend_bundle"), dict)
+            else None
+        )
+        if isinstance(_est_inc, dict):
+            em = _est_inc.get("monthly_units_est_mid")
+            el = _est_inc.get("monthly_units_est_low")
+            eh = _est_inc.get("monthly_units_est_high")
+            inc["monthly_sales_estimator"] = _est_inc
+            if isinstance(em, (int, float)) and float(em) > 0:
+                inc["monthly_units_est_mid"] = float(em)
+            if isinstance(el, (int, float)) and float(el) >= 0:
+                inc["monthly_units_est_low"] = float(el)
+            if isinstance(eh, (int, float)) and float(eh) >= 0:
+                inc["monthly_units_est_high"] = float(eh)
+            if isinstance(inc.get("opportunity_summary_ux"), dict):
+                inc["opportunity_summary_ux"]["est_monthly_units"] = float(em) if isinstance(em, (int, float)) else None
+        inc["sell_decision_hybrid"] = _build_hybrid_sell_decision(inc)
+        _hyb_inc = inc.get("sell_decision_hybrid") if isinstance(inc.get("sell_decision_hybrid"), dict) else None
+        if _hyb_inc:
+            inc["recommended_to_sell"] = bool(_hyb_inc.get("recommended_to_sell"))
+            inc["recommended_to_sell_label"] = _hyb_inc.get("recommended_to_sell_label")
         augment_keepa_demand_core(
             inc,
             p,
@@ -2837,6 +3518,8 @@ def extract_demand_from_keepa_payload(
     core: dict[str, Any] = {
         "status": "complete",
         "asin": asin,
+        "keepa_last_update_minute": keepa_last_update_minute,
+        "keepa_last_update_iso_utc": keepa_last_update_iso_utc,
         "monthly_units_est_mid": plan_mid,
         "monthly_units_est_low": plan_low,
         "monthly_units_est_high": plan_high,
@@ -2899,12 +3582,50 @@ def extract_demand_from_keepa_payload(
             plan_mid=float(plan_mid) if plan_mid is not None else None,
             plan_low=float(plan_low) if plan_low is not None else None,
             plan_high=float(plan_high) if plan_high is not None else None,
+            category_primary=cat_primary,
             target_days_cover=30.0,
         ),
     }
-    _opp_core = core.get("opportunity_summary_ux") if isinstance(core.get("opportunity_summary_ux"), dict) else None
-    core["recommended_to_sell"] = bool(_opp_core.get("recommended_to_sell")) if _opp_core else None
-    core["recommended_to_sell_label"] = _opp_core.get("recommended_to_sell_label") if _opp_core else None
+    _core_tb = core.get("keepa_trend_bundle") if isinstance(core.get("keepa_trend_bundle"), dict) else None
+    _core_quality = _keepa_data_quality_from_trend_bundle(_core_tb)
+    _core_quality["has_buybox_windows"] = bool(
+        isinstance(core.get("buybox_window_analysis"), dict)
+        and isinstance((core.get("buybox_window_analysis") or {}).get("by_window_days"), dict)
+        and isinstance(((core.get("buybox_window_analysis") or {}).get("by_window_days") or {}).get("30"), dict)
+    )
+    core["data_quality"] = _core_quality
+    _est_core = (
+        (core.get("keepa_trend_bundle") or {}).get("monthly_sales_estimator")
+        if isinstance(core.get("keepa_trend_bundle"), dict)
+        else None
+    )
+    if isinstance(_est_core, dict):
+        em = _est_core.get("monthly_units_est_mid")
+        el = _est_core.get("monthly_units_est_low")
+        eh = _est_core.get("monthly_units_est_high")
+        core["monthly_sales_estimator"] = _est_core
+        if isinstance(em, (int, float)) and float(em) > 0:
+            core["monthly_units_est_mid"] = float(em)
+        if isinstance(el, (int, float)) and float(el) >= 0:
+            core["monthly_units_est_low"] = float(el)
+        if isinstance(eh, (int, float)) and float(eh) >= 0:
+            core["monthly_units_est_high"] = float(eh)
+        _km = core.get("keepa_marketplace_monthly_reference")
+        if isinstance(_km, dict):
+            _km["monthly_units_est_mid"] = float(em) if isinstance(em, (int, float)) else _km.get("monthly_units_est_mid")
+            _km["monthly_units_est_low"] = float(el) if isinstance(el, (int, float)) else _km.get("monthly_units_est_low")
+            _km["monthly_units_est_high"] = float(eh) if isinstance(eh, (int, float)) else _km.get("monthly_units_est_high")
+        if isinstance(core.get("opportunity_summary_ux"), dict):
+            core["opportunity_summary_ux"]["est_monthly_units"] = float(em) if isinstance(em, (int, float)) else None
+    core["sell_decision_hybrid"] = _build_hybrid_sell_decision(core)
+    _hyb_core = core.get("sell_decision_hybrid") if isinstance(core.get("sell_decision_hybrid"), dict) else None
+    if _hyb_core:
+        core["recommended_to_sell"] = bool(_hyb_core.get("recommended_to_sell"))
+        core["recommended_to_sell_label"] = _hyb_core.get("recommended_to_sell_label")
+    else:
+        _opp_core = core.get("opportunity_summary_ux") if isinstance(core.get("opportunity_summary_ux"), dict) else None
+        core["recommended_to_sell"] = bool(_opp_core.get("recommended_to_sell")) if _opp_core else None
+        core["recommended_to_sell_label"] = _opp_core.get("recommended_to_sell_label") if _opp_core else None
     augment_keepa_demand_core(
         core,
         p,

@@ -1,4 +1,4 @@
-"""Unit tests for NIM audit synthesis (mocked HTTP)."""
+"""Unit tests for audit AI recommendations block (LLM disabled)."""
 
 from __future__ import annotations
 
@@ -43,59 +43,44 @@ def test_build_nim_audit_payload_shape():
     assert p["spine_excerpt"]["label_cost"]["status"] == "complete"
 
 
-def test_generate_audit_ai_recommendations_mocked_nim():
-    _nim_body = {
-                "choices": [
-                    {
-                        "message": {
-                            "content": (
-                                '{"recommendations":[{"title":"Cut fixed review","rationale":"Because fixed share is high",'
-                                '"impact_axis":"margin","evidence":[{"path":"nim_audit_payload.competitive_kpis",'
-                                '"value":{}}],"risk_notes":""}]}'
-                            )
-                        }
-                    }
-                ]
-            }
-
-    class _Resp:
-        status_code = 200
-        text = json.dumps(_nim_body)
-
-        def json(self):
-            return _nim_body
-
-    class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def post(self, *args, **kwargs):
-            return _Resp()
-
+def test_generate_audit_ai_recommendations_llm_disabled():
     async def _run():
-        with patch.object(settings, "nvidia_api_key", "test-key"):
-            with patch("unie_cortex.integrations.nim_chat.httpx.AsyncClient", return_value=_Client()):
-                return await generate_audit_ai_recommendations(audit_payload={"x": 1}, detail="brief")
+        return await generate_audit_ai_recommendations(audit_payload={"x": 1}, detail="brief")
 
     out = asyncio.run(_run())
-    assert out["source"] == "nim"
-    assert len(out["items"]) == 1
-    assert out["items"][0].get("title") == "Cut fixed review"
+    assert out["source"] == "nim_llm_disabled"
+    assert isinstance(out["items"], list)
     inv = out.get("nim_invocation") or {}
-    assert inv.get("provider") == "nvidia_nim"
-    assert inv.get("attempted") is True
-    assert "chat/completions" in (inv.get("endpoint_url") or "")
+    assert inv.get("provider") == "none"
+    assert inv.get("attempted") is False
 
 
-def test_generate_audit_ai_skipped_without_key():
+def test_generate_audit_ai_disabled_without_key_same_shape():
     async def _run():
         with patch.object(settings, "nvidia_api_key", ""):
             return await generate_audit_ai_recommendations(audit_payload={}, detail="brief")
 
     out = asyncio.run(_run())
-    assert out["source"] == "skipped_no_key"
-    assert out["items"] == []
+    assert out["source"] == "nim_llm_disabled"
+    assert isinstance(out["items"], list)
     assert (out.get("nim_invocation") or {}).get("attempted") is False
+
+
+def test_generate_audit_ai_recommendations_deterministic_items_present_for_signals():
+    payload = {
+        "audit_sharpness_metrics": {"overall_readiness": {"tier": "low", "score_0_1": 0.42}},
+        "warehouse_intelligence_excerpt": {
+            "fulfillment_economics": {"naive_per_event_implausible_vs_reference": True}
+        },
+        "complementary_network_audit": {"aggregate_delta_usd_per_line_out_of_region": 1.25},
+        "upload_opportunities": [{"title": "Upload billing"}, {"title": "Upload employees"}],
+    }
+
+    async def _run():
+        return await generate_audit_ai_recommendations(audit_payload=payload, detail="brief")
+
+    out = asyncio.run(_run())
+    assert out["source"] == "nim_llm_disabled"
+    assert isinstance(out["items"], list)
+    assert len(out["items"]) >= 1
+    assert any("category" in x for x in out["items"] if isinstance(x, dict))

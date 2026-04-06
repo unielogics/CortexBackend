@@ -31,6 +31,7 @@ from unie_cortex.db.models import (
     ParcelQuoteObservation,
     RateShopQuoteCache,
     Recommendation,
+    ProductResearchRun,
     SkuCatalogItem,
     SkuDemandSnapshot,
     SpapiCatalogSnapshot,
@@ -377,6 +378,26 @@ class CortexStore:
         engagement_id: str | None,
         rows: list[dict[str, Any]],
     ) -> None:
+        raise NotImplementedError
+
+    async def product_research_run_upsert(self, doc: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    async def product_research_run_get(self, run_id: str) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    async def product_research_run_latest_for_key(
+        self, *, tenant_id: str, warehouse_id: str, rerun_key: str
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    async def product_research_runs_list_for_lifecycle(
+        self,
+        *,
+        older_than: datetime,
+        tenant_id: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
         raise NotImplementedError
 
 
@@ -1728,6 +1749,176 @@ class SqlCortexStore(CortexStore):
             )
         await self.s.flush()
 
+    async def product_research_run_upsert(self, doc: dict[str, Any]) -> None:
+        rid = str(doc.get("id") or "").strip()
+        if not rid:
+            raise ValueError("product_research_run id required")
+        row = await self.s.get(ProductResearchRun, rid)
+        payload = {
+            "tenant_id": str(doc.get("tenant_id") or ""),
+            "warehouse_id": str(doc.get("warehouse_id") or ""),
+            "engagement_id": (str(doc.get("engagement_id")).strip() if doc.get("engagement_id") is not None else None),
+            "job_id": str(doc.get("job_id") or ""),
+            "request_hash": str(doc.get("request_hash") or ""),
+            "schema_version": str(doc.get("schema_version") or "product_research_run_v1"),
+            "status": str(doc.get("status") or "complete"),
+            "status_reason_code": (
+                str(doc.get("status_reason_code")).strip() if doc.get("status_reason_code") is not None else None
+            ),
+            "status_reason_detail": (
+                str(doc.get("status_reason_detail")).strip()
+                if doc.get("status_reason_detail") is not None
+                else None
+            ),
+            "source_versions_json": doc.get("source_versions_json"),
+            "cache_lineage_json": doc.get("cache_lineage_json"),
+            "coverage_json": doc.get("coverage_json"),
+            "routing_envelope_json": doc.get("routing_envelope_json"),
+            "nvidia_lineage_json": doc.get("nvidia_lineage_json"),
+            "request_json": str(doc.get("request_json") or "{}"),
+            "artifact_json": str(doc.get("artifact_json") or "{}"),
+            "artifact_sha256": str(doc.get("artifact_sha256") or ""),
+            "artifact_s3_uri": (
+                str(doc.get("artifact_s3_uri")).strip() if doc.get("artifact_s3_uri") is not None else None
+            ),
+            "distribution_json": doc.get("distribution_json"),
+            "distribution_s3_uri": (
+                str(doc.get("distribution_s3_uri")).strip()
+                if doc.get("distribution_s3_uri") is not None
+                else None
+            ),
+            "cuopt_request_json": doc.get("cuopt_request_json"),
+            "cuopt_response_json": doc.get("cuopt_response_json"),
+            "cuopt_request_s3_uri": (
+                str(doc.get("cuopt_request_s3_uri")).strip()
+                if doc.get("cuopt_request_s3_uri") is not None
+                else None
+            ),
+            "cuopt_response_s3_uri": (
+                str(doc.get("cuopt_response_s3_uri")).strip()
+                if doc.get("cuopt_response_s3_uri") is not None
+                else None
+            ),
+            "completed_at": doc.get("completed_at"),
+        }
+        if row is None:
+            self.s.add(
+                ProductResearchRun(
+                    id=rid,
+                    created_at=doc.get("created_at") or _utc(),
+                    **payload,
+                )
+            )
+        else:
+            for k, v in payload.items():
+                setattr(row, k, v)
+        await self.s.flush()
+
+    async def product_research_run_get(self, run_id: str) -> dict[str, Any] | None:
+        row = await self.s.get(ProductResearchRun, run_id)
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "tenant_id": row.tenant_id,
+            "warehouse_id": row.warehouse_id,
+            "engagement_id": row.engagement_id,
+            "job_id": row.job_id,
+            "request_hash": row.request_hash,
+            "schema_version": row.schema_version,
+            "status": row.status,
+            "status_reason_code": row.status_reason_code,
+            "status_reason_detail": row.status_reason_detail,
+            "source_versions_json": row.source_versions_json,
+            "cache_lineage_json": row.cache_lineage_json,
+            "coverage_json": row.coverage_json,
+            "routing_envelope_json": row.routing_envelope_json,
+            "nvidia_lineage_json": row.nvidia_lineage_json,
+            "request_json": row.request_json,
+            "artifact_json": row.artifact_json,
+            "artifact_sha256": row.artifact_sha256,
+            "artifact_s3_uri": row.artifact_s3_uri,
+            "distribution_json": row.distribution_json,
+            "distribution_s3_uri": row.distribution_s3_uri,
+            "cuopt_request_json": row.cuopt_request_json,
+            "cuopt_response_json": row.cuopt_response_json,
+            "cuopt_request_s3_uri": row.cuopt_request_s3_uri,
+            "cuopt_response_s3_uri": row.cuopt_response_s3_uri,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        }
+
+    async def product_research_run_latest_for_key(
+        self, *, tenant_id: str, warehouse_id: str, rerun_key: str
+    ) -> dict[str, Any] | None:
+        r = await self.s.execute(
+            select(ProductResearchRun)
+            .where(
+                ProductResearchRun.tenant_id == tenant_id,
+                ProductResearchRun.warehouse_id == warehouse_id,
+                ProductResearchRun.request_hash == rerun_key,
+            )
+            .order_by(desc(ProductResearchRun.created_at))
+            .limit(1)
+        )
+        row = r.scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "status": row.status,
+        }
+
+    async def product_research_runs_list_for_lifecycle(
+        self,
+        *,
+        older_than: datetime,
+        tenant_id: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        lim = max(1, min(5000, int(limit)))
+        q = select(ProductResearchRun).where(ProductResearchRun.created_at <= older_than)
+        if tenant_id:
+            q = q.where(ProductResearchRun.tenant_id == tenant_id.strip())
+        q = q.order_by(ProductResearchRun.created_at.asc()).limit(lim)
+        r = await self.s.execute(q)
+        out: list[dict[str, Any]] = []
+        for row in r.scalars().all():
+            out.append(
+                {
+                    "id": row.id,
+                    "tenant_id": row.tenant_id,
+                    "warehouse_id": row.warehouse_id,
+                    "engagement_id": row.engagement_id,
+                    "job_id": row.job_id,
+                    "request_hash": row.request_hash,
+                    "schema_version": row.schema_version,
+                    "status": row.status,
+                    "status_reason_code": row.status_reason_code,
+                    "status_reason_detail": row.status_reason_detail,
+                    "source_versions_json": row.source_versions_json,
+                    "cache_lineage_json": row.cache_lineage_json,
+                    "coverage_json": row.coverage_json,
+                    "routing_envelope_json": row.routing_envelope_json,
+                    "nvidia_lineage_json": row.nvidia_lineage_json,
+                    "request_json": row.request_json,
+                    "artifact_json": row.artifact_json,
+                    "artifact_sha256": row.artifact_sha256,
+                    "artifact_s3_uri": row.artifact_s3_uri,
+                    "distribution_json": row.distribution_json,
+                    "distribution_s3_uri": row.distribution_s3_uri,
+                    "cuopt_request_json": row.cuopt_request_json,
+                    "cuopt_response_json": row.cuopt_response_json,
+                    "cuopt_request_s3_uri": row.cuopt_request_s3_uri,
+                    "cuopt_response_s3_uri": row.cuopt_response_s3_uri,
+                    "created_at": row.created_at,
+                    "completed_at": row.completed_at,
+                }
+            )
+        return out
+
     async def templates_seed_default(self):
         r = await self.s.execute(select(MappingTemplate).limit(1))
         if r.scalar_one_or_none():
@@ -1803,6 +1994,7 @@ class MongoCortexStore(CortexStore):
         self.blf = db["cortex_billing_line_facts"]
         self.empf = db["cortex_employee_facts"]
         self.dist = db["cortex_distribution"]
+        self.pr_run = db["cortex_product_research_runs"]
 
     async def engagement_create(self, eid, name, org_tenant_id, external_ref):
         await self.eng.insert_one(
@@ -3046,6 +3238,175 @@ class MongoCortexStore(CortexStore):
             )
         await self.dist.insert_many(docs)
 
+    async def product_research_run_upsert(self, doc: dict[str, Any]) -> None:
+        rid = str(doc.get("id") or "").strip()
+        if not rid:
+            raise ValueError("product_research_run id required")
+        created_at = doc.get("created_at") or _utc()
+        await self.pr_run.update_one(
+            {"_id": rid},
+            {
+                "$set": {
+                    "tenant_id": str(doc.get("tenant_id") or ""),
+                    "warehouse_id": str(doc.get("warehouse_id") or ""),
+                    "engagement_id": (
+                        str(doc.get("engagement_id")).strip() if doc.get("engagement_id") is not None else None
+                    ),
+                    "job_id": str(doc.get("job_id") or ""),
+                    "request_hash": str(doc.get("request_hash") or ""),
+                    "schema_version": str(doc.get("schema_version") or "product_research_run_v1"),
+                    "status": str(doc.get("status") or "complete"),
+                    "status_reason_code": (
+                        str(doc.get("status_reason_code")).strip()
+                        if doc.get("status_reason_code") is not None
+                        else None
+                    ),
+                    "status_reason_detail": (
+                        str(doc.get("status_reason_detail")).strip()
+                        if doc.get("status_reason_detail") is not None
+                        else None
+                    ),
+                    "source_versions_json": doc.get("source_versions_json"),
+                    "cache_lineage_json": doc.get("cache_lineage_json"),
+                    "coverage_json": doc.get("coverage_json"),
+                    "routing_envelope_json": doc.get("routing_envelope_json"),
+                    "nvidia_lineage_json": doc.get("nvidia_lineage_json"),
+                    "request_json": str(doc.get("request_json") or "{}"),
+                    "artifact_json": str(doc.get("artifact_json") or "{}"),
+                    "artifact_sha256": str(doc.get("artifact_sha256") or ""),
+                    "artifact_s3_uri": (
+                        str(doc.get("artifact_s3_uri")).strip() if doc.get("artifact_s3_uri") is not None else None
+                    ),
+                    "distribution_json": doc.get("distribution_json"),
+                    "distribution_s3_uri": (
+                        str(doc.get("distribution_s3_uri")).strip()
+                        if doc.get("distribution_s3_uri") is not None
+                        else None
+                    ),
+                    "cuopt_request_json": doc.get("cuopt_request_json"),
+                    "cuopt_response_json": doc.get("cuopt_response_json"),
+                    "cuopt_request_s3_uri": (
+                        str(doc.get("cuopt_request_s3_uri")).strip()
+                        if doc.get("cuopt_request_s3_uri") is not None
+                        else None
+                    ),
+                    "cuopt_response_s3_uri": (
+                        str(doc.get("cuopt_response_s3_uri")).strip()
+                        if doc.get("cuopt_response_s3_uri") is not None
+                        else None
+                    ),
+                    "created_at": created_at,
+                    "completed_at": doc.get("completed_at"),
+                }
+            },
+            upsert=True,
+        )
+
+    async def product_research_run_get(self, run_id: str) -> dict[str, Any] | None:
+        d = await self.pr_run.find_one({"_id": run_id})
+        if d is None:
+            return None
+        ca = d.get("created_at")
+        co = d.get("completed_at")
+        return {
+            "id": d.get("_id"),
+            "tenant_id": d.get("tenant_id"),
+            "warehouse_id": d.get("warehouse_id"),
+            "engagement_id": d.get("engagement_id"),
+            "job_id": d.get("job_id"),
+            "request_hash": d.get("request_hash"),
+            "schema_version": d.get("schema_version"),
+            "status": d.get("status"),
+            "status_reason_code": d.get("status_reason_code"),
+            "status_reason_detail": d.get("status_reason_detail"),
+            "source_versions_json": d.get("source_versions_json"),
+            "cache_lineage_json": d.get("cache_lineage_json"),
+            "coverage_json": d.get("coverage_json"),
+            "routing_envelope_json": d.get("routing_envelope_json"),
+            "nvidia_lineage_json": d.get("nvidia_lineage_json"),
+            "request_json": d.get("request_json"),
+            "artifact_json": d.get("artifact_json"),
+            "artifact_sha256": d.get("artifact_sha256"),
+            "artifact_s3_uri": d.get("artifact_s3_uri"),
+            "distribution_json": d.get("distribution_json"),
+            "distribution_s3_uri": d.get("distribution_s3_uri"),
+            "cuopt_request_json": d.get("cuopt_request_json"),
+            "cuopt_response_json": d.get("cuopt_response_json"),
+            "cuopt_request_s3_uri": d.get("cuopt_request_s3_uri"),
+            "cuopt_response_s3_uri": d.get("cuopt_response_s3_uri"),
+            "created_at": ca.isoformat() if hasattr(ca, "isoformat") else (str(ca) if ca is not None else None),
+            "completed_at": co.isoformat() if hasattr(co, "isoformat") else (str(co) if co is not None else None),
+        }
+
+    async def product_research_run_latest_for_key(
+        self, *, tenant_id: str, warehouse_id: str, rerun_key: str
+    ) -> dict[str, Any] | None:
+        d = await self.pr_run.find_one(
+            {
+                "tenant_id": tenant_id,
+                "warehouse_id": warehouse_id,
+                "request_hash": rerun_key,
+            },
+            sort=[("created_at", -1)],
+        )
+        if d is None:
+            return None
+        ca = d.get("created_at")
+        co = d.get("completed_at")
+        return {
+            "id": d.get("_id"),
+            "status": d.get("status"),
+            "created_at": ca.isoformat() if hasattr(ca, "isoformat") else (str(ca) if ca is not None else None),
+            "completed_at": co.isoformat() if hasattr(co, "isoformat") else (str(co) if co is not None else None),
+        }
+
+    async def product_research_runs_list_for_lifecycle(
+        self,
+        *,
+        older_than: datetime,
+        tenant_id: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        lim = max(1, min(5000, int(limit)))
+        filt: dict[str, Any] = {"created_at": {"$lte": older_than}}
+        if tenant_id and tenant_id.strip():
+            filt["tenant_id"] = tenant_id.strip()
+        cur = self.pr_run.find(filt).sort("created_at", 1).limit(lim)
+        out: list[dict[str, Any]] = []
+        async for d in cur:
+            out.append(
+                {
+                    "id": d.get("_id"),
+                    "tenant_id": d.get("tenant_id"),
+                    "warehouse_id": d.get("warehouse_id"),
+                    "engagement_id": d.get("engagement_id"),
+                    "job_id": d.get("job_id"),
+                    "request_hash": d.get("request_hash"),
+                    "schema_version": d.get("schema_version"),
+                    "status": d.get("status"),
+                    "status_reason_code": d.get("status_reason_code"),
+                    "status_reason_detail": d.get("status_reason_detail"),
+                    "source_versions_json": d.get("source_versions_json"),
+                    "cache_lineage_json": d.get("cache_lineage_json"),
+                    "coverage_json": d.get("coverage_json"),
+                    "routing_envelope_json": d.get("routing_envelope_json"),
+                    "nvidia_lineage_json": d.get("nvidia_lineage_json"),
+                    "request_json": d.get("request_json"),
+                    "artifact_json": d.get("artifact_json"),
+                    "artifact_sha256": d.get("artifact_sha256"),
+                    "artifact_s3_uri": d.get("artifact_s3_uri"),
+                    "distribution_json": d.get("distribution_json"),
+                    "distribution_s3_uri": d.get("distribution_s3_uri"),
+                    "cuopt_request_json": d.get("cuopt_request_json"),
+                    "cuopt_response_json": d.get("cuopt_response_json"),
+                    "cuopt_request_s3_uri": d.get("cuopt_request_s3_uri"),
+                    "cuopt_response_s3_uri": d.get("cuopt_response_s3_uri"),
+                    "created_at": d.get("created_at"),
+                    "completed_at": d.get("completed_at"),
+                }
+            )
+        return out
+
     async def templates_seed_default(self):
         n = await self.tpl.count_documents({})
         if n:
@@ -3150,3 +3511,7 @@ async def ensure_mongo_indexes(db: Any) -> None:
     await db["cortex_ai_invocations"].create_index([("capability", 1), ("created_at", -1)])
     await db["cortex_distribution"].create_index([("job_id", 1)])
     await db["cortex_distribution"].create_index([("tenant_id", 1), ("created_at", -1)])
+    await db["cortex_product_research_runs"].create_index([("tenant_id", 1), ("job_id", 1)], unique=True)
+    await db["cortex_product_research_runs"].create_index([("tenant_id", 1), ("warehouse_id", 1), ("created_at", -1)])
+    await db["cortex_product_research_runs"].create_index([("request_hash", 1), ("created_at", -1)])
+    await db["cortex_product_research_runs"].create_index([("created_at", 1)])

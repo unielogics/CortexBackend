@@ -522,3 +522,39 @@ class DistributionImpactRow(Base):
     operational_warehouse_id: Mapped[str] = mapped_column(String(64), index=True)
     engagement_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProductResearchRun(Base):
+    """Canonical Product Research run ledger with lineage, coverage, and artifact pointers."""
+
+    __tablename__ = "product_research_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    warehouse_id: Mapped[str] = mapped_column(String(64), index=True)
+    engagement_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    job_id: Mapped[str] = mapped_column(String(64), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64), default="product_research_run_v1")
+    status: Mapped[str] = mapped_column(String(32), default="complete", index=True)
+    status_reason_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status_reason_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_versions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_lineage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    coverage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    routing_envelope_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nvidia_lineage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_json: Mapped[str] = mapped_column(Text)
+    artifact_json: Mapped[str] = mapped_column(Text)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    artifact_s3_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    distribution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    distribution_s3_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    cuopt_request_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cuopt_response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cuopt_request_s3_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    cuopt_response_s3_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "job_id", name="uq_product_research_run_tenant_job"),)

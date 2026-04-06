@@ -154,6 +154,18 @@ class EngagementNetworkContextBody(BaseModel):
             "total uses the amount as group COGS. Omit mode for legacy total behavior."
         ),
     )
+    free_delivery_policy_by_sku: dict[str, Any] | None = Field(
+        None,
+        description=(
+            'Optional per-SKU policy: { "SKU": { "free_delivery_miles": number, '
+            '"minimum_purchase_for_free_delivery": number, "source"?: str, "mapped_fields"?: object } }. '
+            "Used as a soft signal in seller warehouse optimization."
+        ),
+    )
+    free_delivery_policy_mapping: dict[str, Any] | None = Field(
+        None,
+        description="Optional mapping metadata for how free-delivery policy fields were sourced/mapped in UI/API.",
+    )
     marketplace_code: str | None = Field(
         None,
         description="e.g. amazon_us — used for fee tables, Keepa domain hints, and results labeling.",
@@ -398,6 +410,10 @@ async def put_engagement_network_context(
         patch["product_origins_by_sku"] = dict(body.product_origins_by_sku)
     if body.supplier_cost_by_sku is not None:
         patch["supplier_cost_by_sku"] = dict(body.supplier_cost_by_sku)
+    if body.free_delivery_policy_by_sku is not None:
+        patch["free_delivery_policy_by_sku"] = dict(body.free_delivery_policy_by_sku)
+    if body.free_delivery_policy_mapping is not None:
+        patch["free_delivery_policy_mapping"] = dict(body.free_delivery_policy_mapping)
     if body.marketplace_code is not None:
         patch["marketplace_code"] = (body.marketplace_code or "").strip() or None
     if body.marketplace_seller_id is not None:

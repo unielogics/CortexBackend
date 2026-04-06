@@ -27,6 +27,15 @@ from unie_cortex.middleware.logging_middleware import RequestLoggingMiddleware
 async def lifespan(app: FastAPI):
     os.makedirs(settings.upload_dir, exist_ok=True)
     app.state.mongo_client = None
+    if (
+        settings.unie_cortex_env == "production"
+        and bool(getattr(settings, "product_research_require_s3_durability_in_prod", True))
+        and not settings.s3_artifacts_configured
+    ):
+        raise RuntimeError(
+            "S3 artifacts must be configured in production for Product Research durability "
+            "(set S3_ARTIFACTS_BUCKET or disable PRODUCT_RESEARCH_REQUIRE_S3_DURABILITY_IN_PROD)."
+        )
 
     if settings.use_mongodb:
         from motor.motor_asyncio import AsyncIOMotorClient

@@ -5,7 +5,9 @@ placement economics, and structured research outputs.
 OpenAPI tag: **Product Research Optimization**. Legacy URL suffix: ``item-intelligence/run``.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import json
+from uuid import uuid4
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +21,13 @@ from unie_cortex.integrations.volume_calibration_store import load_calibration_s
 from unie_cortex.services.intelligence_run import run_item_intelligence
 from unie_cortex.services.product_research_economics import PRODUCT_RESEARCH_OUTPUT_KEYS
 from unie_cortex.services.physical_similarity import attach_signature_to_catalog_row
+from unie_cortex.services.product_research_run_ledger import (
+    REQUIRED_COVERAGE_BLOCKS,
+    compute_rerun_key,
+    save_product_research_run_ledger,
+    should_force_rerun_refresh,
+)
+from unie_cortex.services.product_research_lifecycle import run_product_research_lifecycle_audit
 
 router = APIRouter()
 
@@ -30,6 +39,30 @@ class ManualPackageDimensions(BaseModel):
     length_in: float | None = Field(None, gt=0)
     width_in: float | None = Field(None, gt=0)
     height_in: float | None = Field(None, gt=0)
+
+
+class SkuFreeDeliveryPolicy(BaseModel):
+    """Optional seller policy per SKU used by soft network scoring."""
+
+    free_delivery_miles: float | None = Field(
+        None,
+        gt=0,
+        description="Seller free-delivery radius (miles) for this SKU.",
+    )
+    minimum_purchase_for_free_delivery: float | None = Field(
+        None,
+        gt=0,
+        description="Minimum purchase units to qualify for seller free delivery for this SKU.",
+    )
+    source: str | None = Field(
+        None,
+        max_length=64,
+        description="Optional source tag for ingestion traceability (e.g., csv_map, api_direct).",
+    )
+    mapped_fields: dict[str, str] | None = Field(
+        None,
+        description="Optional input mapping metadata (source field -> canonical policy field).",
+    )
 
 
 class CatalogItemBody(BaseModel):
@@ -280,6 +313,18 @@ class ItemIntelligenceRunBody(BaseModel):
             "Applied after SP-API + Keepa; persisted when ITEM_INTELLIGENCE_PERSIST_CATALOG_PACKAGE_HINTS is true."
         ),
     )
+    free_delivery_policy_by_sku: dict[str, SkuFreeDeliveryPolicy] | None = Field(
+        None,
+        description=(
+            "Optional per-SKU seller free-delivery policy used for soft warehouse scoring. "
+            "A SKU is considered applicable only when both free_delivery_miles and "
+            "minimum_purchase_for_free_delivery are present and > 0."
+        ),
+    )
+    free_delivery_policy_mapping: dict[str, Any] | None = Field(
+        None,
+        description="Optional mapping metadata echo for UI transparency (column mappings, source notes).",
+    )
 
     @model_validator(mode="after")
     def _validate_planning_override_floor(self) -> "ItemIntelligenceRunBody":
@@ -467,6 +512,52 @@ async def item_intelligence_run(
     ln = [l.model_dump() for l in body.lanes]
     pool = [w.model_dump() for w in body.warehouse_candidate_pool] if body.warehouse_candidate_pool else None
     job_id_in = (body.job_id or "").strip() or None
+    req_dump = body.model_dump(exclude_none=True)
+    rerun_key = compute_rerun_key(tenant_id=tenant_id, warehouse_id=warehouse_id, request_body=req_dump)
+    latest = await store.product_research_run_latest_for_key(
+        tenant_id=tenant_id,
+        warehouse_id=warehouse_id,
+        rerun_key=rerun_key,
+    )
+    refresh_keepa_effective = bool(body.refresh_keepa)
+    if not refresh_keepa_effective and should_force_rerun_refresh(latest):
+        refresh_keepa_effective = True
+
+    keepa_hours = int(getattr(settings, "product_research_keepa_refresh_hours", 48) or 48)
+    cached_keepa_age_ok = True
+    try:
+        sku_rows = await store.sku_catalog_list(tenant_id, limit=500)
+        sku_filter_set = {str(s).strip() for s in (body.sku_filter or []) if str(s).strip()}
+        asins: set[str] = set()
+        for row in sku_rows:
+            sku = str(row.get("sku") or "").strip()
+            if sku_filter_set and sku not in sku_filter_set:
+                continue
+            asin = str(row.get("asin") or "").strip()
+            if asin:
+                asins.add(asin)
+        max_age_days = max(1, int((keepa_hours + 23) // 24))
+        for asin in asins:
+            ks = await store.keepa_snapshot_get(tenant_id, asin, domain=body.domain, max_age_days=max_age_days)
+            if not ks:
+                cached_keepa_age_ok = False
+                break
+            ra = ks.get("refreshed_at")
+            if not ra:
+                cached_keepa_age_ok = False
+                break
+            try:
+                dt = datetime.fromisoformat(str(ra).replace("Z", "+00:00"))
+            except ValueError:
+                cached_keepa_age_ok = False
+                break
+            if datetime.now(timezone.utc) - dt > timedelta(hours=keepa_hours):
+                cached_keepa_age_ok = False
+                break
+    except Exception:
+        cached_keepa_age_ok = False
+    if not cached_keepa_age_ok:
+        refresh_keepa_effective = True
     art = await run_item_intelligence(
         store,
         tenant_id,
@@ -476,7 +567,7 @@ async def item_intelligence_run(
         job_id=job_id_in,
         hub_warehouse_id=body.hub_warehouse_id,
         domain=body.domain,
-        refresh_keepa=body.refresh_keepa,
+        refresh_keepa=refresh_keepa_effective,
         sku_filter=body.sku_filter,
         preserve_warehouse_target_shares=body.preserve_warehouse_target_shares,
         auto_expand_warehouse_network=body.auto_expand_warehouse_network,
@@ -502,6 +593,14 @@ async def item_intelligence_run(
             {k: v.model_dump(exclude_none=True) for k, v in body.manual_package_by_sku.items()}
             if body.manual_package_by_sku
             else None
+        ),
+        free_delivery_policy_by_sku=(
+            {k: v.model_dump(exclude_none=True) for k, v in body.free_delivery_policy_by_sku.items()}
+            if body.free_delivery_policy_by_sku
+            else None
+        ),
+        free_delivery_policy_mapping=(
+            dict(body.free_delivery_policy_mapping) if body.free_delivery_policy_mapping else None
         ),
     )
     if body.engagement_id:
@@ -552,4 +651,256 @@ async def item_intelligence_run(
             )
         except ValueError:
             raise HTTPException(404, detail="engagement_id not found") from None
+    run_id = str(uuid4())
+    artifact_s3_uri: str | None = None
+    distribution_s3_uri: str | None = None
+    cuopt_request_s3_uri: str | None = None
+    cuopt_response_s3_uri: str | None = None
+    s3_persist_error: str | None = None
+    if settings.s3_artifacts_configured:
+        try:
+            from unie_cortex.integrations.s3_artifacts import put_bytes_async
+
+            prefix = (settings.s3_artifacts_prefix or "").strip().strip("/")
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            base = f"product-research/{tenant_id}/{warehouse_id}/{run_id}/{stamp}"
+            if prefix:
+                base = f"{prefix}/{base}"
+            artifact_s3_uri = await put_bytes_async(
+                key=f"{base}/artifact.json",
+                body=json.dumps(art, default=str).encode("utf-8"),
+                content_type="application/json",
+            )
+            dist = art.get("distribution") if isinstance(art.get("distribution"), dict) else None
+            if dist is not None:
+                distribution_s3_uri = await put_bytes_async(
+                    key=f"{base}/distribution.json",
+                    body=json.dumps(dist, default=str).encode("utf-8"),
+                    content_type="application/json",
+                )
+            tri = (
+                art.get("multi_dc_placement_tri_modal")
+                if isinstance(art.get("multi_dc_placement_tri_modal"), dict)
+                else {}
+            )
+            nvb = tri.get("nvidia_enhanced") if isinstance(tri.get("nvidia_enhanced"), dict) else {}
+            if nvb.get("request") is not None:
+                cuopt_request_s3_uri = await put_bytes_async(
+                    key=f"{base}/cuopt_request.json",
+                    body=json.dumps(nvb.get("request"), default=str).encode("utf-8"),
+                    content_type="application/json",
+                )
+            if nvb.get("response") is not None:
+                cuopt_response_s3_uri = await put_bytes_async(
+                    key=f"{base}/cuopt_response.json",
+                    body=json.dumps(nvb.get("response"), default=str).encode("utf-8"),
+                    content_type="application/json",
+                )
+        except Exception as e:
+            s3_persist_error = f"{type(e).__name__}: {str(e)[:260]}"
+
+    ledger_meta = await save_product_research_run_ledger(
+        store=store,
+        run_id=run_id,
+        tenant_id=tenant_id,
+        warehouse_id=warehouse_id,
+        engagement_id=(body.engagement_id or "").strip() or None,
+        job_id=str(art.get("distribution", {}).get("job_id") or job_id_in or run_id),
+        request_body={**req_dump, "refresh_keepa_effective": refresh_keepa_effective},
+        artifact=art,
+        artifact_s3_uri=artifact_s3_uri,
+        distribution_s3_uri=distribution_s3_uri,
+        cuopt_request_s3_uri=cuopt_request_s3_uri,
+        cuopt_response_s3_uri=cuopt_response_s3_uri,
+    )
+    art["run_ledger"] = {
+        "run_id": run_id,
+        "schema_version": "product_research_run_v1",
+        "rerun_key": ledger_meta.get("rerun_key"),
+        "status": (ledger_meta.get("coverage") or {}).get("overall_status"),
+        "status_reason_code": (ledger_meta.get("coverage") or {}).get("reason_code"),
+        "coverage": ledger_meta.get("coverage"),
+        "source_versions": ledger_meta.get("source_versions"),
+        "nvidia_lineage": ledger_meta.get("nvidia_lineage"),
+        "refresh_keepa_effective": refresh_keepa_effective,
+        "keepa_refresh_hours_policy": keepa_hours,
+        "rerun_update_days_policy": int(getattr(settings, "product_research_rerun_update_days", 5) or 5),
+        "hot_retention_months_policy": int(getattr(settings, "product_research_hot_retention_months", 6) or 6),
+        "artifact_s3_uri": artifact_s3_uri,
+        "distribution_s3_uri": distribution_s3_uri,
+        "cuopt_request_s3_uri": cuopt_request_s3_uri,
+        "cuopt_response_s3_uri": cuopt_response_s3_uri,
+    }
+    if s3_persist_error:
+        art["run_ledger"]["s3_persist_error"] = s3_persist_error
     return art
+
+
+@router.get(
+    "/{tenant_id}/{warehouse_id}/product-research-optimization/runs/{run_id}",
+    summary="Fetch canonical Product Research run ledger record",
+)
+async def product_research_run_get(
+    tenant_id: str,
+    warehouse_id: str,
+    run_id: str,
+    store: CortexStore = Depends(get_store),
+):
+    row = await store.product_research_run_get(run_id)
+    if not row:
+        raise HTTPException(404, detail="run_id not found")
+    if str(row.get("tenant_id") or "") != tenant_id or str(row.get("warehouse_id") or "") != warehouse_id:
+        raise HTTPException(404, detail="run_id not found for tenant/warehouse")
+    return row
+
+
+@router.get(
+    "/{tenant_id}/{warehouse_id}/product-research-optimization/replay/{run_id}",
+    summary="Replay Product Research response from persisted ledger artifact",
+)
+async def product_research_replay(
+    tenant_id: str,
+    warehouse_id: str,
+    run_id: str,
+    store: CortexStore = Depends(get_store),
+):
+    row = await store.product_research_run_get(run_id)
+    if not row:
+        raise HTTPException(404, detail="run_id not found")
+    if str(row.get("tenant_id") or "") != tenant_id or str(row.get("warehouse_id") or "") != warehouse_id:
+        raise HTTPException(404, detail="run_id not found for tenant/warehouse")
+    art = row.get("artifact_json")
+    if not isinstance(art, str) or not art.strip():
+        raise HTTPException(422, detail="artifact_json missing")
+    try:
+        payload = json.loads(art)
+    except json.JSONDecodeError as e:
+        raise HTTPException(422, detail=f"artifact_json invalid: {e.msg}") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(422, detail="artifact_json must decode to object")
+    payload["replay"] = {
+        "schema_version": "product_research_replay_v1",
+        "run_id": run_id,
+        "source": "ledger_artifact_json",
+        "fresh_external_calls": False,
+    }
+    return payload
+
+
+@router.get(
+    "/{tenant_id}/{warehouse_id}/product-research-optimization/runs/{run_id}/routing-envelope",
+    summary="Fetch routing envelope (TMS/Warehouse/CMS projections) from Product Research ledger",
+)
+async def product_research_routing_envelope(
+    tenant_id: str,
+    warehouse_id: str,
+    run_id: str,
+    store: CortexStore = Depends(get_store),
+):
+    row = await store.product_research_run_get(run_id)
+    if not row:
+        raise HTTPException(404, detail="run_id not found")
+    if str(row.get("tenant_id") or "") != tenant_id or str(row.get("warehouse_id") or "") != warehouse_id:
+        raise HTTPException(404, detail="run_id not found for tenant/warehouse")
+    raw = row.get("routing_envelope_json")
+    if not isinstance(raw, str) or not raw.strip():
+        raise HTTPException(422, detail="routing_envelope_json missing")
+    try:
+        env = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(422, detail=f"routing_envelope_json invalid: {e.msg}") from None
+    if not isinstance(env, dict):
+        raise HTTPException(422, detail="routing_envelope_json must decode to object")
+    return env
+
+
+@router.get(
+    "/{tenant_id}/{warehouse_id}/product-research-optimization/runs/{run_id}/coverage-gate",
+    summary="Coverage/readiness gate result for Product Research run",
+)
+async def product_research_coverage_gate(
+    tenant_id: str,
+    warehouse_id: str,
+    run_id: str,
+    store: CortexStore = Depends(get_store),
+):
+    row = await store.product_research_run_get(run_id)
+    if not row:
+        raise HTTPException(404, detail="run_id not found")
+    if str(row.get("tenant_id") or "") != tenant_id or str(row.get("warehouse_id") or "") != warehouse_id:
+        raise HTTPException(404, detail="run_id not found for tenant/warehouse")
+    cov_raw = row.get("coverage_json")
+    try:
+        cov = json.loads(cov_raw) if isinstance(cov_raw, str) and cov_raw.strip() else {}
+    except json.JSONDecodeError:
+        cov = {}
+    blocks = cov.get("blocks") if isinstance(cov.get("blocks"), dict) else {}
+    missing: list[str] = []
+    partial: list[str] = []
+    failed: list[str] = []
+    for key in REQUIRED_COVERAGE_BLOCKS:
+        state = str((blocks.get(key) or {}).get("state") or "")
+        if state == "failed":
+            failed.append(key)
+        elif state == "partial":
+            partial.append(key)
+        elif state == "not_applicable":
+            continue
+        elif state != "saved_full":
+            missing.append(key)
+    checks = {
+        "persistence_gate": bool(not missing and not failed),
+        "replay_gate": bool(isinstance(row.get("artifact_json"), str) and row.get("artifact_json")),
+        "trace_gate": bool(
+            isinstance(row.get("cache_lineage_json"), str)
+            and row.get("cache_lineage_json")
+            and isinstance(row.get("nvidia_lineage_json"), str)
+            and row.get("nvidia_lineage_json")
+        ),
+        "dispatch_gate": bool(isinstance(row.get("routing_envelope_json"), str) and row.get("routing_envelope_json")),
+    }
+    return {
+        "schema_version": "product_research_coverage_gate_v1",
+        "run_id": run_id,
+        "required_blocks": list(REQUIRED_COVERAGE_BLOCKS),
+        "missing_blocks": missing,
+        "partial_blocks": partial,
+        "failed_blocks": failed,
+        "checks": checks,
+        "go_live_ready": all(bool(v) for v in checks.values()) and not missing and not failed,
+    }
+
+
+class ProductResearchLifecycleAuditBody(BaseModel):
+    tenant_id: str | None = Field(
+        None,
+        description="Optional tenant scope. Omit to process all tenants in batch window.",
+    )
+    dry_run: bool = Field(
+        True,
+        description="When true, compute actions without persisting pointer updates or storage-class transitions.",
+    )
+    limit: int | None = Field(
+        None,
+        ge=1,
+        le=5000,
+        description="Optional override for lifecycle audit batch size.",
+    )
+
+
+@router.post(
+    "/product-research-optimization/lifecycle/audit",
+    summary="Run Product Research lifecycle audit/archival automation (admin)",
+)
+async def product_research_lifecycle_audit(
+    body: ProductResearchLifecycleAuditBody,
+    store: CortexStore = Depends(get_store),
+):
+    if not settings.s3_artifacts_configured:
+        raise HTTPException(400, detail="S3 artifacts are not configured")
+    return await run_product_research_lifecycle_audit(
+        store=store,
+        tenant_id=(body.tenant_id or "").strip() or None,
+        dry_run=bool(body.dry_run),
+        limit=body.limit,
+    )

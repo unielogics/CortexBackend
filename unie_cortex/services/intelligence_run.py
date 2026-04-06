@@ -41,7 +41,10 @@ from unie_cortex.services.cuopt_allocation_hints import (
 from unie_cortex.services.warehouse_mock_rate_grid import (
     build_warehouse_mock_placement_grids,
     merge_warehouse_target_shares_for_placement,
+    resolve_warehouse_lat_lon,
 )
+from unie_cortex.network.road_matrix import haversine_km
+from unie_cortex.network.ltl_mock import mock_ltl_quote_usd
 from unie_cortex.services.physical_similarity import attach_signature_to_catalog_row, physical_signature
 from unie_cortex.network.us_state_demand_share import (
     build_blended_state_demand_weights_from_labels,
@@ -254,6 +257,258 @@ def _network_inputs_for_cuopt_tri_modal(
     )
 
 
+def _to_positive_float(v: Any) -> float | None:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if x > 0 else None
+
+
+def _sku_origin_postal_for_policy(
+    *,
+    catalog_row: dict[str, Any] | None,
+    body_origin_postal: str | None,
+) -> str | None:
+    if body_origin_postal and str(body_origin_postal).strip():
+        return str(body_origin_postal).strip()
+    row = catalog_row if isinstance(catalog_row, dict) else {}
+    ex = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+    p = ex.get("product_origin_postal")
+    return str(p).strip() if p and str(p).strip() else None
+
+
+def _distance_miles_origin_to_warehouse(origin_postal: str, warehouse_row: dict[str, Any]) -> float | None:
+    o_ll = resolve_warehouse_lat_lon({"postal": str(origin_postal).strip()})
+    w_ll = resolve_warehouse_lat_lon(warehouse_row)
+    if not o_ll or not w_ll:
+        return None
+    km = float(haversine_km(o_ll[0], o_ll[1], w_ll[0], w_ll[1]))
+    return km * 0.621371
+
+
+def _build_free_delivery_policy_inputs(
+    *,
+    alloc_inputs: list[dict[str, Any]],
+    catalog_by_sku: dict[str, dict[str, Any]],
+    body_origin_postal: str | None,
+    free_delivery_policy_by_sku: dict[str, dict[str, Any]] | None,
+    free_delivery_policy_mapping: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    req = free_delivery_policy_by_sku if isinstance(free_delivery_policy_by_sku, dict) else {}
+    rows: list[dict[str, Any]] = []
+    applicable_rows: list[dict[str, Any]] = []
+    for x in alloc_inputs:
+        sku = str(x.get("sku") or "").strip()
+        if not sku:
+            continue
+        pol = req.get(sku) if isinstance(req.get(sku), dict) else {}
+        miles = _to_positive_float(pol.get("free_delivery_miles"))
+        min_purchase = _to_positive_float(pol.get("minimum_purchase_for_free_delivery"))
+        monthly_units = max(0.0, float(x.get("monthly_units") or 0.0))
+        weight_lb = max(0.0, float(x.get("weight_lb") or 0.0))
+        origin_postal = _sku_origin_postal_for_policy(
+            catalog_row=catalog_by_sku.get(sku),
+            body_origin_postal=body_origin_postal,
+        )
+        applicable = bool(miles is not None and min_purchase is not None)
+        threshold_gap = max(0.0, float(min_purchase or 0.0) - monthly_units) if applicable else None
+        reason = None
+        if not applicable:
+            reason = "missing_metrics"
+        elif not origin_postal:
+            reason = "missing_origin_postal_for_distance"
+        row = {
+            "sku": sku,
+            "origin_postal": origin_postal,
+            "monthly_units_est_mid": round(monthly_units, 4),
+            "weight_lb": round(weight_lb, 4),
+            "free_delivery_miles": miles,
+            "minimum_purchase_for_free_delivery": min_purchase,
+            "threshold_gap_units": round(threshold_gap, 4) if threshold_gap is not None else None,
+            "free_delivery_policy_applicable": applicable,
+            "free_delivery_policy_reason": reason,
+            "source": pol.get("source"),
+            "mapped_fields": pol.get("mapped_fields"),
+        }
+        rows.append(row)
+        if applicable and origin_postal:
+            applicable_rows.append(
+                {
+                    "sku": sku,
+                    "origin_postal": origin_postal,
+                    "monthly_units_est_mid": monthly_units,
+                    "weight_lb": weight_lb,
+                    "free_delivery_miles": float(miles),
+                    "minimum_purchase_for_free_delivery": float(min_purchase),
+                }
+            )
+    summary = {
+        "schema_version": "free_delivery_policy_inputs_v1",
+        "mapping": dict(free_delivery_policy_mapping) if isinstance(free_delivery_policy_mapping, dict) else {},
+        "requested_sku_count": len(req),
+        "rows_emitted": len(rows),
+        "applicable_sku_count": len(applicable_rows),
+        "non_applicable_sku_count": max(0, len(rows) - len(applicable_rows)),
+        "rows": rows,
+    }
+    return rows, applicable_rows, summary
+
+
+def _build_free_delivery_policy_signals(
+    *,
+    policy_rows: list[dict[str, Any]],
+    selected_warehouses: list[dict[str, Any]],
+    default_lane_cost_per_lb: float,
+) -> dict[str, Any]:
+    per_sku: list[dict[str, Any]] = []
+    covered_count = 0
+    gap_units_total = 0.0
+    est_gap_shipping_total = 0.0
+    applicable_count = 0
+    for row in policy_rows:
+        if not isinstance(row, dict):
+            continue
+        sku = str(row.get("sku") or "").strip()
+        if not sku:
+            continue
+        applicable = bool(row.get("free_delivery_policy_applicable"))
+        out = dict(row)
+        out["coverage_within_free_delivery_miles"] = None
+        out["nearest_warehouse_id"] = None
+        out["nearest_warehouse_distance_miles"] = None
+        out["estimated_shipping_usd_per_unit"] = None
+        out["estimated_monthly_shipping_cost_usd"] = None
+        out["estimated_threshold_gap_shipping_cost_usd"] = None
+        if not applicable:
+            per_sku.append(out)
+            continue
+        applicable_count += 1
+        origin = str(row.get("origin_postal") or "").strip()
+        radius_mi = float(row.get("free_delivery_miles") or 0.0)
+        nearest: tuple[float, str] | None = None
+        for w in selected_warehouses:
+            if not isinstance(w, dict):
+                continue
+            wid = str(w.get("id") or "").strip()
+            if not wid:
+                continue
+            dist = _distance_miles_origin_to_warehouse(origin, w)
+            if dist is None:
+                continue
+            if nearest is None or dist < nearest[0]:
+                nearest = (dist, wid)
+        covered = bool(nearest is not None and nearest[0] <= radius_mi)
+        if covered:
+            covered_count += 1
+        monthly_units = max(0.0, float(row.get("monthly_units_est_mid") or 0.0))
+        gap_units = max(0.0, float(row.get("threshold_gap_units") or 0.0))
+        wt = max(0.1, float(row.get("weight_lb") or 0.0))
+        est_ship_u = max(0.01, float(default_lane_cost_per_lb) * wt)
+        est_monthly_ship = monthly_units * est_ship_u
+        est_gap_ship = gap_units * est_ship_u
+        gap_units_total += gap_units
+        est_gap_shipping_total += est_gap_ship
+        out.update(
+            {
+                "coverage_within_free_delivery_miles": covered,
+                "nearest_warehouse_id": nearest[1] if nearest else None,
+                "nearest_warehouse_distance_miles": round(nearest[0], 4) if nearest else None,
+                "estimated_shipping_usd_per_unit": round(est_ship_u, 6),
+                "estimated_monthly_shipping_cost_usd": round(est_monthly_ship, 4),
+                "estimated_threshold_gap_shipping_cost_usd": round(est_gap_ship, 4),
+            }
+        )
+        per_sku.append(out)
+    coverage_pct = (100.0 * covered_count / applicable_count) if applicable_count else None
+    return {
+        "schema_version": "free_delivery_policy_signals_v1",
+        "applicable_sku_count": applicable_count,
+        "covered_sku_count": covered_count,
+        "coverage_pct": None if coverage_pct is None else round(coverage_pct, 4),
+        "total_threshold_gap_units": round(gap_units_total, 4),
+        "estimated_threshold_gap_shipping_cost_usd_monthly": round(est_gap_shipping_total, 4),
+        "rows": per_sku,
+    }
+
+
+def _build_seller_ltl_pickup_estimate(
+    *,
+    alloc_inputs: list[dict[str, Any]],
+    catalog_by_sku: dict[str, dict[str, Any]],
+    free_delivery_signals: dict[str, Any] | None,
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    total_usd = 0.0
+    assumed_dim_count = 0
+    assumed_weight_count = 0
+    defaults = {"length_in": 12.0, "width_in": 10.0, "height_in": 8.0, "weight_lb": 1.0}
+    for x in alloc_inputs:
+        sku = str(x.get("sku") or "").strip()
+        if not sku:
+            continue
+        qty = max(0, int(round(float(x.get("monthly_units") or 0.0))))
+        if qty <= 0:
+            continue
+        row = catalog_by_sku.get(sku) if isinstance(catalog_by_sku.get(sku), dict) else {}
+        w = _to_positive_float(x.get("weight_lb")) or _to_positive_float(row.get("weight_lb")) or defaults["weight_lb"]
+        l = _to_positive_float(row.get("length_in")) or defaults["length_in"]
+        wi = _to_positive_float(row.get("width_in")) or defaults["width_in"]
+        h = _to_positive_float(row.get("height_in")) or defaults["height_in"]
+        missing_w = _to_positive_float(x.get("weight_lb")) is None and _to_positive_float(row.get("weight_lb")) is None
+        missing_d = (
+            _to_positive_float(row.get("length_in")) is None
+            or _to_positive_float(row.get("width_in")) is None
+            or _to_positive_float(row.get("height_in")) is None
+        )
+        if missing_w:
+            assumed_weight_count += 1
+        if missing_d:
+            assumed_dim_count += 1
+        q = mock_ltl_quote_usd(
+            weight_lb=float(w),
+            length_in=float(l),
+            width_in=float(wi),
+            height_in=float(h),
+            qty=qty,
+        )
+        total = float(q.get("total_usd") or 0.0)
+        total_usd += total
+        rows.append(
+            {
+                "sku": sku,
+                "monthly_units": qty,
+                "estimated_ltl_pickup_total_usd_monthly": round(total, 4),
+                "estimated_ltl_pickup_usd_per_unit": round(float(q.get("linehaul_usd_per_unit_at_this_qty") or 0.0), 6),
+                "assumed_weight": missing_w,
+                "assumed_dimensions": missing_d,
+                "quote_source": "network_ltl_mock_v2",
+            }
+        )
+    free_gap = 0.0
+    if isinstance(free_delivery_signals, dict):
+        free_gap = float(free_delivery_signals.get("estimated_threshold_gap_shipping_cost_usd_monthly") or 0.0)
+    return {
+        "schema_version": "seller_ltl_pickup_estimate_v1",
+        "status": "complete",
+        "estimated_total_ltl_pickup_usd_monthly": round(total_usd, 4),
+        "estimated_total_ltl_pickup_usd_60d": round(total_usd * 2.0, 4),
+        "estimated_threshold_gap_shipping_cost_usd_monthly": round(free_gap, 4),
+        "estimated_threshold_gap_shipping_cost_usd_60d": round(free_gap * 2.0, 4),
+        "sku_rows_count": len(rows),
+        "rows_with_assumed_weight": assumed_weight_count,
+        "rows_with_assumed_dimensions": assumed_dim_count,
+        "rows": rows,
+        "assumptions": {
+            "informational_only": True,
+            "note": (
+                "Deterministic LTL pickup estimate for seller comparison visuals. "
+                "Not a live carrier quote; use integrated rate-shop for contracted pricing."
+            ),
+        },
+    }
+
+
 async def _build_multi_dc_parallel_scenario(
     *,
     store: CortexStore,
@@ -452,6 +707,8 @@ async def run_item_intelligence(
     planning_marketplace_seller_id_by_sku: dict[str, str] | None = None,
     cuopt_enrichment: dict[str, Any] | None = None,
     manual_package_by_sku: dict[str, dict[str, Any]] | None = None,
+    free_delivery_policy_by_sku: dict[str, dict[str, Any]] | None = None,
+    free_delivery_policy_mapping: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     jid = (job_id or "").strip() or str(uuid4())
     planning_context: dict[str, Any] = {
@@ -470,6 +727,12 @@ async def run_item_intelligence(
             "network trim, LTL, and placement use the resulting monthly_units_est_*."
         ),
     }
+    planning_context["free_delivery_policy_by_sku_requested"] = (
+        dict(free_delivery_policy_by_sku) if isinstance(free_delivery_policy_by_sku, dict) else {}
+    )
+    planning_context["free_delivery_policy_mapping"] = (
+        dict(free_delivery_policy_mapping) if isinstance(free_delivery_policy_mapping, dict) else {}
+    )
     request_seed_warehouses = [dict(w) for w in warehouses if isinstance(w, dict)]
     catalog_raw = await store.sku_catalog_list(tenant_id, limit=2000)
     catalog = [attach_signature_to_catalog_row(dict(r)) for r in catalog_raw]
@@ -710,6 +973,19 @@ async def run_item_intelligence(
         )
 
     demand_bands = rollup_catalog_monthly_demand_bands_from_alloc_inputs(alloc_inputs)
+    catalog_by_sku_for_policy = {str(r.get("sku")): r for r in catalog if r.get("sku")}
+    (
+        _unused_free_delivery_rows,
+        free_delivery_policy_rows_for_network,
+        free_delivery_policy_summary,
+    ) = _build_free_delivery_policy_inputs(
+        alloc_inputs=alloc_inputs,
+        catalog_by_sku=catalog_by_sku_for_policy,
+        body_origin_postal=product_origin_postal,
+        free_delivery_policy_by_sku=free_delivery_policy_by_sku,
+        free_delivery_policy_mapping=free_delivery_policy_mapping,
+    )
+    planning_context["free_delivery_policy_summary"] = free_delivery_policy_summary
     catalog_terciles_for_wno: list[Any] = []
     if bool(getattr(settings, "smart_network_emit_catalog_velocity_tercile_rollups", True)):
         catalog_terciles_for_wno = catalog_velocity_tercile_rollups(alloc_inputs)
@@ -750,6 +1026,7 @@ async def run_item_intelligence(
         monthly_total_demand_units_low=demand_bands.get("monthly_low_total"),
         monthly_total_demand_units_high=demand_bands.get("monthly_high_total"),
         catalog_velocity_tercile_rollups=catalog_terciles_for_wno,
+        sku_free_delivery_policy_rows=free_delivery_policy_rows_for_network,
     )
 
     recommended_network: dict[str, Any] | None = None
@@ -788,6 +1065,7 @@ async def run_item_intelligence(
             product_origin_postal=product_origin_postal,
             monthly_total_demand_units_low=demand_bands.get("monthly_low_total"),
             monthly_total_demand_units_high=demand_bands.get("monthly_high_total"),
+            sku_free_delivery_policy_rows=free_delivery_policy_rows_for_network,
         )
         warehouses = [dict(w) for w in (recommended_network.get("selected_warehouses") or [])]
         lanes = [dict(ln) for ln in (recommended_network.get("lanes") or [])]
@@ -891,6 +1169,17 @@ async def run_item_intelligence(
         placement_mock_rate_grids,
         preserve_request_shares=preserve_shares_for_merge,
     )
+    default_lane_cost_for_policy = float(
+        getattr(settings, "smart_network_default_lane_cost_per_lb", 0.15) or 0.15
+    )
+    free_delivery_policy_signals = _build_free_delivery_policy_signals(
+        policy_rows=free_delivery_policy_summary.get("rows") if isinstance(free_delivery_policy_summary, dict) else [],
+        selected_warehouses=warehouses_for_alloc,
+        default_lane_cost_per_lb=default_lane_cost_for_policy,
+    )
+    planning_context["free_delivery_policy_signals"] = {
+        k: v for k, v in free_delivery_policy_signals.items() if k != "rows"
+    }
 
     min_xfer = float(getattr(settings, "placement_min_inter_warehouse_transfer_units", 100.0) or 0.0)
     max_m_xfer = int(getattr(settings, "placement_max_months_min_transfer_horizon", 12) or 12)
@@ -1061,6 +1350,37 @@ async def run_item_intelligence(
     nvidia_layer_on = bool(getattr(settings, "item_intelligence_nvidia_cuopt_enabled", True))
     if include_nvidia_cuopt_layer is not None:
         nvidia_layer_on = bool(include_nvidia_cuopt_layer)
+
+    # Early compute gate: if all SKUs are blocked by Keepa sell guardrails, skip heavy cuOpt/NVIDIA work.
+    def _sku_blocked(d: dict[str, Any]) -> bool:
+        if not isinstance(d, dict):
+            return False
+        if d.get("recommended_to_sell") is False:
+            return True
+        spv = d.get("seller_planning_velocity") if isinstance(d.get("seller_planning_velocity"), dict) else {}
+        if str(spv.get("planning_mode") or "") == "amazon_buybox_30d_only_guardrail":
+            return True
+        grd = d.get("inventory_suggestion_guardrails") if isinstance(d.get("inventory_suggestion_guardrails"), dict) else {}
+        if bool(grd.get("requires_user_acknowledgement")):
+            flags = grd.get("flags") if isinstance(grd.get("flags"), list) else []
+            for f in flags:
+                if not isinstance(f, dict):
+                    continue
+                code = str(f.get("code") or "")
+                sev = str(f.get("severity") or "")
+                if sev == "critical" and code in (
+                    "amazon_buybox_30d_only_high_risk",
+                    "amazon_new_no_third_party_new_offers",
+                    "marketplace_seller_not_in_buybox_history",
+                ):
+                    return True
+        return False
+
+    if demand_by_sku:
+        blocked_all = all(_sku_blocked(v) for v in demand_by_sku.values() if isinstance(v, dict))
+        if blocked_all:
+            overview_on = False
+            nvidia_layer_on = False
 
     wh_cuopt, lanes_cuopt, hub_cuopt, cuopt_network_source = _network_inputs_for_cuopt_tri_modal(
         warehouses_for_alloc,
@@ -1235,6 +1555,8 @@ async def run_item_intelligence(
             "product_origin_region": (str(product_origin_region).strip() if product_origin_region else None),
             "planning_monthly_units_override_by_sku": planning_monthly_units_override_by_sku or None,
             "planning_marketplace_seller_id_by_sku": planning_marketplace_seller_id_by_sku or None,
+            "free_delivery_policy_by_sku": free_delivery_policy_by_sku or None,
+            "free_delivery_policy_mapping": free_delivery_policy_mapping or None,
         }
         product_research_economics = build_product_research_economics(
             tenant_id=tenant_id,
@@ -1253,6 +1575,13 @@ async def run_item_intelligence(
             product_research_core=pr_core,
             upc_catalog_search=upc_catalog_search,
         )
+        if isinstance(product_research_economics, dict):
+            product_research_economics["free_delivery_policy_signals"] = free_delivery_policy_signals
+    seller_ltl_pickup_estimate = _build_seller_ltl_pickup_estimate(
+        alloc_inputs=alloc_inputs,
+        catalog_by_sku=catalog_by_sku,
+        free_delivery_signals=free_delivery_policy_signals,
+    )
     dist_rows = build_distribution_impact_rows(
         job_id=jid,
         allocation=allocation,
@@ -1389,6 +1718,8 @@ async def run_item_intelligence(
         "facility_freight_by_warehouse_id": facility_freight_by_warehouse_id,
         "keepa_refresh_errors": keepa_errors,
         "planning_context": planning_context,
+        "free_delivery_policy_signals": free_delivery_policy_signals,
+        "seller_ltl_pickup_estimate": seller_ltl_pickup_estimate,
         "catalog_physical_gaps": catalog_physical_gaps,
         "ux": {
             "requires_manual_package_input": bool(catalog_physical_gaps),

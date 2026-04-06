@@ -7,29 +7,8 @@
 | `CORS_ORIGINS` | Allowed origins (comma-separated); empty = * | No | `*` |
 | `MONGODB_URI` | MongoDB connection | No* | — |
 | `MONGODB_DB` | MongoDB database name | No | `unie_cortex` |
-| `DATABASE_URL` | SQLite/Postgres when MONGODB_URI unset and DSQL host unset | No | `sqlite+aiosqlite:///./unie_cortex.db` |
-| `AURORA_DSQL_CLUSTER_HOST` | Aurora DSQL endpoint (IAM); connections ignore `DATABASE_URL` | No | — |
-| `AURORA_DSQL_REGION` | AWS region if not inferable from hostname | No | — |
-| `AURORA_DSQL_USER` | DSQL user (often `admin`) | No | `admin` |
-| `AURORA_DSQL_DBNAME` | Database name | No | `postgres` |
-| `AURORA_DSQL_TOKEN_DURATION_SECS` | IAM token lifetime (seconds) | No | (connector default) |
-| `AURORA_DSQL_AWS_PROFILE` | Shared credentials profile (local dev) | No | — |
-| `AURORA_DSQL_POOL_RECYCLE` | SQLAlchemy `pool_recycle` (< ~3600 for DSQL) | No | `3300` |
-| `SEMANTIC_MEMORY_ENABLED` | Enable pgvector semantic DB + async embed pipeline | No | `false` |
-| `SEMANTIC_DATABASE_URL` | `postgresql+asyncpg://...` for Aurora Postgres + pgvector | No* | — |
-| `SEMANTIC_DATABASE_SECRET_ARN` | Secrets Manager JSON → build semantic URL | No* | — |
-| `SEMANTIC_DATABASE_REGION` | Region for Secrets Manager / S3 client | No | — |
-| `SEMANTIC_POOL_RECYCLE` | Semantic engine `pool_recycle` | No | `3300` |
-| `EMBEDDING_PROVIDER` | `openai` (extensible) | No | `openai` |
-| `OPENAI_API_KEY` | Embeddings when provider is OpenAI | No* | — |
-| `OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_BASE_URL` | Embedding model + API base | No | see `.env.example` |
-| `SEMANTIC_EMBED_MAX_CHARS_*` | Truncate before embed | No | see defaults in config |
-| `SEMANTIC_EMBED_MAX_CONCURRENCY` | Async embedding semaphore | No | `4` |
-| `RAG_TOP_K` / `RAG_MIN_SIMILARITY` | Retrieval for NIM audit narrative | No | `6` / `0.25` |
-| `S3_ARTIFACTS_BUCKET` | Optional: store uploads in S3 instead of only `UPLOAD_DIR` | No | — |
-| `S3_ARTIFACTS_PREFIX` | Key prefix inside bucket | No | (empty) |
-| `AWS_REGION` | S3 / Secrets Manager region hint | No | — |
-| `UPLOAD_DIR` | CSV upload directory (when S3 unset) | No | `./uploads` |
+| `DATABASE_URL` | SQLite/Postgres when MONGODB_URI unset | No | `sqlite+aiosqlite:///./unie_cortex.db` |
+| `UPLOAD_DIR` | CSV upload directory | No | `./uploads` |
 | `GEOAPIFY_API_KEY` | Geocoding (primary) | No | — |
 | `GEOCODING_MAPBOX_TOKEN` | Geocoding fallback | No | — |
 | `GEOCODING_NOMINATIM` | Use Nominatim when no paid geocoder | No | `true` |
@@ -39,6 +18,12 @@
 | `RATE_SHOP_CACHE_TTL_DAYS` | Reuse cached parcel quotes (bucket + origin/dest) | No | `30` |
 | `KEEPA_API_KEY` | Keepa product lookup | No | — |
 | `KEEPA_TTL_DAYS` | Per-ASIN Keepa cache TTL (full product JSON) | No | `30` |
+| `PRODUCT_RESEARCH_KEEPA_REFRESH_HOURS` | Product Research Keepa freshness policy window | No | `48` |
+| `PRODUCT_RESEARCH_RERUN_UPDATE_DAYS` | Rerun update policy threshold for non-Keepa Product Research outputs | No | `5` |
+| `PRODUCT_RESEARCH_HOT_RETENTION_MONTHS` | Hot data retention window before archival lifecycle | No | `6` |
+| `PRODUCT_RESEARCH_REQUIRE_S3_DURABILITY_IN_PROD` | Production startup guard requiring S3 artifacts for Product Research durability | No | `true` |
+| `PRODUCT_RESEARCH_ARCHIVE_STORAGE_CLASS` | Storage class used by Product Research lifecycle archival transition | No | `STANDARD_IA` |
+| `PRODUCT_RESEARCH_LIFECYCLE_BATCH_SIZE` | Max Product Research runs processed per lifecycle audit execution | No | `200` |
 | `KEEPA_PRODUCT_OFFERS` | Keepa `product` `offers=` (competition rows; `0` = omit) | No | `20` |
 | `KEEPA_PRODUCT_STATS_DAYS` | Keepa `product` `stats=` window (`0` = omit) | No | `90` |
 | `KEEPA_PLANNING_MONTHLY_CAP_3P` | Max suggested monthly units when seller unknown (3P planning) | No | `400` |
@@ -56,18 +41,16 @@
 | `GOOGLE_MAPS_API_KEY` | Address validation | No | — |
 | `GOOGLE_ADDRESS_VALIDATION_USPS_CASS` | Include USPS CASS in validation | No | `true` |
 | `ADDRESS_VALIDATION_URL` + `ADDRESS_VALIDATION_API_KEY` | Custom address validator | No | — |
-| `NVIDIA_API_KEY` | MAIW / NIM narrative | No | — |
-| `AI_OBSERVABILITY_ENABLED` | Persist NIM `chat/completions` metadata when a `CortexStore` is passed | No | `true` |
+| `NVIDIA_API_KEY` | Managed NVIDIA cuOpt cloud Bearer (`optimize.api.nvidia.com`) when used; not used for LLM chat | No | — |
+| `NIM_CSV_MAPPING_ENABLED` | Legacy toggle only; CSV intelligence now uses deterministic schema inference + quality narration | No | `false` |
+| `AI_OBSERVABILITY_ENABLED` | Persist observability metadata on applicable AI hooks when a `CortexStore` is passed | No | `true` |
 | `AI_OBSERVABILITY_PREVIEW_MAX_CHARS` | Store truncated prompt/response previews in `ai_invocations` (PII risk) | No | `0` |
-| `NIM_MODEL` | NIM model override | No | `nvidia/llama-3.3-nemotron-super-49b-v1` |
-| `NIM_BASE_URL` | NIM endpoint override | No | `https://integrate.api.nvidia.com/v1` |
 | `CUOPT_NIM_URL` | Custom cuOpt: `POST {url}/optimize` for multi-DC preview | No | — |
 | `MULTI_DC_CUOPT_CLOUD_ENABLED` | Multi-DC preview uses `optimize.api.nvidia.com` (needs `CUOPT_API_KEY` or `NVIDIA_API_KEY`) | No | `false` |
 | `TMS_NVIDIA_CUOPT_CLOUD_ENABLED` | `propose_routes` appends NVIDIA cloud cuOpt variant | No | `false` |
 | `TMS_NVIDIA_CUOPT_MAX_NODES` | Max matrix nodes for TMS-triggered cuOpt job | No | `25` |
 | `TMS_NVIDIA_CUOPT_TIME_LIMIT_SECONDS` | cuOpt solver time limit for TMS job | No | `30` |
 | `TMS_NVIDIA_CUOPT_POLL_CAP_SECONDS` | Max status poll seconds for TMS cuOpt | No | `120` |
-| `TMS_NIM_DISPATCH_SUMMARY_ENABLED` | NIM plain-text summary on `propose_routes` | No | `false` |
 | `RATE_LIMIT_INTEGRATIONS` | Max req/min per IP for integrations (0=off) | No | `30` |
 | `NETWORK_INTELLIGENCE_ENABLED` | Expose `/v1/network/*` (zones, LTL/parcel mocks, scenarios) | No | `true` |
 | `AUDIT_COMPLEMENTARY_NETWORK_ENABLED` | Run `complementary_network_audit` on `POST .../audit-synthesis` (requires network intel) | No | `true` |

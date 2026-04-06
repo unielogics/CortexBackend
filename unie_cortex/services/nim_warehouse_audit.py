@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-from unie_cortex.config import settings
-from unie_cortex.integrations.nim_chat import nim_post_chat_completions
-from unie_cortex.request_context import get_correlation_id
 
 
 def _strip_code_fence(text: str) -> str:
@@ -193,21 +190,105 @@ def build_nim_audit_payload(
     return payload
 
 
-def _nim_endpoint_url() -> str:
-    return f"{settings.nim_base_url.rstrip('/')}/chat/completions"
-
-
-def _invocation_base(*, attempted: bool, **extra: Any) -> dict[str, Any]:
+def _invocation_disabled(*, invoked_at_utc: str, reason: str) -> dict[str, Any]:
     return {
-        "provider": "nvidia_nim",
-        "api_family": "openai_compatible_chat_completions",
-        "product": "NVIDIA NIM (Integrate API when using default base URL)",
-        "http_method": "POST",
-        "endpoint_url": _nim_endpoint_url(),
-        "model": settings.nim_model,
-        "attempted": attempted,
-        **extra,
+        "provider": "none",
+        "api_family": "none",
+        "product": "LLM chat disabled (in-house NVIDIA stack: cuOpt / deterministic synthesis only)",
+        "http_method": None,
+        "endpoint_url": None,
+        "model": None,
+        "attempted": False,
+        "invoked_at_utc": invoked_at_utc,
+        "reason": reason,
     }
+
+
+def _deterministic_recommendations_from_payload(audit_payload: dict[str, Any], detail: str) -> list[dict[str, Any]]:
+    """Build deterministic recommendations when hosted LLM/NIM chat is disabled."""
+    out: list[dict[str, Any]] = []
+    idx = 1
+
+    quality = audit_payload.get("audit_sharpness_metrics") or {}
+    overall = quality.get("overall_readiness") if isinstance(quality, dict) else {}
+    tier = str((overall or {}).get("tier") or "").lower()
+    if tier in {"low", "medium"}:
+        out.append(
+            {
+                "id": f"det_{idx}",
+                "priority": "high" if tier == "low" else "medium",
+                "category": "data_enrichment",
+                "title": "Improve feed completeness before high-confidence optimization",
+                "why": (
+                    f"Audit readiness is '{tier}'. Current intelligence is useful but may carry assumptions "
+                    "from sparse source fields."
+                ),
+                "action": "Upload missing backbone feeds and reconcile key fields (SKU, order id, timestamps, fee_code).",
+                "evidence_path": "audit_sharpness_metrics.overall_readiness",
+            }
+        )
+        idx += 1
+
+    wi = audit_payload.get("warehouse_intelligence_excerpt") or {}
+    fe = wi.get("fulfillment_economics") if isinstance(wi, dict) else {}
+    if isinstance(fe, dict) and fe.get("naive_per_event_implausible_vs_reference"):
+        out.append(
+            {
+                "id": f"det_{idx}",
+                "priority": "high",
+                "category": "billing_margin",
+                "title": "Separate fixed billing from variable fulfillment costs",
+                "why": (
+                    "Naive invoice-per-event appears implausible versus reference handling cost, "
+                    "which indicates mixed fixed and variable fee interpretation."
+                ),
+                "action": "Map fee_code/GL splits and rebuild variable-per-shipment metrics for true margin reads.",
+                "evidence_path": "warehouse_intelligence_excerpt.fulfillment_economics",
+            }
+        )
+        idx += 1
+
+    cna = audit_payload.get("complementary_network_audit") or {}
+    try:
+        delta = float((cna or {}).get("aggregate_delta_usd_per_line_out_of_region") or 0.0)
+    except (TypeError, ValueError):
+        delta = 0.0
+    if delta > 0:
+        out.append(
+            {
+                "id": f"det_{idx}",
+                "priority": "medium",
+                "category": "fulfillment_optimization",
+                "title": "Validate second-node fulfillment opportunity",
+                "why": f"Sampled out-of-region lines show approx ${delta:.2f} per-line proxy savings.",
+                "action": "Run destination lane validation and stage a controlled multi-node pilot for hot ZIP3 lanes.",
+                "evidence_path": "complementary_network_audit.aggregate_delta_usd_per_line_out_of_region",
+            }
+        )
+        idx += 1
+
+    opp = audit_payload.get("upload_opportunities") or []
+    if isinstance(opp, list) and opp:
+        top = [x for x in opp[:3] if isinstance(x, dict)]
+        if top:
+            titles = [str(x.get("title") or "").strip() for x in top if str(x.get("title") or "").strip()]
+            if titles:
+                out.append(
+                    {
+                        "id": f"det_{idx}",
+                        "priority": "medium",
+                        "category": "data_enrichment",
+                        "title": "Close top upload gaps to improve intelligence confidence",
+                        "why": "Audit identified missing datasets that block stronger cost/tax/operations inference.",
+                        "action": "Prioritize: " + "; ".join(titles[:3]),
+                        "evidence_path": "upload_opportunities",
+                    }
+                )
+                idx += 1
+
+    if detail == "brief":
+        return out[:3]
+    return out[:6]
 
 
 async def generate_audit_ai_recommendations(
@@ -221,155 +302,20 @@ async def generate_audit_ai_recommendations(
 ) -> dict[str, Any]:
     """
     Returns a block suitable for ``AuditOutcome.ai_recommendations``:
-    ``{source, items, detail_level, nim_invocation, raw_error?}``.
+    ``{source, items, detail_level, nim_invocation}``.
 
-    **NVIDIA call:** one HTTP ``POST`` to ``{NIM_BASE_URL}/chat/completions`` with JSON body
-    ``model``, ``messages`` (system + user), ``temperature``, ``max_tokens`` — same pattern as
-    ``nim_post_chat_completions``.
+    Hosted NIM / chat-completions is not used; ``audit_payload`` is accepted for API compatibility only.
     """
-    key = settings.nvidia_api_key
+    _ = (audit_payload, store, tenant_id, engagement_id, run_id)
     detail = detail if detail in ("brief", "full") else "brief"
     ts = datetime.now(timezone.utc).isoformat()
-    base: dict[str, Any] = {
-        "source": "skipped_no_key",
-        "items": [],
-        "detail_level": detail,
-        "nim_invocation": _invocation_base(
-            attempted=False,
-            invoked_at_utc=ts,
-            reason="NVIDIA_API_KEY not set in environment",
-        ),
-    }
-    if not key:
-        return base
-
-    system = (
-        "You are a warehouse and 3PL economics advisor. You MUST output a single JSON object only, no markdown, "
-        'with key \"recommendations\" array. Each element: '
-        '{"title": string, "rationale": string, '
-        '"impact_axis": \"competitive\"|\"margin\"|\"ops\", '
-        '"evidence": [{\"path\": string, \"value\": any}], '
-        "\"risk_notes\": string}. "
-        "Use ONLY numbers and facts present in the user JSON. "
-        "Every rationale must cite at least one evidence.path pointing to a field in the user payload "
-        "(e.g. nim_audit_payload.competitive_kpis.estimated_handle_usd). "
-        "Do not invent dollar amounts or row counts. "
-        "If nim_audit_payload.label_network_insights.multi_location_opportunity is true, include at least one "
-        "recommendation about **parcel / label savings** using **per-origin rate shopping** (separate hot-zip-grid or "
-        "quotes per ship-from ZIP) and, when destination concentration or multiple candidate warehouses support it, "
-        "**optional multi-node ship-from** — cite nim_audit_payload.label_network_insights.* or spine_excerpt.label_cost.*. "
-        "If nim_audit_payload.complementary_network_audit.status is \"complete\" and "
-        "aggregate_delta_usd_per_line_out_of_region is a positive number, include at least one recommendation that ties "
-        "**out-of-region** parcel volume to **multi-origin** options and cites **zone-exclusion** rationale "
-        "(exclusion_rules_applied / limitations) using evidence.path under nim_audit_payload.complementary_network_audit.*. "
-        "Use nim_audit_payload.improvement_program.items as a checklist: cite evidence.path from the matching "
-        "warehouse_intelligence.*, competitive_kpis.*, data_quality.*, or backbone fields referenced in each thread. "
-        "When nim_audit_payload.audit_sharpness_metrics.overall_readiness.tier is low or medium, explicitly caveat "
-        "confidence and cite feed_coverage_summary / missing canonical keys — do not over-claim savings or labor truth."
-    )
-    user = json.dumps(audit_payload, default=str)[:100_000]
-    max_tokens = 1800 if detail == "full" else 900
-    ok_ts = datetime.now(timezone.utc).isoformat()
-
-    outcome = await nim_post_chat_completions(
-        settings,
-        capability="audit_ai_recommendations",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.2,
-        max_tokens=max_tokens,
-        store=store,
-        tenant_id=tenant_id,
-        engagement_id=engagement_id,
-        run_id=run_id,
-        correlation_id=get_correlation_id(),
-    )
-
-    def _merge_inv(**extra: Any) -> dict[str, Any]:
-        inv = _invocation_base(attempted=True, invoked_at_utc=ok_ts, **extra)
-        if outcome.ai_invocation_id:
-            inv["ai_invocation_id"] = outcome.ai_invocation_id
-        inv["latency_ms"] = outcome.latency_ms
-        return inv
-
-    if outcome.source.startswith("error_http_"):
-        code = outcome.http_status or 0
-        return {
-            **base,
-            "source": f"error_http_{code}" if code else outcome.source,
-            "raw_error": (outcome.raw_response_text or "")[:2000],
-            "nim_invocation": _merge_inv(
-                http_status=outcome.http_status,
-                note="NIM chat/completions returned non-200",
-            ),
-        }
-    if outcome.source == "error_empty":
-        return {
-            **base,
-            "source": "error_empty",
-            "raw_error": "no choices",
-            "nim_invocation": _merge_inv(
-                http_status=outcome.http_status,
-                note="NIM response missing assistant content",
-            ),
-        }
-    if outcome.source != "nim" or not outcome.content:
-        return {
-            **base,
-            "source": outcome.source,
-            "raw_error": (outcome.raw_response_text or "")[:2000],
-            "nim_invocation": _merge_inv(
-                http_status=outcome.http_status,
-                note=f"NIM outcome: {outcome.source}",
-            ),
-        }
-
-    try:
-        parsed = parse_nim_recommendations_json(outcome.content)
-    except json.JSONDecodeError as e:
-        return {
-            **base,
-            "source": "error_json",
-            "raw_error": str(e)[:2000],
-            "nim_invocation": _invocation_base(
-                attempted=True,
-                invoked_at_utc=datetime.now(timezone.utc).isoformat(),
-                note="Failed to parse model content as JSON",
-            ),
-        }
-
-    items = parsed.get("recommendations")
-    if not isinstance(items, list):
-        return {
-            **base,
-            "source": "error_shape",
-            "raw_error": "recommendations not a list",
-            "nim_invocation": _merge_inv(
-                http_status=outcome.http_status,
-                note="Model output JSON parsed but shape wrong",
-            ),
-        }
-    clean: list[dict[str, Any]] = []
-    for it in items[:24]:
-        if not isinstance(it, dict):
-            continue
-        clean.append(
-            {
-                "title": it.get("title"),
-                "rationale": it.get("rationale"),
-                "impact_axis": it.get("impact_axis"),
-                "evidence": it.get("evidence") if isinstance(it.get("evidence"), list) else [],
-                "risk_notes": it.get("risk_notes"),
-            }
-        )
+    items = _deterministic_recommendations_from_payload(audit_payload, detail)
     return {
-        **base,
-        "source": "nim",
-        "items": clean,
-        "nim_invocation": _merge_inv(
-            http_status=outcome.http_status,
-            note="Successful POST to NIM chat/completions; items are parsed model JSON (grounded on audit payload).",
+        "source": "nim_llm_disabled",
+        "items": items,
+        "detail_level": detail,
+        "nim_invocation": _invocation_disabled(
+            invoked_at_utc=ts,
+            reason="Hosted LLM / NIM removed; using deterministic recommendation synthesis from audit payload.",
         ),
     }

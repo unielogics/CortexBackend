@@ -522,6 +522,97 @@ def _linehaul_km_multiplier(hub_postal: str, spoke_postal: str, *, km_scale: flo
     return 1.0 + max(0.0, km) / scale
 
 
+def _free_delivery_policy_rows_normalized(
+    rows: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        sku = str(r.get("sku") or "").strip()
+        if not sku:
+            continue
+        oz = normalize_zip5(str(r.get("origin_postal") or "").strip())
+        if not oz:
+            continue
+        try:
+            miles = float(r.get("free_delivery_miles") or 0.0)
+            min_purchase = float(r.get("minimum_purchase_for_free_delivery") or 0.0)
+            monthly = max(0.0, float(r.get("monthly_units_est_mid") or 0.0))
+            weight_lb = max(0.0, float(r.get("weight_lb") or 0.0))
+        except (TypeError, ValueError):
+            continue
+        if miles <= 0 or min_purchase <= 0:
+            continue
+        out.append(
+            {
+                "sku": sku,
+                "origin_postal": oz,
+                "free_delivery_miles": miles,
+                "minimum_purchase_for_free_delivery": min_purchase,
+                "monthly_units_est_mid": monthly,
+                "weight_lb": weight_lb,
+            }
+        )
+    return out
+
+
+def _free_delivery_policy_soft_penalty_breakdown(
+    *,
+    take: list[str],
+    by_id: dict[str, dict[str, Any]],
+    rows: list[dict[str, Any]],
+    default_lane_cost_per_lb: float,
+    coverage_penalty_weight: float,
+    threshold_gap_penalty_weight: float,
+    enabled: bool,
+) -> dict[str, float]:
+    if not enabled or not rows:
+        return {
+            "free_delivery_soft_penalty_usd_monthly": 0.0,
+            "free_delivery_applicable_sku_count": 0.0,
+            "free_delivery_covered_sku_count": 0.0,
+            "free_delivery_uncovered_sku_count": 0.0,
+            "free_delivery_threshold_gap_units_total": 0.0,
+        }
+    covered = 0.0
+    uncovered = 0.0
+    gap_units_total = 0.0
+    penalty = 0.0
+    for r in rows:
+        origin = str(r.get("origin_postal") or "").strip()
+        radius = float(r.get("free_delivery_miles") or 0.0)
+        nearest_miles: float | None = None
+        for wid in take:
+            dist_km = _km_supplier_zip_to_warehouse(origin, by_id.get(str(wid)) or {})
+            if dist_km is None:
+                continue
+            dm = float(dist_km) * 0.621371
+            if nearest_miles is None or dm < nearest_miles:
+                nearest_miles = dm
+        in_radius = bool(nearest_miles is not None and nearest_miles <= radius)
+        monthly = max(0.0, float(r.get("monthly_units_est_mid") or 0.0))
+        min_purchase = max(0.0, float(r.get("minimum_purchase_for_free_delivery") or 0.0))
+        gap = max(0.0, min_purchase - monthly)
+        gap_units_total += gap
+        wt = max(0.1, float(r.get("weight_lb") or 0.0))
+        ship_u = max(0.01, float(default_lane_cost_per_lb) * wt)
+        if in_radius:
+            covered += 1.0
+            penalty += threshold_gap_penalty_weight * gap * ship_u
+        else:
+            uncovered += 1.0
+            penalty += coverage_penalty_weight * monthly * ship_u
+            penalty += threshold_gap_penalty_weight * gap * ship_u
+    return {
+        "free_delivery_soft_penalty_usd_monthly": round(max(0.0, penalty), 4),
+        "free_delivery_applicable_sku_count": float(len(rows)),
+        "free_delivery_covered_sku_count": covered,
+        "free_delivery_uncovered_sku_count": uncovered,
+        "free_delivery_threshold_gap_units_total": round(max(0.0, gap_units_total), 4),
+    }
+
+
 def network_subset_selection_objective_breakdown(
     *,
     monthly_demand_mid: float,
@@ -534,6 +625,10 @@ def network_subset_selection_objective_breakdown(
     by_id: dict[str, dict[str, Any]],
     km_scale: float,
     fixed_per_node_monthly: float,
+    sku_free_delivery_policy_rows: list[dict[str, Any]] | None = None,
+    free_delivery_soft_enabled: bool = True,
+    free_delivery_coverage_penalty_weight: float = 1.0,
+    free_delivery_threshold_gap_penalty_weight: float = 1.0,
 ) -> dict[str, float]:
     """
     Joint last-mile + hub→spoke linehaul proxy for comparing layouts (same signals cuOpt fusion emphasizes).
@@ -556,12 +651,35 @@ def network_subset_selection_objective_breakdown(
         sp = str((by_id.get(str(w)) or {}).get("postal") or "10001")
         mult = _linehaul_km_multiplier(hp, sp, km_scale=km_scale)
         linehaul += flow_u * w_lb * c_lb * mult
+    free_delivery = _free_delivery_policy_soft_penalty_breakdown(
+        take=take,
+        by_id=by_id,
+        rows=_free_delivery_policy_rows_normalized(sku_free_delivery_policy_rows),
+        default_lane_cost_per_lb=c_lb,
+        coverage_penalty_weight=max(0.0, float(free_delivery_coverage_penalty_weight)),
+        threshold_gap_penalty_weight=max(0.0, float(free_delivery_threshold_gap_penalty_weight)),
+        enabled=bool(free_delivery_soft_enabled),
+    )
+    free_delivery_penalty = float(free_delivery.get("free_delivery_soft_penalty_usd_monthly") or 0.0)
     fixed = max(0.0, float(fixed_per_node_monthly)) * len(take)
-    total = last_mile + linehaul + fixed
+    total = last_mile + linehaul + fixed + free_delivery_penalty
     return {
         "last_mile_proxy_usd_monthly": round(last_mile, 4),
         "linehaul_proxy_usd_monthly": round(linehaul, 4),
         "fixed_cost_usd_monthly": round(fixed, 4),
+        "free_delivery_soft_penalty_usd_monthly": round(free_delivery_penalty, 4),
+        "free_delivery_applicable_sku_count": round(
+            float(free_delivery.get("free_delivery_applicable_sku_count") or 0.0), 4
+        ),
+        "free_delivery_covered_sku_count": round(
+            float(free_delivery.get("free_delivery_covered_sku_count") or 0.0), 4
+        ),
+        "free_delivery_uncovered_sku_count": round(
+            float(free_delivery.get("free_delivery_uncovered_sku_count") or 0.0), 4
+        ),
+        "free_delivery_threshold_gap_units_total": round(
+            float(free_delivery.get("free_delivery_threshold_gap_units_total") or 0.0), 4
+        ),
         "total_proxy_usd_monthly": round(total, 4),
     }
 
@@ -578,6 +696,10 @@ def network_subset_selection_objective(
     by_id: dict[str, dict[str, Any]],
     km_scale: float,
     fixed_per_node_monthly: float,
+    sku_free_delivery_policy_rows: list[dict[str, Any]] | None = None,
+    free_delivery_soft_enabled: bool = True,
+    free_delivery_coverage_penalty_weight: float = 1.0,
+    free_delivery_threshold_gap_penalty_weight: float = 1.0,
 ) -> float:
     return float(
         network_subset_selection_objective_breakdown(
@@ -591,6 +713,10 @@ def network_subset_selection_objective(
             by_id=by_id,
             km_scale=km_scale,
             fixed_per_node_monthly=fixed_per_node_monthly,
+            sku_free_delivery_policy_rows=sku_free_delivery_policy_rows,
+            free_delivery_soft_enabled=free_delivery_soft_enabled,
+            free_delivery_coverage_penalty_weight=free_delivery_coverage_penalty_weight,
+            free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_gap_penalty_weight,
         )["total_proxy_usd_monthly"]
     )
 
@@ -616,6 +742,10 @@ def build_network_location_intelligence_artifact(
     fixed_node: float,
     selected_warehouse_ids: list[str],
     selection_engine_resolved: str,
+    sku_free_delivery_policy_rows: list[dict[str, Any]] | None = None,
+    free_delivery_soft_enabled: bool = True,
+    free_delivery_coverage_penalty_weight: float = 1.0,
+    free_delivery_threshold_gap_penalty_weight: float = 1.0,
 ) -> dict[str, Any]:
     """
     UI / API artifact: up to six ranked locations with decomposed secondary scores, and every subset layout
@@ -721,6 +851,10 @@ def build_network_location_intelligence_artifact(
             by_id=by_id,
             km_scale=km_scale,
             fixed_per_node_monthly=fixed_node,
+            sku_free_delivery_policy_rows=sku_free_delivery_policy_rows,
+            free_delivery_soft_enabled=free_delivery_soft_enabled,
+            free_delivery_coverage_penalty_weight=free_delivery_coverage_penalty_weight,
+            free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_gap_penalty_weight,
         )
         subset_evaluations.append(
             {
@@ -814,6 +948,7 @@ def recommend_warehouse_network(
     product_origin_postal: str | None = None,
     monthly_total_demand_units_low: float | None = None,
     monthly_total_demand_units_high: float | None = None,
+    sku_free_delivery_policy_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Returns ``selected_warehouses``, ``lanes``, ``hub_warehouse_id``, ``trace`` for downstream run.
@@ -917,12 +1052,27 @@ def recommend_warehouse_network(
     branch_w = int(getattr(settings, "smart_network_subset_branch_width", 8) or 8)
     km_sel_scale = float(getattr(settings, "smart_network_linehaul_km_scale_for_selection_proxy", 800.0) or 800.0)
     fixed_node = float(getattr(settings, "smart_network_fixed_cost_usd_per_active_node_monthly", 0.0) or 0.0)
+    free_delivery_rows_eff = _free_delivery_policy_rows_normalized(sku_free_delivery_policy_rows)
+    free_delivery_soft_enabled = bool(
+        getattr(settings, "smart_network_free_delivery_soft_score_enabled", True)
+    )
+    free_delivery_coverage_weight = float(
+        getattr(settings, "smart_network_free_delivery_coverage_penalty_weight", 1.0) or 1.0
+    )
+    free_delivery_threshold_weight = float(
+        getattr(settings, "smart_network_free_delivery_threshold_gap_penalty_weight", 1.0) or 1.0
+    )
 
     trace.append(
         f"MOQ gate demand: {moq_demand:.1f} units/mo (planning mid={monthly_total_demand_units:.1f}; "
         f"explicit_low={monthly_total_demand_units_low}); selection_engine="
         f"{'subset_cost+linehaul_proxy' if subset_on else 'greedy_prefix'} branch_width={branch_w}."
     )
+    if free_delivery_rows_eff:
+        trace.append(
+            f"Free-delivery soft scoring active on {len(free_delivery_rows_eff)} applicable SKU policy row(s) "
+            "(coverage + threshold-gap economics)."
+        )
 
     best_selection: list[str] = []
     best_wh_rows: list[dict[str, Any]] = []
@@ -982,6 +1132,10 @@ def recommend_warehouse_network(
                 by_id=by_id,
                 km_scale=km_sel_scale,
                 fixed_per_node_monthly=fixed_node,
+                sku_free_delivery_policy_rows=free_delivery_rows_eff,
+                free_delivery_soft_enabled=free_delivery_soft_enabled,
+                free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+                free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
             )
             better = best_score is None or score < best_score - 1e-6
             tie_fewer = (
@@ -1087,7 +1241,39 @@ def recommend_warehouse_network(
                 by_id=by_id,
                 km_scale=km_sel_scale,
                 fixed_per_node_monthly=fixed_node,
+                sku_free_delivery_policy_rows=free_delivery_rows_eff,
+                free_delivery_soft_enabled=free_delivery_soft_enabled,
+                free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+                free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
             )
+    selected_objective_breakdown: dict[str, float] | None = None
+    if len(best_selection) >= 1:
+        lay_fin2 = _layout_for_take_ids(best_selection)
+        if lay_fin2 is not None:
+            _gf2, sh_f2, _mf2, mean_f2 = lay_fin2
+            selected_objective_breakdown = network_subset_selection_objective_breakdown(
+                monthly_demand_mid=monthly_total_demand_units,
+                hub_id=h_final,
+                take=best_selection,
+                shares=sh_f2,
+                mean_mock_by_wh=mean_f2,
+                weight_lb=weight_lb,
+                default_lane_cost_per_lb=default_lane_cost_per_lb,
+                by_id=by_id,
+                km_scale=km_sel_scale,
+                fixed_per_node_monthly=fixed_node,
+                sku_free_delivery_policy_rows=free_delivery_rows_eff,
+                free_delivery_soft_enabled=free_delivery_soft_enabled,
+                free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+                free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
+            )
+    if selected_objective_breakdown and float(
+        selected_objective_breakdown.get("free_delivery_soft_penalty_usd_monthly") or 0.0
+    ) > 0:
+        trace.append(
+            "Selected layout keeps a non-zero free-delivery soft penalty because total objective "
+            "(last-mile + linehaul + fixed + free-delivery term) is still economically better."
+        )
 
     cars_list: list[CarrierCode] = list(ctx.get("cars") or ["usps", "ups", "fedex"])
     network_location_intelligence = build_network_location_intelligence_artifact(
@@ -1110,6 +1296,10 @@ def recommend_warehouse_network(
         fixed_node=fixed_node,
         selected_warehouse_ids=list(best_selection),
         selection_engine_resolved=selection_engine_used,
+        sku_free_delivery_policy_rows=free_delivery_rows_eff,
+        free_delivery_soft_enabled=free_delivery_soft_enabled,
+        free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+        free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
     )
 
     lanes: list[dict[str, Any]] = []
@@ -1142,6 +1332,15 @@ def recommend_warehouse_network(
             "best_objective_proxy_usd_monthly": None if best_score is None else round(float(best_score), 4),
             "linehaul_km_scale": km_sel_scale,
             "fixed_cost_usd_per_node_monthly": fixed_node,
+            "free_delivery_soft_score_enabled": free_delivery_soft_enabled,
+            "free_delivery_applicable_sku_count": len(free_delivery_rows_eff),
+            "free_delivery_coverage_penalty_weight": round(float(free_delivery_coverage_weight), 6),
+            "free_delivery_threshold_gap_penalty_weight": round(float(free_delivery_threshold_weight), 6),
+            "selected_objective_breakdown_usd_monthly": selected_objective_breakdown,
+            "economics_override_free_delivery_preference": bool(
+                selected_objective_breakdown
+                and float(selected_objective_breakdown.get("free_delivery_soft_penalty_usd_monthly") or 0.0) > 0
+            ),
         },
         "network_location_intelligence": network_location_intelligence,
         "parameters": {
@@ -1166,6 +1365,8 @@ def recommend_warehouse_network(
             "moq_gate_demand_units": round(moq_demand, 4),
             "monthly_total_demand_units_low": monthly_total_demand_units_low,
             "monthly_total_demand_units_high": monthly_total_demand_units_high,
+            "free_delivery_soft_score_enabled": free_delivery_soft_enabled,
+            "free_delivery_applicable_sku_count": len(free_delivery_rows_eff),
         },
         "trace": trace,
     }
@@ -1367,6 +1568,7 @@ def build_warehouse_network_recommendation_options(
     monthly_total_demand_units_low: float | None = None,
     monthly_total_demand_units_high: float | None = None,
     catalog_velocity_tercile_rollups: list[dict[str, Any]] | None = None,
+    sku_free_delivery_policy_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Always returns a **single-DC** and a **multi-DC** scenario for UI / planning.
@@ -1459,12 +1661,26 @@ def build_warehouse_network_recommendation_options(
     branch_w = int(getattr(settings, "smart_network_subset_branch_width", 8) or 8)
     km_sel_scale = float(getattr(settings, "smart_network_linehaul_km_scale_for_selection_proxy", 800.0) or 800.0)
     fixed_node = float(getattr(settings, "smart_network_fixed_cost_usd_per_active_node_monthly", 0.0) or 0.0)
+    free_delivery_rows_eff = _free_delivery_policy_rows_normalized(sku_free_delivery_policy_rows)
+    free_delivery_soft_enabled = bool(
+        getattr(settings, "smart_network_free_delivery_soft_score_enabled", True)
+    )
+    free_delivery_coverage_weight = float(
+        getattr(settings, "smart_network_free_delivery_coverage_penalty_weight", 1.0) or 1.0
+    )
+    free_delivery_threshold_weight = float(
+        getattr(settings, "smart_network_free_delivery_threshold_gap_penalty_weight", 1.0) or 1.0
+    )
     multi_trace: list[str] = [
         f"Multi-DC target from volume: {target_multi_k} warehouse(s) "
         f"(base {base_m} + floor({monthly_total_demand_units:.1f} / {step_orders:.0f}), cap {max_warehouses_cap}).",
         f"Multi MOQ gate demand: {moq_demand:.1f} units/mo (catalog mid={monthly_total_demand_units:.1f}; "
         f"explicit_low={monthly_total_demand_units_low}); subset_opt={subset_on}.",
     ]
+    if free_delivery_rows_eff:
+        multi_trace.append(
+            f"Free-delivery soft scoring active on {len(free_delivery_rows_eff)} applicable SKU policy row(s)."
+        )
 
     def _layout_for_take(take: list[str]) -> tuple[list[dict[str, Any]], dict[str, float], dict[str, Any] | None]:
         sub = [{"id": w, "postal": by_id[w].get("postal")} for w in take]
@@ -1531,6 +1747,10 @@ def build_warehouse_network_recommendation_options(
                 by_id=by_id,
                 km_scale=km_sel_scale,
                 fixed_per_node_monthly=fixed_node,
+                sku_free_delivery_policy_rows=free_delivery_rows_eff,
+                free_delivery_soft_enabled=free_delivery_soft_enabled,
+                free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+                free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
             )
             better = best_score_m is None or sc < best_score_m - 1e-6
             tie_fewer = (
@@ -1657,6 +1877,10 @@ def build_warehouse_network_recommendation_options(
         fixed_node=fixed_node,
         selected_warehouse_ids=list(applied_take),
         selection_engine_resolved="warehouse_network_recommendation_options_multi_dc",
+        sku_free_delivery_policy_rows=free_delivery_rows_eff,
+        free_delivery_soft_enabled=free_delivery_soft_enabled,
+        free_delivery_coverage_penalty_weight=free_delivery_coverage_weight,
+        free_delivery_threshold_gap_penalty_weight=free_delivery_threshold_weight,
     )
 
     opt_multi: dict[str, Any] = {
@@ -1736,6 +1960,10 @@ def build_warehouse_network_recommendation_options(
             "monthly_total_demand_units_low": monthly_total_demand_units_low,
             "monthly_total_demand_units_high": monthly_total_demand_units_high,
             "catalog_velocity_tercile_rollups": tercile_payload,
+            "free_delivery_soft_score_enabled": free_delivery_soft_enabled,
+            "free_delivery_applicable_sku_count": len(free_delivery_rows_eff),
+            "free_delivery_coverage_penalty_weight": round(float(free_delivery_coverage_weight), 6),
+            "free_delivery_threshold_gap_penalty_weight": round(float(free_delivery_threshold_weight), 6),
         },
         "label_hot_zip3_used": hot_zip3_label[:12],
         "rollup_status": rollup.get("status"),

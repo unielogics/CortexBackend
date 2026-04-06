@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from unie_cortex.network.us_state_demand_share import build_blended_state_demand_weights_from_labels
 from unie_cortex.services.cuopt_allocation_hints import build_cuopt_allocation_intelligence
 from unie_cortex.services.smart_warehouse_network import (
@@ -10,6 +12,7 @@ from unie_cortex.services.smart_warehouse_network import (
     _max_nodes_for_monthly_volume,
     build_warehouse_network_recommendation_options,
     multi_dc_target_warehouse_count,
+    network_subset_selection_objective,
     recommend_warehouse_network,
     rollup_catalog_monthly_demand_bands_from_alloc_inputs,
     trim_client_warehouse_network_to_demand,
@@ -149,6 +152,128 @@ def test_max_nodes_volume_tiers():
     assert _max_nodes_for_monthly_volume(1499, tiers) == 2
     assert _max_nodes_for_monthly_volume(1500, tiers) == 3
     assert _max_nodes_for_monthly_volume(200_000, tiers) == 6
+
+
+def test_network_objective_unchanged_without_free_delivery_rows():
+    by_id = {"h": {"id": "h", "postal": "07102"}, "a": {"id": "a", "postal": "30303"}}
+    base = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="h",
+        take=["h", "a"],
+        shares={"h": 0.5, "a": 0.5},
+        mean_mock_by_wh={"h": 8.0, "a": 8.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+    )
+    empty_rows = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="h",
+        take=["h", "a"],
+        shares={"h": 0.5, "a": 0.5},
+        mean_mock_by_wh={"h": 8.0, "a": 8.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+        sku_free_delivery_policy_rows=[],
+        free_delivery_soft_enabled=True,
+    )
+    assert empty_rows == pytest.approx(base)
+
+
+@patch("unie_cortex.services.smart_warehouse_network._km_supplier_zip_to_warehouse")
+def test_network_objective_free_delivery_soft_penalty_prefers_covered_layout(mock_km):
+    def _side_effect(_origin_zip: str, warehouse_row: dict):
+        return 10.0 if str(warehouse_row.get("id")) == "near" else 500.0
+
+    mock_km.side_effect = _side_effect
+    by_id = {"near": {"id": "near", "postal": "07001"}, "far": {"id": "far", "postal": "90001"}}
+    policy = [
+        {
+            "sku": "S1",
+            "origin_postal": "07055",
+            "free_delivery_miles": 75.0,
+            "minimum_purchase_for_free_delivery": 1000.0,
+            "monthly_units_est_mid": 1000.0,
+            "weight_lb": 2.0,
+        }
+    ]
+    near_score = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="near",
+        take=["near"],
+        shares={"near": 1.0},
+        mean_mock_by_wh={"near": 8.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+        sku_free_delivery_policy_rows=policy,
+        free_delivery_soft_enabled=True,
+    )
+    far_score = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="far",
+        take=["far"],
+        shares={"far": 1.0},
+        mean_mock_by_wh={"far": 8.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+        sku_free_delivery_policy_rows=policy,
+        free_delivery_soft_enabled=True,
+    )
+    assert near_score < far_score
+
+
+def test_network_objective_soft_score_allows_economics_override():
+    by_id = {"near": {"id": "near", "postal": "07001"}, "far": {"id": "far", "postal": "90001"}}
+    policy = [
+        {
+            "sku": "S1",
+            "origin_postal": "07055",
+            "free_delivery_miles": 75.0,
+            "minimum_purchase_for_free_delivery": 1000.0,
+            "monthly_units_est_mid": 1000.0,
+            "weight_lb": 2.0,
+        }
+    ]
+    near_score = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="near",
+        take=["near"],
+        shares={"near": 1.0},
+        mean_mock_by_wh={"near": 60.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+        sku_free_delivery_policy_rows=policy,
+        free_delivery_soft_enabled=True,
+    )
+    far_score = network_subset_selection_objective(
+        monthly_demand_mid=1000.0,
+        hub_id="far",
+        take=["far"],
+        shares={"far": 1.0},
+        mean_mock_by_wh={"far": 5.0},
+        weight_lb=2.0,
+        default_lane_cost_per_lb=0.15,
+        by_id=by_id,
+        km_scale=800.0,
+        fixed_per_node_monthly=0.0,
+        sku_free_delivery_policy_rows=policy,
+        free_delivery_soft_enabled=True,
+    )
+    assert far_score < near_score
 
 
 def _grid_payload(nodes: list[dict], mean_usd: float = 8.0):

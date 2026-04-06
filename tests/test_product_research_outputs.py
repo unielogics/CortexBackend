@@ -127,3 +127,21 @@ def test_api_rejects_invalid_product_research_outputs():
             },
         )
         assert r.status_code == 422
+
+
+def test_api_rejects_non_positive_free_delivery_policy_values():
+    with TestClient(app) as c:
+        r = c.post(
+            "/v1/operational/t/w/item-intelligence/run",
+            json={
+                "warehouses": [{"id": "w", "target_share_pct": 100.0}],
+                "lanes": [],
+                "free_delivery_policy_by_sku": {
+                    "SKU1": {
+                        "free_delivery_miles": -5,
+                        "minimum_purchase_for_free_delivery": 100,
+                    }
+                },
+            },
+        )
+        assert r.status_code == 422

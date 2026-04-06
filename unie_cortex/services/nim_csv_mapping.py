@@ -1,14 +1,12 @@
-"""NIM-assisted CSV column mapping with deterministic baseline and strict validation."""
+"""CSV column mapping: deterministic baseline and strict validation (no LLM assist)."""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 
 from unie_cortex.config import Settings
-from unie_cortex.integrations.nim_chat import nim_post_chat_completions
 from unie_cortex.services.audit_contracts import NimMappingResult
 from unie_cortex.services.csv_column_inference import (
     ORDER_FINANCIAL_CANONICAL,
@@ -82,78 +80,78 @@ def merge_mappings(
     return merged, w1 + w2
 
 
-def _extract_json_object(text: str) -> dict[str, Any] | None:
-    t = (text or "").strip()
-    m2 = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t)
-    if m2:
-        t = m2.group(1)
-    else:
-        m = re.search(r"\{[\s\S]*\}", t)
-        if not m:
-            return None
-        t = m.group(0)
-    try:
-        return json.loads(t)
-    except json.JSONDecodeError:
-        return None
+def _infer_mode(kind: str) -> str:
+    return "seller_optimization" if kind == "order_financials" else "warehouse_audit"
 
 
-async def call_nim_for_mapping(
-    settings: Settings,
+def _mapping_quality_summary(
     *,
     kind: str,
-    allowed: set[str],
     headers: list[str],
-    sample_rows_redacted: list[dict[str, Any]],
-    heuristic_block: dict[str, str],
-    wms_hint: str | None,
-    store=None,
-    tenant_id: str | None = None,
-    engagement_id: str | None = None,
-    run_id: str | None = None,
-) -> dict[str, str]:
-    key = settings.nvidia_api_key
-    if not key:
-        return {}
-    system = (
-        "You map CSV columns to canonical warehouse fields. Reply with JSON only: "
-        '{"mappings":{"SourceHeader":"canonical_field",...}}. '
-        "Use only canonical_field values from the allowed list. Do not invent fields. "
-        "Do not echo PII; sample values are truncated."
-    )
-    user_obj = {
-        "kind": kind,
-        "allowed_canonical_fields": sorted(allowed),
-        "headers": headers,
-        "sample_rows": sample_rows_redacted,
-        "heuristic_seed": heuristic_block,
-        "wms_hint": (wms_hint or "").strip() or None,
+    merged: dict[str, str],
+    warnings: list[str],
+    ambiguous_headers: list[str],
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    total_headers = len([h for h in headers if str(h).strip()])
+    mapped_headers = len(merged)
+    unmapped_headers = max(0, total_headers - mapped_headers)
+    coverage_pct = round((mapped_headers / total_headers) * 100.0, 2) if total_headers else 0.0
+
+    risk_flags: list[str] = []
+    if unmapped_headers > 0:
+        risk_flags.append("unmapped_headers_present")
+    if ambiguous_headers:
+        risk_flags.append("ambiguous_header_candidates")
+    if warnings:
+        risk_flags.append("mapping_validation_warnings")
+
+    # Heuristic confidence bands tuned for early CSV onboarding.
+    confidence = "high"
+    if coverage_pct < 98.0 or ambiguous_headers:
+        confidence = "medium"
+    if coverage_pct < 85.0 or len(ambiguous_headers) >= 3:
+        confidence = "low"
+
+    mode = _infer_mode(kind)
+    narration: list[str] = [
+        f"Detected mode: {mode.replace('_', ' ')}.",
+        f"Mapped {mapped_headers}/{total_headers} columns ({coverage_pct:.2f}% coverage).",
+    ]
+    if ambiguous_headers:
+        narration.append(
+            f"Found {len(ambiguous_headers)} potentially ambiguous headers; review before production ingest."
+        )
+    if warnings:
+        narration.append(
+            f"Validation produced {len(warnings)} warning(s); these mappings were filtered to protect canonical integrity."
+        )
+    if not ambiguous_headers and not warnings and unmapped_headers == 0:
+        narration.append("No mapping conflicts detected in this sample.")
+
+    actions: list[str] = []
+    if unmapped_headers > 0:
+        actions.append("Map remaining unmapped headers in UI before final ingest.")
+    if ambiguous_headers:
+        actions.append("Confirm ambiguous header-to-canonical assignments manually.")
+    if kind == "order_financials":
+        actions.append("Validate tax and fee columns (tax-inclusive vs tax-exclusive) before margin reporting.")
+    else:
+        actions.append("Validate warehouse operational fields (zone, operator, task duration) for labor/audit metrics.")
+    if not actions:
+        actions.append("Proceed with ingest and monitor confidence on next upload batch.")
+
+    quality = {
+        "mode": mode,
+        "total_headers": total_headers,
+        "mapped_headers": mapped_headers,
+        "unmapped_headers": unmapped_headers,
+        "coverage_pct": coverage_pct,
+        "confidence": confidence,
+        "ambiguous_headers_count": len(ambiguous_headers),
+        "warning_count": len(warnings),
+        "risk_flags": risk_flags,
     }
-    user = json.dumps(user_obj, default=str)[:100000]
-    out = await nim_post_chat_completions(
-        settings,
-        capability="csv_column_mapping",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.1,
-        max_tokens=2048,
-        store=store,
-        tenant_id=tenant_id,
-        engagement_id=engagement_id,
-        run_id=run_id,
-        extra={"kind": kind},
-    )
-    if out.source != "nim" or not out.content:
-        return {}
-    parsed = _extract_json_object(out.content)
-    if not parsed:
-        return {}
-    block = parsed.get("mappings")
-    if not isinstance(block, dict):
-        return {}
-    return {str(k): str(v) for k, v in block.items()}
+    return quality, narration, actions
 
 
 async def infer_csv_mapping_with_nim(
@@ -169,10 +167,12 @@ async def infer_csv_mapping_with_nim(
     engagement_id: str | None = None,
     run_id: str | None = None,
 ) -> NimMappingResult:
+    _ = (settings, wms_hint, store, tenant_id, engagement_id, run_id)
     templates = templates or []
     allowed = _allowed_for_kind(kind)
     hset = {h for h in headers if h}
     heur_warnings: list[str] = []
+    ambiguous_headers: list[str] = []
 
     if kind == "labels":
         det = suggest_label_mapping_from_templates(headers, templates)
@@ -181,42 +181,33 @@ async def infer_csv_mapping_with_nim(
     else:
         inf = infer_order_financial_mapping(headers, sample_rows)
         det = dict(inf.get("proposed_mapping") or {})
-        heur_warnings = list(inf.get("ambiguous_headers") or [])
+        ambiguous_headers = list(inf.get("ambiguous_headers") or [])
+        heur_warnings = [f"ambiguous_header:{h}" for h in ambiguous_headers]
 
-    redacted = redact_sample_rows(sample_rows)
     nim_map: dict[str, str] = {}
-    nim_on = bool(settings.nim_csv_mapping_enabled and settings.nvidia_api_key)
-    if nim_on:
-        nim_map = await call_nim_for_mapping(
-            settings,
-            kind=kind,
-            allowed=allowed,
-            headers=headers,
-            sample_rows_redacted=redacted,
-            heuristic_block=det,
-            wms_hint=wms_hint,
-            store=store,
-            tenant_id=tenant_id,
-            engagement_id=engagement_id,
-            run_id=run_id,
-        )
-
     merged, merge_warnings = merge_mappings(det, nim_map, allowed=allowed, headers=hset)
-
-    if not nim_on or not nim_map:
-        source = "heuristic"
-    elif merged != det:
-        source = "merged"
-    else:
-        source = "nim"
+    source = "heuristic"
 
     mapped_sources = set(merged.keys())
     unmapped = [h for h in headers if h and h not in mapped_sources]
 
+    warnings = heur_warnings + merge_warnings
+    quality, narration, actions = _mapping_quality_summary(
+        kind=kind,
+        headers=headers,
+        merged=merged,
+        warnings=warnings,
+        ambiguous_headers=ambiguous_headers,
+    )
+    mode = _infer_mode(kind)
     return NimMappingResult(
         kind=kind,  # type: ignore[arg-type]
         mappings=merged,
         source=source,  # type: ignore[arg-type]
-        warnings=heur_warnings + merge_warnings,
+        warnings=warnings,
         unmapped_columns=unmapped,
+        mode=mode,  # type: ignore[arg-type]
+        mapping_quality=quality,
+        narration=narration,
+        recommended_actions=actions,
     )

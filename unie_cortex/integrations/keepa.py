@@ -178,6 +178,21 @@ def slim_keepa_product_response(res: dict[str, Any] | None) -> dict[str, Any]:
     p0: dict[str, Any] | None = None
     if isinstance(products, list) and products and isinstance(products[0], dict):
         p0 = products[0]
+    keepa_last_update_minute: int | None = None
+    keepa_last_update_iso_utc: str | None = None
+    if p0 and p0.get("lastUpdate") is not None:
+        try:
+            from datetime import datetime, timedelta, timezone
+
+            keepa_last_update_minute = int(p0.get("lastUpdate"))
+            if keepa_last_update_minute > 0:
+                keepa_last_update_iso_utc = (
+                    datetime(2011, 1, 1, tzinfo=timezone.utc)
+                    + timedelta(minutes=keepa_last_update_minute)
+                ).isoformat()
+        except (TypeError, ValueError):
+            keepa_last_update_minute = None
+            keepa_last_update_iso_utc = None
     out: dict[str, Any] = {
         "ok": True,
         "from_cache": res.get("from_cache"),
@@ -185,6 +200,8 @@ def slim_keepa_product_response(res: dict[str, Any] | None) -> dict[str, Any]:
         "title": (p0 or {}).get("title"),
         "sales_rank": (p0 or {}).get("salesRank"),
         "root_category_id": (p0 or {}).get("rootCategory"),
+        "keepa_last_update_minute": keepa_last_update_minute,
+        "keepa_last_update_iso_utc": keepa_last_update_iso_utc,
     }
     if p0 and p0.get("categoryTree") is not None:
         out["category_tree"] = p0.get("categoryTree")
