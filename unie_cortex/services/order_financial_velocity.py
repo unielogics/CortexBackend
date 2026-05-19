@@ -16,9 +16,28 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
+    if not s:
+        return None
+
+    # Fast-path for ISO 8601-like formats
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            if "T" in s:
+                # 2024-01-01T12:00:00Z or 2024-01-01T12:00:00.000Z
+                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            else:
+                # 2024-01-01 or 2024-01-01 12:00:00
+                dt = datetime.fromisoformat(s)
+
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
