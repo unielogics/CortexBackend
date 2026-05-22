@@ -1,0 +1,3 @@
+## 2025-05-15 - ISO 8601 Date Parsing Optimization
+**Learning:** `datetime.strptime` is a significant bottleneck when parsing large datasets in a loop. In Python 3.11+, `datetime.fromisoformat` supports the 'Z' suffix (after a simple replace or natively in 3.11+) and is ~15-20x faster. Additionally, passing raw rows into multiple helper functions that each re-parse the same date fields causes $O(N \cdot K)$ overhead.
+**Action:** Always prefer `fromisoformat` for ISO strings. Refactor batch processing to parse expensive fields once and pass pre-computed objects to downstream analysis functions.
