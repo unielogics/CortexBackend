@@ -19,6 +19,17 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast-path for ISO 8601 strings (native fromisoformat is ~20x faster than strptime)
+    try:
+        # replace('Z', ...) ensures compatibility across Python versions for trailing Z
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
@@ -118,8 +129,9 @@ def analyze_velocity_group(
     group_key: str,
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
+    _precomputed_lines: list[_Line] | None = None,
 ) -> dict[str, Any]:
-    lines = _lines_for_group(rows)
+    lines = _precomputed_lines if _precomputed_lines is not None else _lines_for_group(rows)
     if not lines:
         return {
             "group_key": group_key,
@@ -195,23 +207,44 @@ def build_batch_velocity_enrichment(
     trailing_days_long: int = 60,
 ) -> dict[str, Any]:
     """
-    One pass: per-SKU/ASIN velocity + batch-level monthly totals for network gates.
+    Single pass parsing: per-SKU/ASIN velocity + batch-level monthly totals for network gates.
     """
     by_g: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_g_lines: dict[str, list[_Line]] = defaultdict(list)
+    all_lines: list[_Line] = []
+
     for row in canonical_rows:
-        by_g[order_financial_line_group_key(row)].append(row)
+        gk = order_financial_line_group_key(row)
+        by_g[gk].append(row)
+
+        # Parse date once per row for both per-group and batch-level analysis
+        dt = _parse_order_datetime(_order_date_raw(row))
+        if dt is None:
+            continue
+
+        ln = _Line(
+            dt=dt,
+            units=_qty(row),
+            order_id=(row.get("order_external_id") or row.get("order_id")),
+        )
+        by_g_lines[gk].append(ln)
+        all_lines.append(ln)
 
     by_group: dict[str, Any] = {}
     for gk, grows in by_g.items():
+        glines = by_g_lines.get(gk, [])
+        glines.sort(key=lambda x: x.dt)
+
         by_group[gk] = analyze_velocity_group(
             grows,
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
+            _precomputed_lines=glines,
         )
 
-    # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
+    # Batch-wide units by calendar month (reuse all_lines, avoiding second full parse)
+    all_lines.sort(key=lambda x: x.dt)
     batch_by_month: dict[str, float] = defaultdict(float)
     for ln in all_lines:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
