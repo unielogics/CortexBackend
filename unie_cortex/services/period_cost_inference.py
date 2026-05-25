@@ -10,14 +10,19 @@ from typing import Any
 def _parse_iso_to_date(raw: str | None) -> date | None:
     if not raw or not str(raw).strip():
         return None
-    s = str(raw).strip().replace("Z", "+00:00")
+    s = str(raw).strip()
+
+    # Fast path: already optimized with fromisoformat, but let's ensure it's as efficient as possible.
+    # Python 3.11+ handles 'Z' and many ISO 8601 variants.
     try:
-        dt = datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00") if s.endswith("Z") else s)
         if dt.tzinfo is not None:
+            # Normalize to UTC before stripping tzinfo for date() extraction
             dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
         return dt.date()
     except ValueError:
         pass
+
     m = s[:10]
     if len(m) >= 10 and m[4] == "-" and m[7] == "-":
         try:
