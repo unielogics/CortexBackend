@@ -33,10 +33,131 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("API_KEYS", "UNIE_CORTEX_API_KEYS"),
         description="Comma-separated list of valid API keys (overrides single API_KEY if set)",
     )
+    user_auth_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("USER_AUTH_ENABLED", "user_auth_enabled"),
+        description="Enable first-party UI user authentication endpoints and middleware checks.",
+    )
+    auth_token_secret: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AUTH_TOKEN_SECRET", "auth_token_secret"),
+        description="HMAC secret for signed auth session tokens. If unset, API_KEY is reused as fallback.",
+    )
+    auth_session_ttl_hours: int = Field(
+        12,
+        ge=1,
+        le=24 * 14,
+        validation_alias=AliasChoices("AUTH_SESSION_TTL_HOURS", "auth_session_ttl_hours"),
+    )
+    auth_cookie_name: str = Field(
+        "unie_auth_session",
+        validation_alias=AliasChoices("AUTH_COOKIE_NAME", "auth_cookie_name"),
+    )
+    bootstrap_auth_email: str = Field(
+        "franco@unielogics.com",
+        validation_alias=AliasChoices("BOOTSTRAP_AUTH_EMAIL", "bootstrap_auth_email"),
+    )
+    bootstrap_auth_password: str = Field(
+        "",  # secret moved out of source — supplied via .env (gitignored)
+        validation_alias=AliasChoices("BOOTSTRAP_AUTH_PASSWORD", "bootstrap_auth_password"),
+    )
+    bootstrap_auth_must_rotate_password: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "BOOTSTRAP_AUTH_MUST_ROTATE_PASSWORD",
+            "bootstrap_auth_must_rotate_password",
+        ),
+        description="When true, bootstrap user receives must_rotate_password=true.",
+    )
     cors_origins: str = Field(
         "",
         validation_alias=AliasChoices("CORS_ORIGINS", "cors_origins"),
         description="Comma-separated allowed origins; empty = * for dev",
+    )
+    public_rate_shop_tenant: str = Field(
+        "__default__",
+        validation_alias=AliasChoices("PUBLIC_RATE_SHOP_TENANT", "public_rate_shop_tenant"),
+        description="Tenant scope used for the unauthenticated /v1/public/rate-shop endpoint.",
+    )
+
+    # Public audit-intake → provisioning + AWS SES email
+    email_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("EMAIL_ENABLED", "email_enabled"),
+        description="Master switch for outbound email (AWS SES). Off → provision + on-screen link only.",
+    )
+    email_sender: str | None = Field(
+        None,
+        validation_alias=AliasChoices("EMAIL_SENDER", "email_sender"),
+        description="SES-verified From identity, e.g. no-reply@uniecortex.com.",
+    )
+    aws_ses_region: str = Field(
+        "us-east-1",
+        validation_alias=AliasChoices("AWS_SES_REGION", "aws_ses_region"),
+    )
+    ses_events_topic_arn: str | None = Field(
+        None,
+        validation_alias=AliasChoices("SES_EVENTS_TOPIC_ARN", "ses_events_topic_arn"),
+        description="Optional SNS topic ARN allowlist for the SES bounce/complaint webhook (signature is verified regardless).",
+    )
+    app_base_url: str = Field(
+        "https://ai.uniecortex.com",
+        validation_alias=AliasChoices("APP_BASE_URL", "app_base_url"),
+        description="Base URL of the authed app — used to build /invite/{token} onboarding links.",
+    )
+    intake_inviter_email: str | None = Field(
+        None,
+        validation_alias=AliasChoices("INTAKE_INVITER_EMAIL", "intake_inviter_email"),
+        description="Super-admin AuthUser email that owns public-intake invitations (defaults to bootstrap_auth_email).",
+    )
+    audit_code_ttl_minutes: int = Field(
+        30,
+        validation_alias=AliasChoices("AUDIT_CODE_TTL_MINUTES", "audit_code_ttl_minutes"),
+    )
+    audit_code_max_attempts: int = Field(
+        5,
+        validation_alias=AliasChoices("AUDIT_CODE_MAX_ATTEMPTS", "audit_code_max_attempts"),
+    )
+    # ── UnieSales mirror (server-to-server, HMAC-signed) ───────────────────
+    # After provisioning a public_intake submission, Cortex fires a
+    # fire-and-forget POST to UnieSales' uniecortex public-intake endpoint
+    # so the lead lands in the sales workspace. Failure is logged, never
+    # raised — the audit-onboarding email path is unaffected.
+    uniesales_public_intake_url: str | None = Field(
+        "https://api.uniesales.com",
+        validation_alias=AliasChoices(
+            "UNIESALES_PUBLIC_INTAKE_URL",
+            "uniesales_public_intake_url",
+        ),
+        description=(
+            "UnieSales public-intake base URL (e.g. https://api.uniesales.com). "
+            "Set to empty string to disable the mirror."
+        ),
+    )
+    uniesales_intake_hmac_secret: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "UNIESALES_INTAKE_HMAC_SECRET",
+            "uniesales_intake_hmac_secret",
+        ),
+        description=(
+            "Shared HMAC secret for signing the X-UnieSales-Signature header. "
+            "Pulled from AWS Secrets Manager (uniesales/prod/app). When unset, "
+            "the mirror is skipped (logged warning, never raised)."
+        ),
+    )
+    uniesales_mirror_timeout_seconds: float = Field(
+        5.0,
+        validation_alias=AliasChoices(
+            "UNIESALES_MIRROR_TIMEOUT_SECONDS",
+            "uniesales_mirror_timeout_seconds",
+        ),
+        description="HTTP timeout for the UnieSales mirror call.",
+    )
+    specialists: str = Field(
+        "Maya Chen,Devon Reyes,Priya Anand",
+        validation_alias=AliasChoices("SPECIALISTS", "specialists"),
+        description="Comma-separated specialist roster for the 'speak with a specialist' booking.",
     )
 
     # MongoDB (preferred if set) — no Postgres/SQLite needed for Cortex
@@ -53,6 +174,101 @@ class Settings(BaseSettings):
     database_url: str = Field(
         "sqlite+aiosqlite:///./unie_cortex.db",
         validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+    )
+    wms_intelligence_database_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "WMS_INTELLIGENCE_DATABASE_URL",
+            "wms_intelligence_database_url",
+        ),
+        description=(
+            "Read-only external WMS intelligence baseline source (Postgres URL). "
+            "Used for warehouse nodes/pricing/peer settings/capacity bootstrap in Product Research "
+            "and Seller Optimization."
+        ),
+    )
+    tms_db_host: str | None = Field(
+        None,
+        validation_alias=AliasChoices("TMS_DB_HOST", "DB_HOST", "tms_db_host"),
+        description="TMS read-only Postgres host (used to build WMS intelligence DB URL when explicit URL is unset).",
+    )
+    tms_db_port: int = Field(
+        5432,
+        ge=1,
+        le=65535,
+        validation_alias=AliasChoices("TMS_DB_PORT", "DB_PORT", "tms_db_port"),
+        description="TMS read-only Postgres port.",
+    )
+    tms_db_name: str | None = Field(
+        None,
+        validation_alias=AliasChoices("TMS_DB_NAME", "DB_NAME", "tms_db_name"),
+        description="TMS read-only Postgres database name.",
+    )
+    tms_db_user: str | None = Field(
+        None,
+        validation_alias=AliasChoices("TMS_DB_USER", "DB_USER", "tms_db_user"),
+        description="TMS read-only Postgres username.",
+    )
+    tms_db_password: str | None = Field(
+        None,
+        validation_alias=AliasChoices("TMS_DB_PASSWORD", "DB_PASSWORD", "tms_db_password"),
+        description="TMS read-only Postgres password.",
+    )
+    tms_db_ssl: str = Field(
+        "require",
+        validation_alias=AliasChoices("TMS_DB_SSL", "DB_SSL", "tms_db_ssl"),
+        description="TMS read-only Postgres sslmode (e.g. require, verify-ca, verify-full, disable).",
+    )
+    tms_db_schema: str = Field(
+        "cortex_export",
+        validation_alias=AliasChoices("TMS_DB_SCHEMA", "DB_SCHEMA", "tms_db_schema"),
+        description=(
+            "Postgres schema for the WMS/TMS intelligence feed (e.g. baseline_entities). "
+            "This is not necessarily where LTL serving objects live: use TMS_LTL_SERVING_SCHEMA for sv_*."
+        ),
+    )
+    tms_ltl_serving_schema: str = Field(
+        "cortex",
+        validation_alias=AliasChoices(
+            "TMS_LTL_SERVING_SCHEMA",
+            "tms_ltl_serving_schema",
+        ),
+        description=(
+            "Schema the LTL engine queries for sv_lanes, sv_zones, sv_rate_lines, and related sv_* objects. "
+            "Default cortex (serving views); tms_db_schema often remains cortex_export for baseline_entities. "
+            "Override if your sv_* objects live elsewhere. The DB user needs SELECT on these objects."
+        ),
+    )
+    tms_db_preferred_for_intelligence: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "TMS_DB_PREFERRED_FOR_INTELLIGENCE",
+            "tms_db_preferred_for_intelligence",
+        ),
+        description=(
+            "When true, wms_intelligence_db_url() prefers TMS_DB_* over WMS_INTELLIGENCE_DATABASE_URL. "
+            "When false, the explicit WMS URL is preferred for baseline intelligence. "
+            "LTL sv_* reads always use TMS_DB_* via tms_serving_db_url(), independent of this flag."
+        ),
+    )
+    wms_only_strict: bool = Field(
+        True,
+        validation_alias=AliasChoices("WMS_ONLY_STRICT", "wms_only_strict"),
+        description=(
+            "When true, warehouse/pricing intelligence must come from WMS baseline entities only. "
+            "Non-WMS fallback sources are disabled."
+        ),
+    )
+    wms_only_require_complete_baseline: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "WMS_ONLY_REQUIRE_COMPLETE_BASELINE",
+            "wms_only_require_complete_baseline",
+        ),
+        description=(
+            "When true under WMS_ONLY_STRICT, block optimization runs unless all required WMS baseline "
+            "entity types are present and non-empty."
+        ),
     )
     aurora_dsql_cluster_host: str | None = Field(
         None,
@@ -90,6 +306,11 @@ class Settings(BaseSettings):
     semantic_memory_enabled: bool = Field(
         False,
         validation_alias=AliasChoices("SEMANTIC_MEMORY_ENABLED", "semantic_memory_enabled"),
+    )
+    embedding_provider: str | None = Field(
+        None,
+        validation_alias=AliasChoices("EMBEDDING_PROVIDER", "embedding_provider"),
+        description="e.g. openai — used by audit-run embedding queue guard in semantic_memory pipeline.",
     )
     semantic_database_url: str | None = Field(
         None,
@@ -142,6 +363,14 @@ class Settings(BaseSettings):
         "./uploads",
         validation_alias=AliasChoices("UPLOAD_DIR", "upload_dir"),
     )
+    # Warehouse-audit uploads above this size (bytes) defer their ingest to the
+    # audit-run pipeline's `csv_ingest` stage (Part 0B). Smaller uploads still
+    # ingest in-band during the POST and return `ingest_status: "complete"` so
+    # typical (<5 MB, <15k-row) CSVs don't pay for the deferred lane.
+    upload_defer_ingest_bytes: int = Field(
+        5 * 1024 * 1024,
+        validation_alias=AliasChoices("UPLOAD_DEFER_INGEST_BYTES", "upload_defer_ingest_bytes"),
+    )
     distribution_local_export_dir: str | None = Field(
         None,
         validation_alias=AliasChoices("DISTRIBUTION_LOCAL_EXPORT_DIR", "distribution_local_export_dir"),
@@ -176,6 +405,69 @@ class Settings(BaseSettings):
     shippo_mock_mode: bool = Field(
         False,
         validation_alias=AliasChoices("SHIPPO_MOCK_MODE", "shippo_mock_mode"),
+    )
+    shippo_rate_limit_backoff_sec: float = Field(
+        1.5,
+        gt=0,
+        validation_alias=AliasChoices(
+            "SHIPPO_RATE_LIMIT_BACKOFF_SEC",
+            "shippo_rate_limit_backoff_sec",
+        ),
+        description="Seed delay (seconds) for Shippo 429 / 5xx exponential backoff.",
+    )
+    shippo_max_retries: int = Field(
+        3,
+        ge=1,
+        le=10,
+        validation_alias=AliasChoices("SHIPPO_MAX_RETRIES", "shippo_max_retries"),
+        description="Max attempts per Shippo quote call before giving up.",
+    )
+    warehouse_placement_v2_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "WAREHOUSE_PLACEMENT_V2_ENABLED",
+            "warehouse_placement_v2_enabled",
+        ),
+        description=(
+            "When true (default), intelligence_run / order_financial_planning attach a "
+            "`placement_v2` block to `warehouse_network_intelligence` produced by the reusable "
+            "warehouse placement engine (Cortex rate cache + Shippo + cuOpt primary driver). "
+            "The legacy fields stay untouched so the existing UI keeps working. The V3 seller "
+            "optimization page (state rate-shop grid, inventory spread, inbound schedule, LTL "
+            "route arcs on the heatmap) requires this block, so flipping it off will leave "
+            "those tiles in their empty state."
+        ),
+    )
+    warehouse_placement_keepa_max_asins: int = Field(
+        80,
+        ge=0,
+        validation_alias=AliasChoices(
+            "WAREHOUSE_PLACEMENT_KEEPA_MAX_ASINS",
+            "warehouse_placement_keepa_max_asins",
+        ),
+        description=(
+            "Hard cap on Keepa lookups per placement run. ASINs are sorted by monthly_units "
+            "descending so the most-impactful SKUs win when above the cap. Set 0 to disable."
+        ),
+    )
+    warehouse_placement_keepa_per_call_timeout_sec: float = Field(
+        8.0,
+        gt=0,
+        validation_alias=AliasChoices(
+            "WAREHOUSE_PLACEMENT_KEEPA_PER_CALL_TIMEOUT_SEC",
+            "warehouse_placement_keepa_per_call_timeout_sec",
+        ),
+        description="Per-ASIN timeout (seconds) for Keepa lookups during placement enrichment.",
+    )
+    warehouse_placement_keepa_concurrency: int = Field(
+        4,
+        ge=1,
+        le=32,
+        validation_alias=AliasChoices(
+            "WAREHOUSE_PLACEMENT_KEEPA_CONCURRENCY",
+            "warehouse_placement_keepa_concurrency",
+        ),
+        description="Parallel Keepa lookups during placement enrichment.",
     )
 
     keepa_api_key: str | None = Field(
@@ -499,7 +791,23 @@ class Settings(BaseSettings):
             "SMART_NETWORK_MIN_MONTHLY_UNITS_TO_EXPAND_BEYOND_ONE",
             "smart_network_min_monthly_units_to_expand_beyond_one",
         ),
-        description="Below this catalog-wide monthly demand, auto network stays single-node",
+        description=(
+            "Minimum total catalog monthly demand (MOQ) to consider multi-warehouse expansion (k≥2). "
+            "Also used with uplift off: stay single-node below this threshold unless uplift raises gate demand. "
+            "Default 250; pair with per-secondary-node floors below."
+        ),
+    )
+    smart_network_multi_node_moq_gate_uplift_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MULTI_NODE_MOQ_GATE_UPLIFT_ENABLED",
+            "smart_network_multi_node_moq_gate_uplift_enabled",
+        ),
+        description=(
+            "For k≥2 layouts, evaluate MOQ gates at max(stated gate demand, min catalog velocity implied by inverse-mock "
+            "shares and per-node flow floors) so multi-DC + inter-warehouse transfer thresholds can be planned without "
+            "collapsing to one node purely on low *stated* velocity."
+        ),
     )
     smart_network_min_units_per_warehouse_monthly_flow: float = Field(
         100.0,
@@ -510,15 +818,26 @@ class Settings(BaseSettings):
         description="MOQ-style floor on modeled monthly units per active warehouse (1–2 nodes)",
     )
     smart_network_min_units_per_warehouse_when_three_or_more_nodes: float = Field(
-        500.0,
+        100.0,
         validation_alias=AliasChoices(
             "SMART_NETWORK_MIN_UNITS_PER_WAREHOUSE_WHEN_THREE_OR_MORE_NODES",
             "smart_network_min_units_per_warehouse_when_three_or_more_nodes",
         ),
         description="Per-node monthly flow floor when three or more warehouses are active",
     )
+    smart_network_min_units_per_secondary_warehouse_monthly_flow: float = Field(
+        100.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MIN_UNITS_PER_SECONDARY_WAREHOUSE_MONTHLY_FLOW",
+            "smart_network_min_units_per_secondary_warehouse_monthly_flow",
+        ),
+        description=(
+            "Minimum modeled monthly units for 2nd/3rd+ active DCs (non-primary in priority layout). "
+            "Default 100 for flexible multi-DC; TODO: derive per facility from WMS inbound MOQ when available."
+        ),
+    )
     smart_network_max_warehouses: int = Field(
-        6,
+        8,
         validation_alias=AliasChoices(
             "SMART_NETWORK_MAX_WAREHOUSES",
             "smart_network_max_warehouses",
@@ -526,15 +845,41 @@ class Settings(BaseSettings):
         description="Hard cap on auto-expanded warehouse count (US regional archetypes)",
     )
     smart_network_monthly_orders_per_additional_warehouse: float = Field(
-        1000.0,
+        1250.0,
         validation_alias=AliasChoices(
             "SMART_NETWORK_MONTHLY_ORDERS_PER_ADDITIONAL_WAREHOUSE",
             "smart_network_monthly_orders_per_additional_warehouse",
         ),
         ge=1.0,
         description=(
-            "Multi-DC target count scales as min(max_warehouses, base_multi + floor(monthly_units / this)). "
-            "Example: 72/mo → 2 DCs; 1000/mo → 3 DCs."
+            "Multi-DC target count scales as min(max_warehouses, base_multi + floor(monthly_units / this)) "
+            "when ``smart_network_use_step_formula_for_max_nodes`` is true (legacy) and explicit volume tiers "
+            "are not passed."
+        ),
+    )
+    smart_network_use_step_formula_for_max_nodes: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_USE_STEP_FORMULA_FOR_MAX_NODES",
+            "smart_network_use_step_formula_for_max_nodes",
+        ),
+        description=(
+            "When false (default), ``recommend_warehouse_network`` / trim / recommendation options cap node count "
+            "using default volume tiers (third DC at ≥1500 catalog units/mo). "
+            "When true, restores the legacy base_multi_dc + floor(monthly/step) formula for callers that omit explicit tiers."
+        ),
+    )
+    smart_network_multi_origin_min_separation_miles: float = Field(
+        150.0,
+        ge=0.0,
+        le=3000.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_MULTI_ORIGIN_MIN_SEPARATION_MILES",
+            "smart_network_multi_origin_min_separation_miles",
+        ),
+        description=(
+            "When multiple product-origin ZIPs are closer than this (great-circle), collapse to one anchor seed "
+            "before smart-network expansion; keep distinct origins when farther apart."
         ),
     )
     smart_network_min_multi_dc_warehouse_count: int = Field(
@@ -544,7 +889,7 @@ class Settings(BaseSettings):
             "smart_network_min_multi_dc_warehouse_count",
         ),
         ge=2,
-        le=6,
+        le=8,
         description="Minimum warehouses in the multi-DC recommendation option (before volume-based steps).",
     )
     smart_network_default_lane_cost_per_lb: float = Field(
@@ -567,6 +912,43 @@ class Settings(BaseSettings):
             "fee proxy + demand-weighted mock last mile."
         ),
     )
+    smart_network_secondary_require_opposite_coast: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_SECONDARY_REQUIRE_OPPOSITE_COAST",
+            "smart_network_secondary_require_opposite_coast",
+        ),
+        description=(
+            "When ranking 2nd+ warehouses, list Pacific (CA/OR/WA) candidates before non-Pacific when the primary "
+            "is non-Pacific, and the reverse when the primary is Pacific, so the first secondary is the best-scoring "
+            "option on the other coast whenever the merged candidate pool includes at least one opposite-coast node. "
+            "Does not inject warehouses; use the default archetype pool or Prep Center export with both coasts. "
+            "Remaining nodes follow the same fee + 48-state mock score."
+        ),
+    )
+    smart_network_cuopt_rank_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_CUOPT_RANK_ENABLED",
+            "smart_network_cuopt_rank_enabled",
+        ),
+        description=(
+            "When True and a cuOpt solver is configured (CUOPT_SELF_HOSTED_URL and/or "
+            "multi_dc_cuopt_cloud_enabled with CUOPT_API_KEY or NVIDIA_API_KEY), reorder secondary warehouses using "
+            "cuOpt visit order on a fused cost matrix (geo + 48-state mock parcel proxies), preserving opposite-coast "
+            "tiers when smart_network_secondary_require_opposite_coast is on. Same stack as item intelligence."
+        ),
+    )
+    smart_network_cuopt_rank_timeout_seconds: float = Field(
+        25.0,
+        ge=3.0,
+        le=120.0,
+        validation_alias=AliasChoices(
+            "SMART_NETWORK_CUOPT_RANK_TIMEOUT_SECONDS",
+            "smart_network_cuopt_rank_timeout_seconds",
+        ),
+        description="Poll timeout for self-hosted cuOpt when refining smart-network secondary order.",
+    )
     smart_network_secondary_rank_contract_fee_weight: float = Field(
         1.0,
         validation_alias=AliasChoices(
@@ -588,7 +970,7 @@ class Settings(BaseSettings):
         description="Weight on demand-weighted mock parcel (+ hot ZIP3 proxy) when ranking secondary warehouses.",
     )
     seller_planning_rate_shop_max_warehouses: int = Field(
-        6,
+        8,
         ge=1,
         le=25,
         validation_alias=AliasChoices(
@@ -599,6 +981,40 @@ class Settings(BaseSettings):
             "Seller order-financial placement grids: mock parcel / zone comparison across up to this many DCs "
             "(smart-network selected nodes first, then engagement default archetypes). Feeds cuOpt fusion when "
             "the FBM scenario still uses one linehaul-active node but national hot-zone rate shopping spans several."
+        ),
+    )
+    seller_planning_hot_zone_node_expansion_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_HOT_ZONE_NODE_EXPANSION_ENABLED",
+            "seller_planning_hot_zone_node_expansion_enabled",
+        ),
+        description=(
+            "When true, Seller planning candidate node expansion prioritizes warehouses in top-demand hot states "
+            "first, then nearby candidates within SELLER_PLANNING_HOT_ZONE_RADIUS_MILES before generic fallback fill."
+        ),
+    )
+    seller_planning_hot_zone_top_states: int = Field(
+        8,
+        ge=1,
+        le=24,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_HOT_ZONE_TOP_STATES",
+            "seller_planning_hot_zone_top_states",
+        ),
+        description="Number of highest-demand states (from blended CSV demand weights) used for hot-zone node prioritization.",
+    )
+    seller_planning_hot_zone_radius_miles: float = Field(
+        250.0,
+        ge=0.0,
+        le=3000.0,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_HOT_ZONE_RADIUS_MILES",
+            "seller_planning_hot_zone_radius_miles",
+        ),
+        description=(
+            "Secondary expansion radius around hot-state hub ZIPs. Candidate warehouses within this great-circle "
+            "distance are prioritized before generic national fallback nodes."
         ),
     )
     smart_network_auto_trim_client_warehouses: bool = Field(
@@ -789,6 +1205,90 @@ class Settings(BaseSettings):
             "(HTTP /scenarios/compare-v2-integrated unchanged; default false there)."
         ),
     )
+    seller_planning_ltl_engine_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_ENGINE_ENABLED",
+            "seller_planning_ltl_engine_enabled",
+        ),
+        description=(
+            "When true and TMS Postgres (TMS_DB_*) is available, seller consolidated linehaul uses "
+            "quote_ltl_engine (sv_lanes/sv_zones) instead of mixed-pallet mock; falls back to mock if no quote."
+        ),
+    )
+    seller_planning_ltl_engine_require_tms_db: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_ENGINE_REQUIRE_TMS_DB",
+            "seller_planning_ltl_engine_require_tms_db",
+        ),
+        description="If true, skip LTL engine when no WMS/TMS intelligence DB URL can be built from env.",
+    )
+    seller_planning_ltl_engine_fallback_to_mock: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_ENGINE_FALLBACK_TO_MOCK",
+            "seller_planning_ltl_engine_fallback_to_mock",
+        ),
+        description="When the LTL engine returns no_quote, use mixed-pallet mock linehaul (same as before).",
+    )
+    seller_planning_ltl_tenant_id: str = Field(
+        "__default__",
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_TENANT_ID",
+            "seller_planning_ltl_tenant_id",
+        ),
+        description="Tenant id passed to quote_ltl_engine for seller optimization (matches sv_* scope).",
+    )
+    seller_planning_ltl_source_system_id: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_SOURCE_SYSTEM_ID",
+            "seller_planning_ltl_source_system_id",
+        ),
+    )
+    seller_planning_ltl_provider_id: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_PROVIDER_ID",
+            "seller_planning_ltl_provider_id",
+        ),
+    )
+    seller_planning_ltl_pricing_version_id: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_PRICING_VERSION_ID",
+            "seller_planning_ltl_pricing_version_id",
+        ),
+    )
+    seller_planning_ltl_expand_all_scopes: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_EXPAND_ALL_SCOPES",
+            "seller_planning_ltl_expand_all_scopes",
+        ),
+        description="When true, quote_ltl_engine evaluates all provider/source/pricing tuples for the tenant.",
+    )
+    seller_planning_ltl_allow_cross_provider_stitch: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_LTL_ALLOW_CROSS_PROVIDER_STITCH",
+            "seller_planning_ltl_allow_cross_provider_stitch",
+        ),
+    )
+    seller_planning_cube_packaging_buffer_multiplier: float = Field(
+        1.15,
+        validation_alias=AliasChoices(
+            "SELLER_PLANNING_CUBE_PACKAGING_BUFFER_MULTIPLIER",
+            "seller_planning_cube_packaging_buffer_multiplier",
+        ),
+        ge=1.0,
+        le=2.0,
+        description=(
+            "Multiply product cube (L×W×H×qty) for consolidated linehaul and pallet-slot quoting only. "
+            "Default 1.15 = 15% buffer for box, dunnage, and handling slack. Direct parcel legs still use raw dims."
+        ),
+    )
     us_state_demand_forecast_id: str = Field(
         "2026_retail_ecommerce_population_parcel_blend_v1",
         validation_alias=AliasChoices(
@@ -853,6 +1353,40 @@ class Settings(BaseSettings):
         ),
         description="Mock rate card profile when warehouse nodes omit pricing_profile_id (hub-spoke model)",
     )
+    wms_pricing_threshold_usd: float = Field(
+        1000.0,
+        validation_alias=AliasChoices("WMS_PRICING_THRESHOLD_USD", "wms_pricing_threshold_usd"),
+        description="Threshold branch for pricing mode selection (>= threshold optimize storage mode, below threshold force regular).",
+    )
+    wms_under_threshold_mode: str = Field(
+        "per_unit_per_order_only",
+        validation_alias=AliasChoices("WMS_UNDER_THRESHOLD_MODE", "wms_under_threshold_mode"),
+        description="Under-threshold pricing mode policy.",
+    )
+    fba_immediate_send_forecast_days: int = Field(
+        30,
+        ge=1,
+        le=365,
+        validation_alias=AliasChoices("FBA_IMMEDIATE_SEND_FORECAST_DAYS", "fba_immediate_send_forecast_days"),
+        description="Days used for immediate-send FBA plan before overflow storage applies.",
+    )
+    wms_storage_default_custom_days: int = Field(
+        30,
+        ge=1,
+        le=365,
+        validation_alias=AliasChoices("WMS_STORAGE_DEFAULT_CUSTOM_DAYS", "wms_storage_default_custom_days"),
+        description="Default billing cycle days when storage cycle is custom_days and explicit days are missing.",
+    )
+    wms_constraint_dock_mismatch_hard: bool = Field(
+        False,
+        validation_alias=AliasChoices("WMS_CONSTRAINT_DOCK_MISMATCH_HARD", "wms_constraint_dock_mismatch_hard"),
+        description="When true, dock mismatch becomes a hard forbidden arc; otherwise emits penalty.",
+    )
+    wms_constraint_call_ahead_hard: bool = Field(
+        False,
+        validation_alias=AliasChoices("WMS_CONSTRAINT_CALL_AHEAD_HARD", "wms_constraint_call_ahead_hard"),
+        description="When true, call-ahead mismatch becomes a hard forbidden arc; otherwise emits penalty.",
+    )
     item_intelligence_cuopt_overview_enabled: bool = Field(
         True,
         validation_alias=AliasChoices(
@@ -882,6 +1416,28 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "AMAZON_FBA_FEE_INCREASE_EFFECTIVE_DATE",
             "amazon_fba_fee_increase_effective_date",
+        ),
+    )
+    amazon_marketplace_fee_schedule_effective_date: str = Field(
+        "2026-01-01",
+        validation_alias=AliasChoices(
+            "AMAZON_MARKETPLACE_FEE_SCHEDULE_EFFECTIVE_DATE",
+            "amazon_marketplace_fee_schedule_effective_date",
+        ),
+        description=(
+            "Orders on/after this date are treated as on the current public fee schedule; "
+            "earlier orders get CSV-period alignment for the Current planning column."
+        ),
+    )
+    amazon_pre_effective_referral_multiplier_vs_modeled: float = Field(
+        0.992,
+        validation_alias=AliasChoices(
+            "AMAZON_PRE_EFFECTIVE_REFERRAL_MULTIPLIER_VS_MODELED",
+            "amazon_pre_effective_referral_multiplier_vs_modeled",
+        ),
+        description=(
+            "Heuristic multiplier on modeled referral for orders before amazon_marketplace_fee_schedule_effective_date "
+            "when 2025 referral tables are not loaded (tune 0.98–1.0)."
         ),
     )
     amazon_fba_prep_services_us_end_date: str = Field(
@@ -1170,7 +1726,34 @@ class Settings(BaseSettings):
     nvidia_api_key: str | None = Field(
         None,
         validation_alias=AliasChoices("NVIDIA_API_KEY", "nvidia_api_key"),
-        description="Bearer for NVIDIA managed cuOpt cloud (optimize.api.nvidia.com) when used; not used for LLM chat.",
+        description=(
+            "Bearer for NVIDIA managed cuOpt cloud (optimize.api.nvidia.com) AND for NIM "
+            "LLM chat completions (nim_post_chat_completions). Same key covers both surfaces."
+        ),
+    )
+    nim_base_url: str = Field(
+        "https://integrate.api.nvidia.com/v1",
+        validation_alias=AliasChoices("NIM_BASE_URL", "nim_base_url"),
+        description=(
+            "Base URL for NVIDIA NIM chat completions API. nim_post_chat_completions appends "
+            "/chat/completions to this. Default targets NVIDIA-hosted NIM (integrate.api.nvidia.com)."
+        ),
+    )
+    nim_allow_unauth_local: bool = Field(
+        True,
+        validation_alias=AliasChoices("NIM_ALLOW_UNAUTH_LOCAL", "nim_allow_unauth_local"),
+        description=(
+            "Allow chat/completions without NVIDIA_API_KEY when NIM_BASE_URL points to a local endpoint "
+            "(localhost/127.0.0.1/::1). Intended for self-hosted NIM on EC2."
+        ),
+    )
+    nim_model: str = Field(
+        "meta/llama-3.1-70b-instruct",
+        validation_alias=AliasChoices("NIM_MODEL", "nim_model"),
+        description=(
+            "Model identifier for NIM chat completions (e.g. meta/llama-3.1-70b-instruct, "
+            "mistralai/mixtral-8x22b-instruct-v0.1). Used by MAIW conversational chat + audit narrative."
+        ),
     )
     nim_csv_mapping_enabled: bool = Field(
         False,
@@ -1192,6 +1775,22 @@ class Settings(BaseSettings):
             "ai_observability_preview_max_chars",
         ),
         description="When >0, store truncated prompt/response previews on AI invocations.",
+    )
+    observability_audit_write_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "OBSERVABILITY_AUDIT_WRITE_ENABLED",
+            "observability_audit_write_enabled",
+        ),
+        description="Enable persistence of run_module_audits and intelligence_jobs instrumentation rows.",
+    )
+    navigator_observability_ui_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "NAVIGATOR_OBSERVABILITY_UI_ENABLED",
+            "navigator_observability_ui_enabled",
+        ),
+        description="Enable observability/JOBS collections and API payloads used by Intelligence Navigator UI.",
     )
 
     cuopt_nim_url: str | None = Field(
@@ -1221,15 +1820,36 @@ class Settings(BaseSettings):
         description="Scale haversine cost matrix by lane cost_per_lb when building multi-DC cuOpt jobs (0=geo only).",
     )
     cuopt_inform_allocation_weights: bool = Field(
-        False,
+        True,
         validation_alias=AliasChoices(
             "CUOPT_INFORM_ALLOCATION_WEIGHTS",
             "cuopt_inform_allocation_weights",
         ),
         description=(
-            "When true, after PRO tri-modal cuOpt completes, compute a counterfactual allocation from nudged "
-            "target_share_pct (visit-order heuristic) and attach allocation_cuopt_counterfactual."
+            "When true, after seller / PRO tri-modal cuOpt completes, compute cuopt_allocation_intelligence "
+            "(share nudges). intelligence_run also attaches allocation_cuopt_counterfactual when applicable."
         ),
+    )
+    cuopt_allocation_min_csv_confidence_for_full_nudge: float | None = Field(
+        65.0,
+        validation_alias=AliasChoices(
+            "CUOPT_ALLOCATION_MIN_CSV_CONFIDENCE_FOR_FULL_NUDGE",
+            "cuopt_allocation_min_csv_confidence_for_full_nudge",
+        ),
+        description=(
+            "When order-financial planning passes csv_intelligence_confidence_score below this threshold, "
+            "cap nudges at cuopt_allocation_nudge_max_pct_low_confidence. None disables the gate."
+        ),
+    )
+    cuopt_allocation_nudge_max_pct_low_confidence: float = Field(
+        1.0,
+        ge=0.1,
+        le=10.0,
+        validation_alias=AliasChoices(
+            "CUOPT_ALLOCATION_NUDGE_MAX_PCT_LOW_CONFIDENCE",
+            "cuopt_allocation_nudge_max_pct_low_confidence",
+        ),
+        description="Max ±pp nudge per warehouse when CSV confidence is below the full-nudge threshold.",
     )
     cuopt_allocation_nudge_max_pct: float = Field(
         2.5,
@@ -1256,6 +1876,34 @@ class Settings(BaseSettings):
     cuopt_api_key: str | None = Field(
         None,
         validation_alias=AliasChoices("CUOPT_API_KEY", "cuopt_api_key"),
+    )
+
+    local_nim_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices("LOCAL_NIM_URL", "local_nim_url"),
+        description=(
+            "Base URL of self-hosted NVIDIA NIM container (e.g. http://localhost:8000). "
+            "When set, warehouse audit four-track uses the local NIM for narrative overlays "
+            "instead of hosted NVIDIA Cloud. Required for on-prem privacy."
+        ),
+    )
+    local_nim_model: str | None = Field(
+        None,
+        validation_alias=AliasChoices("LOCAL_NIM_MODEL", "local_nim_model"),
+        description="Model tag the self-hosted NIM container serves (e.g. meta/llama-3.1-70b-instruct).",
+    )
+    local_cuopt_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices("LOCAL_CUOPT_URL", "local_cuopt_url"),
+        description=(
+            "Base URL of self-hosted NVIDIA cuOpt server (e.g. http://localhost:5000). "
+            "When set, warehouse optimization calls route here instead of hosted NVIDIA Cloud."
+        ),
+    )
+    local_nim_timeout_sec: float = Field(
+        12.0,
+        validation_alias=AliasChoices("LOCAL_NIM_TIMEOUT_SEC", "local_nim_timeout_sec"),
+        description="Timeout for local NIM calls. Four-track falls back to deterministic on timeout.",
     )
 
     maiw_force_internal_only: bool = Field(
@@ -1440,6 +2088,106 @@ class Settings(BaseSettings):
         ),
         description="Cap status polling duration for TMS-triggered cuOpt calls.",
     )
+    tms_nim_dispatch_summary_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices(
+            "TMS_NIM_DISPATCH_SUMMARY_ENABLED",
+            "tms_nim_dispatch_summary_enabled",
+        ),
+        description=(
+            "When true, attach a NIM-generated plain-text dispatch summary to propose_routes "
+            "responses (read-only narrative over structured facts) using local/hosted NIM runtime."
+        ),
+    )
+    optimization_core_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "OPTIMIZATION_CORE_ENABLED",
+            "optimization_core_enabled",
+        ),
+        description=(
+            "When true, TMS / LTL / seller / item-intelligence / scenarios use the shared "
+            "unie_cortex.optimization core (pallet/trailer fill, demand contract, cuopt_client, "
+            "envelope). Single source of truth for smart, realistic, deterministic outputs."
+        ),
+    )
+    cuopt_solver_seed: int = Field(
+        42,
+        ge=0,
+        le=2_000_000_000,
+        validation_alias=AliasChoices("CUOPT_SOLVER_SEED", "cuopt_solver_seed"),
+        description=(
+            "Seed injected into solver_config for every cuopt_client call. Combined with a "
+            "fixed time_limit on a single self-hosted cuOpt instance, this makes solves "
+            "reproducible across reruns of the same canonicalized contract."
+        ),
+    )
+    cuopt_solver_time_limit_s: int = Field(
+        30,
+        ge=1,
+        le=600,
+        validation_alias=AliasChoices(
+            "CUOPT_SOLVER_TIME_LIMIT_S",
+            "cuopt_solver_time_limit_s",
+        ),
+        description="Time limit (seconds) injected into solver_config for every cuopt_client call.",
+    )
+    cuopt_cache_ttl_seconds: int = Field(
+        86_400,
+        ge=0,
+        le=14 * 86_400,
+        validation_alias=AliasChoices(
+            "CUOPT_CACHE_TTL_SECONDS",
+            "cuopt_cache_ttl_seconds",
+        ),
+        description=(
+            "TTL (seconds) for the in-memory solve cache keyed by canonical contract SHA-256. "
+            "Same input contract => byte-identical response within this window."
+        ),
+    )
+    cuopt_cache_backend: str = Field(
+        "memory",
+        validation_alias=AliasChoices("CUOPT_CACHE_BACKEND", "cuopt_cache_backend"),
+        description="Solve cache backend. Currently only 'memory' is implemented; 'postgres' reserved for v2.",
+    )
+    ltl_fuel_index_baseline_usd_per_gal: float = Field(
+        4.00,
+        gt=0.0,
+        le=20.0,
+        validation_alias=AliasChoices(
+            "LTL_FUEL_INDEX_BASELINE_USD_PER_GAL",
+            "ltl_fuel_index_baseline_usd_per_gal",
+        ),
+        description=(
+            "Baseline diesel $/gal used to scale sv_fuel_rules percentage rates against the live "
+            "EIA US weekly diesel index. Multiplier = live_price / baseline. Only fuel rule rows "
+            "that opt in via fuel_index_source/fuel_index_enabled are scaled."
+        ),
+    )
+    tms_db_health_cache_ttl_seconds: int = Field(
+        600,
+        ge=10,
+        le=24 * 3600,
+        validation_alias=AliasChoices(
+            "TMS_DB_HEALTH_CACHE_TTL_SECONDS",
+            "tms_db_health_cache_ttl_seconds",
+        ),
+        description=(
+            "TTL (seconds) for the cached TMS Postgres health probe. Default 600 = 10 minutes. "
+            "Within the TTL the /v1/integrations/tms/db/health endpoint serves the cached "
+            "snapshot; after the TTL the next call runs a fresh SELECT 1."
+        ),
+    )
+    tms_db_health_query_timeout_seconds: float = Field(
+        3.0,
+        ge=0.5,
+        le=30.0,
+        validation_alias=AliasChoices(
+            "TMS_DB_HEALTH_QUERY_TIMEOUT_SECONDS",
+            "tms_db_health_query_timeout_seconds",
+        ),
+        description="Connect timeout (seconds) for the TMS DB health SELECT 1 probe.",
+    )
     road_matrix_provider: str = Field(
         "none",
         validation_alias=AliasChoices("ROAD_MATRIX_PROVIDER", "road_matrix_provider"),
@@ -1461,6 +2209,122 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "ROAD_MATRIX_REQUEST_TIMEOUT_SECONDS", "road_matrix_request_timeout_seconds"
         ),
+    )
+    ltl_ai_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("LTL_AI_ENABLED", "ltl_ai_enabled"),
+        description="Enable NVIDIA-ready LTL route ranking extension (shadow/canary/assisted modes).",
+    )
+    ltl_ai_mode: str = Field(
+        "off",
+        validation_alias=AliasChoices("LTL_AI_MODE", "ltl_ai_mode"),
+        description="off | shadow | canary | assisted | general",
+    )
+    ltl_ai_min_confidence_for_override: float = Field(
+        0.85,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "LTL_AI_MIN_CONFIDENCE_FOR_OVERRIDE",
+            "ltl_ai_min_confidence_for_override",
+        ),
+    )
+    ltl_ai_allowed_tenant_provider_allowlist: str | None = Field(
+        None,
+        validation_alias=AliasChoices(
+            "LTL_AI_ALLOWED_TENANT_PROVIDER_ALLOWLIST",
+            "ltl_ai_allowed_tenant_provider_allowlist",
+        ),
+        description="Optional csv allowlist entries `tenant_id:provider_id` for staged NVIDIA canary.",
+    )
+    ltl_ai_model_version: str = Field(
+        "unconfigured",
+        validation_alias=AliasChoices("LTL_AI_MODEL_VERSION", "ltl_ai_model_version"),
+    )
+    ltl_cuopt_cloud_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("LTL_CUOPT_CLOUD_ENABLED", "ltl_cuopt_cloud_enabled"),
+        description="When true, LTL quote ranking attempts NVIDIA cuOpt cloud before deterministic fallback.",
+    )
+    ltl_cuopt_cloud_timeout_seconds: float = Field(
+        90.0,
+        ge=5.0,
+        le=600.0,
+        validation_alias=AliasChoices("LTL_CUOPT_CLOUD_TIMEOUT_SECONDS", "ltl_cuopt_cloud_timeout_seconds"),
+        description="Per-quote poll cap for LTL cuOpt cloud ranking calls.",
+    )
+    ltl_cuopt_objective_cost_weight: float = Field(
+        0.4,
+        ge=0.0,
+        le=5.0,
+        validation_alias=AliasChoices("LTL_CUOPT_OBJECTIVE_COST_WEIGHT", "ltl_cuopt_objective_cost_weight"),
+    )
+    ltl_cuopt_objective_service_weight: float = Field(
+        0.25,
+        ge=0.0,
+        le=5.0,
+        validation_alias=AliasChoices(
+            "LTL_CUOPT_OBJECTIVE_SERVICE_WEIGHT",
+            "ltl_cuopt_objective_service_weight",
+        ),
+    )
+    ltl_cuopt_objective_empty_miles_weight: float = Field(
+        0.2,
+        ge=0.0,
+        le=5.0,
+        validation_alias=AliasChoices(
+            "LTL_CUOPT_OBJECTIVE_EMPTY_MILES_WEIGHT",
+            "ltl_cuopt_objective_empty_miles_weight",
+        ),
+    )
+    ltl_cuopt_objective_consolidation_weight: float = Field(
+        0.15,
+        ge=0.0,
+        le=5.0,
+        validation_alias=AliasChoices(
+            "LTL_CUOPT_OBJECTIVE_CONSOLIDATION_WEIGHT",
+            "ltl_cuopt_objective_consolidation_weight",
+        ),
+    )
+    ltl_dynamic_stitching_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices("LTL_DYNAMIC_STITCHING_ENABLED", "ltl_dynamic_stitching_enabled"),
+        description="Enable runtime policy to dynamically allow cross-provider stitched candidates.",
+    )
+    ltl_dynamic_stitching_max_legs: int = Field(
+        2,
+        ge=1,
+        le=3,
+        validation_alias=AliasChoices("LTL_DYNAMIC_STITCHING_MAX_LEGS", "ltl_dynamic_stitching_max_legs"),
+        description="Maximum composite legs during normal dynamic candidate expansion.",
+    )
+    ltl_dynamic_allow_three_leg_fallback: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "LTL_DYNAMIC_ALLOW_THREE_LEG_FALLBACK",
+            "ltl_dynamic_allow_three_leg_fallback",
+        ),
+        description="When true, engine may attempt 3-leg stitched fallback if 1-2 leg paths are unavailable.",
+    )
+    ltl_dynamic_congestion_lane_threshold: int = Field(
+        25,
+        ge=1,
+        le=5000,
+        validation_alias=AliasChoices(
+            "LTL_DYNAMIC_CONGESTION_LANE_THRESHOLD",
+            "ltl_dynamic_congestion_lane_threshold",
+        ),
+        description="Lane-count threshold used as a congestion proxy in dynamic stitching policy.",
+    )
+    ltl_margin_guardrail_over_cheapest_pct: float = Field(
+        0.15,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "LTL_MARGIN_GUARDRAIL_OVER_CHEAPEST_PCT",
+            "ltl_margin_guardrail_over_cheapest_pct",
+        ),
+        description="Maximum allowed premium over cheapest feasible candidate (0.15 = +15%).",
     )
     direct_parcel_network_detour_multiplier: float = Field(
         1.0,
@@ -1633,19 +2497,176 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Unified intelligence data layer ──────────────────────────────────────
+    # Deploy-time feature flags. Per-key runtime knobs (radius, tolerances,
+    # alert thresholds) live in the `intelligence_settings` table and are
+    # editable from the admin UI; the values below are fallbacks only.
+    intel_layer_persist_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("INTEL_LAYER_PERSIST_ENABLED", "intel_layer_persist_enabled"),
+    )
+    intel_layer_lookup_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("INTEL_LAYER_LOOKUP_ENABLED", "intel_layer_lookup_enabled"),
+    )
+    intel_layer_scheduler_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("INTEL_LAYER_SCHEDULER_ENABLED", "intel_layer_scheduler_enabled"),
+    )
+    intel_layer_dual_write_legacy_pqo: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "INTEL_LAYER_DUAL_WRITE_LEGACY_PQO",
+            "intel_layer_dual_write_legacy_pqo",
+        ),
+    )
+    intel_layer_export_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("INTEL_LAYER_EXPORT_ENABLED", "intel_layer_export_enabled"),
+    )
+    intel_parcel_radius_mi_default: float = Field(5.0, gt=0)
+    intel_ltl_radius_mi_default: float = Field(5.0, gt=0)
+    intel_weight_tolerance_lb_default: float = Field(0.3, gt=0)
+    intel_dim_tolerance_in_default: float = Field(0.7874, gt=0)
+    intel_alert_high_density_min_deliveries_default: int = Field(250, ge=0)
+    intel_alert_high_density_growth_pct_default: float = Field(30.0)
+    intel_alert_rate_anomaly_pct_default: float = Field(25.0)
+    intel_alert_min_observations_default: int = Field(5, ge=1)
+    intel_retention_days_default: int = Field(365, ge=30)
+    intel_settings_cache_ttl_seconds: int = Field(60, ge=1)
+
+    # ── Cortex Audit / Vault / What-If / Rate Broker ────────────────────────
+    # Local-only NVIDIA services for the parcel-audit package. URLs default
+    # to None; when unset, the cortex-audit routers return 503 from a
+    # dependency check and no background task does work.
+    audit_etl_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AUDIT_ETL_URL", "audit_etl_url"),
+        description="cortex-audit-etl (RAPIDS/cuDF) container, e.g. http://127.0.0.1:8788",
+    )
+    audit_triton_http_url: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AUDIT_TRITON_HTTP_URL", "audit_triton_http_url"),
+        description="Self-hosted Triton inference server HTTP endpoint, e.g. http://127.0.0.1:8001",
+    )
+    audit_triton_model: str = Field(
+        "audit_decision_pipeline",
+        validation_alias=AliasChoices("AUDIT_TRITON_MODEL", "audit_triton_model"),
+        description="Triton model/ensemble name for refundability classification.",
+    )
+    audit_vault_encryption_key: str | None = Field(
+        None,
+        validation_alias=AliasChoices("AUDIT_VAULT_ENCRYPTION_KEY", "audit_vault_encryption_key"),
+        description="base64-encoded 32-byte Fernet key for carrier-credential encryption.",
+    )
+    audit_dispute_dry_run: bool = Field(
+        True,
+        validation_alias=AliasChoices("AUDIT_DISPUTE_DRY_RUN", "audit_dispute_dry_run"),
+        description="When true, dispute submitter persists rows but does NOT call carrier APIs.",
+    )
+
+    # Carrier API roots (env-overridable for sandboxes)
+    fedex_api_base_url: str = Field(
+        "https://apis.fedex.com",
+        validation_alias=AliasChoices("FEDEX_API_BASE_URL", "fedex_api_base_url"),
+    )
+    ups_api_base_url: str = Field(
+        "https://onlinetools.ups.com",
+        validation_alias=AliasChoices("UPS_API_BASE_URL", "ups_api_base_url"),
+    )
+    usps_api_base_url: str = Field(
+        "https://api.usps.com",
+        validation_alias=AliasChoices("USPS_API_BASE_URL", "usps_api_base_url"),
+    )
+
+    # UPS — OAuth 2.0 Authorization Code (3-legged); callback REQUIRED
+    ups_oauth_client_id: str | None = Field(
+        None, validation_alias=AliasChoices("UPS_OAUTH_CLIENT_ID", "ups_oauth_client_id"),
+    )
+    ups_oauth_client_secret: str | None = Field(
+        None, validation_alias=AliasChoices("UPS_OAUTH_CLIENT_SECRET", "ups_oauth_client_secret"),
+    )
+    ups_oauth_auth_url: str = Field(
+        "https://onlinetools.ups.com/security/v1/oauth/authorize",
+        validation_alias=AliasChoices("UPS_OAUTH_AUTH_URL", "ups_oauth_auth_url"),
+    )
+    ups_oauth_token_url: str = Field(
+        "https://onlinetools.ups.com/security/v1/oauth/token",
+        validation_alias=AliasChoices("UPS_OAUTH_TOKEN_URL", "ups_oauth_token_url"),
+    )
+    ups_oauth_redirect_uri: str | None = Field(
+        None,
+        validation_alias=AliasChoices("UPS_OAUTH_REDIRECT_URI", "ups_oauth_redirect_uri"),
+        description="Must match a redirect URI registered in the UPS developer portal.",
+    )
+
+    # FedEx — Credential Registration (server-to-server); NO browser callback
+    fedex_parent_api_key: str | None = Field(
+        None, validation_alias=AliasChoices("FEDEX_PARENT_API_KEY", "fedex_parent_api_key"),
+    )
+    fedex_parent_secret_key: str | None = Field(
+        None, validation_alias=AliasChoices("FEDEX_PARENT_SECRET_KEY", "fedex_parent_secret_key"),
+    )
+    fedex_credential_registration_url: str = Field(
+        "https://apis.fedex.com/auth/oauth/v2/credential-registration",
+        validation_alias=AliasChoices(
+            "FEDEX_CREDENTIAL_REGISTRATION_URL", "fedex_credential_registration_url",
+        ),
+    )
+
+    # USPS API 3.0 — OAuth 2.0 Authorization Code; callback REQUIRED
+    usps_oauth_client_id: str | None = Field(
+        None, validation_alias=AliasChoices("USPS_OAUTH_CLIENT_ID", "usps_oauth_client_id"),
+    )
+    usps_oauth_client_secret: str | None = Field(
+        None, validation_alias=AliasChoices("USPS_OAUTH_CLIENT_SECRET", "usps_oauth_client_secret"),
+    )
+    usps_oauth_auth_url: str = Field(
+        "https://api.usps.com/oauth2/v3/authorize",
+        validation_alias=AliasChoices("USPS_OAUTH_AUTH_URL", "usps_oauth_auth_url"),
+    )
+    usps_oauth_token_url: str = Field(
+        "https://api.usps.com/oauth2/v3/token",
+        validation_alias=AliasChoices("USPS_OAUTH_TOKEN_URL", "usps_oauth_token_url"),
+    )
+    usps_oauth_redirect_uri: str | None = Field(
+        None,
+        validation_alias=AliasChoices("USPS_OAUTH_REDIRECT_URI", "usps_oauth_redirect_uri"),
+        description="Must match a redirect URI registered in the USPS developer portal.",
+    )
+
     @field_validator(
         "shippo_mock_mode",
+        "user_auth_enabled",
+        "bootstrap_auth_must_rotate_password",
         "geocoding_nominatim",
         "network_intelligence_enabled",
+        "wms_only_strict",
+        "wms_only_require_complete_baseline",
+        "wms_constraint_dock_mismatch_hard",
+        "wms_constraint_call_ahead_hard",
         "audit_complementary_network_enabled",
         "tms_cuopt_sequencing",
         "tms_nvidia_cuopt_cloud_enabled",
+        "tms_nim_dispatch_summary_enabled",
         "multi_dc_cuopt_cloud_enabled",
+        "optimization_core_enabled",
+        "tms_db_preferred_for_intelligence",
         "eia_enabled",
         "nim_csv_mapping_enabled",
         "ai_observability_enabled",
+        "intel_layer_persist_enabled",
+        "intel_layer_lookup_enabled",
+        "intel_layer_scheduler_enabled",
+        "intel_layer_dual_write_legacy_pqo",
+        "intel_layer_export_enabled",
+        "ltl_ai_enabled",
+        "ltl_cuopt_cloud_enabled",
+        "ltl_dynamic_stitching_enabled",
+        "ltl_dynamic_allow_three_leg_fallback",
         "semantic_memory_enabled",
         "product_research_require_s3_durability_in_prod",
+        "audit_dispute_dry_run",
         mode="before",
     )
     @classmethod
@@ -1697,7 +2718,8 @@ class Settings(BaseSettings):
         if not self.semantic_memory_enabled:
             return False
         return bool(
-            (self.semantic_database_url and str(self.semantic_database_url).strip())
+            self.use_aurora_dsql
+            or (self.semantic_database_url and str(self.semantic_database_url).strip())
             or (
                 self.semantic_database_secret_arn
                 and str(self.semantic_database_secret_arn).strip()
