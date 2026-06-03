@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Any
 
@@ -25,15 +24,14 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
     if not order_date_iso or not str(order_date_iso).strip():
         return None
     s = str(order_date_iso).strip()
-    m = re.match(r"^(\d{4})", s)
-    if m:
+    # Fast path: first 4 digits are usually the year in ISO strings
+    if len(s) >= 4 and s[:4].isdigit():
+        return int(s[:4])
+
+    # Fallback to strptime for formats like MM/DD/YYYY
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
         try:
-            return int(m.group(1))
-        except ValueError:
-            pass
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(s[:19], fmt).year
+            return datetime.strptime(s, fmt).year
         except ValueError:
             continue
     return None

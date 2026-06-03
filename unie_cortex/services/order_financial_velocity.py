@@ -19,22 +19,32 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast path for ISO 8601 strings (the most common case)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            # fromisoformat is ~10-20x faster than strptime.
+            # Replace 'Z' with '+00:00' for compatibility with older Python 3.x fromisoformat.
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
+    # Fallback to strptime for other formats
     for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
         "%m/%d/%Y",
         "%d/%m/%Y",
     ):
         try:
-            dt = datetime.strptime(s[:26], fmt)
+            dt = datetime.strptime(s, fmt)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
         except ValueError:
             continue
+
     m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
     if m:
         try:
