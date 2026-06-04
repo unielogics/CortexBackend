@@ -22,15 +22,28 @@ def amazon_fee_model_metadata(settings: Settings) -> dict[str, Any]:
 
 
 def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
-    if not order_date_iso or not str(order_date_iso).strip():
+    """Bolt: Optimized year extraction using string slicing fast-paths (prevents full date parse)."""
+    if not order_date_iso:
         return None
     s = str(order_date_iso).strip()
-    m = re.match(r"^(\d{4})", s)
+    if not s:
+        return None
+
+    # Fast-path: YYYY-MM-DD or YYYY-MM-DD...
+    if len(s) >= 4 and s[:4].isdigit():
+        if len(s) == 4 or (len(s) >= 7 and s[4] == "-"):
+            return int(s[:4])
+
+    # Fast-path: MM/DD/YYYY or DD/MM/YYYY
+    if len(s) >= 10 and s[2] == "/" and s[5] == "/" and s[6:10].isdigit():
+        return int(s[6:10])
+
+    # Fallback to regex if logic above misses some weirdly padded variant
+    m = re.match(r"(\d{4})", s)
     if m:
-        try:
-            return int(m.group(1))
-        except ValueError:
-            pass
+        return int(m.group(1))
+
+    # Last resort strptime loop (deprecated for this path)
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
         try:
             return datetime.strptime(s[:19], fmt).year

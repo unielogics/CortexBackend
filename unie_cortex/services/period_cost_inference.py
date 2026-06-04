@@ -8,20 +8,28 @@ from typing import Any
 
 
 def _parse_iso_to_date(raw: str | None) -> date | None:
-    if not raw or not str(raw).strip():
+    """Bolt: Optimized parsing for ISO 8601 with timezone normalization."""
+    if not raw:
         return None
-    s = str(raw).strip().replace("Z", "+00:00")
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    # Handle 'Z' suffix and variable precision for fromisoformat
+    iso_s = s.replace("Z", "+00:00")
     try:
-        dt = datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(iso_s)
         if dt.tzinfo is not None:
+            # Normalize to UTC and then make naive as required by this service
             dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
         return dt.date()
     except ValueError:
         pass
-    m = s[:10]
-    if len(m) >= 10 and m[4] == "-" and m[7] == "-":
+
+    # Efficient fallback for YYYY-MM-DD prefix without full parse if fromisoformat failed
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-" and s[:4].isdigit() and s[5:7].isdigit() and s[8:10].isdigit():
         try:
-            return datetime.strptime(m[:10], "%Y-%m-%d").date()
+            return date(int(s[:4]), int(s[5:7]), int(s[8:10]))
         except ValueError:
             pass
     return None
