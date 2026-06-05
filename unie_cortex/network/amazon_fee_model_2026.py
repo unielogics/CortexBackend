@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Any
 
@@ -22,15 +21,24 @@ def amazon_fee_model_metadata(settings: Settings) -> dict[str, Any]:
 
 
 def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
-    if not order_date_iso or not str(order_date_iso).strip():
+    """Optimized year extraction avoiding strptime and regex for common cases."""
+    if not order_date_iso:
         return None
     s = str(order_date_iso).strip()
-    m = re.match(r"^(\d{4})", s)
-    if m:
-        try:
-            return int(m.group(1))
-        except ValueError:
-            pass
+    if not s:
+        return None
+
+    # Fast path: YYYY... (ISO)
+    if len(s) >= 4 and s[:4].isdigit():
+        return int(s[:4])
+
+    # Fast path: .../YYYY (MM/DD/YYYY or DD/MM/YYYY)
+    if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+        year_part = s[6:10]
+        if year_part.isdigit():
+            return int(year_part)
+
+    # Fallback to strptime if needed (rare for years)
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
         try:
             return datetime.strptime(s[:19], fmt).year
