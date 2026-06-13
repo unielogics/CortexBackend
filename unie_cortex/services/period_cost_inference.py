@@ -8,22 +8,24 @@ from typing import Any
 
 
 def _parse_iso_to_date(raw: str | None) -> date | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
-    s = str(raw).strip().replace("Z", "+00:00")
-    try:
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        return dt.date()
-    except ValueError:
-        pass
-    m = s[:10]
-    if len(m) >= 10 and m[4] == "-" and m[7] == "-":
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    # Performance optimization: use fromisoformat for ISO-like strings.
+    # Python 3.11+ fromisoformat is much faster and handles 'Z' when replaced.
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         try:
-            return datetime.strptime(m[:10], "%Y-%m-%d").date()
+            # handle both YYYY-MM-DD and full ISO with/without Z
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt.date()
         except ValueError:
             pass
+
     return None
 
 
