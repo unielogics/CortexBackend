@@ -19,6 +19,20 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast-path for ISO 8601 (common in this codebase)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            # handle Z suffix which fromisoformat < 3.11 didn't like, but we are on 3.12+
+            # just in case of weird offsets or older styles
+            norm = s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(norm)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
