@@ -13,7 +13,13 @@ from unie_cortex.services.warehouse_mock_rate_grid import CONTIGUOUS_STATE_HUB_D
 def _zip3(postal: str | None) -> str | None:
     if not postal:
         return None
-    d = re.sub(r"\D", "", str(postal).strip())[:5]
+    s = str(postal).strip()
+    # Fast path: already numeric and at least 3 digits (common case)
+    if s.isdigit():
+        if len(s) >= 3:
+            return s[:3].zfill(3)
+        return None
+    d = re.sub(r"\D", "", s)[:5]
     if len(d) < 3:
         return None
     return d[:3].zfill(3)

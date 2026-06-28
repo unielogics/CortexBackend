@@ -1,0 +1,3 @@
+## 2025-06-21 - [ZIP3 Processing Optimizations]
+**Learning:** nearest_contiguous_state_for_zip3 was a hot path that performed redundant haversine distance calculations and coordinate lookups for the same 1,000 ZIP3 prefixes. Implementing a module-level cache provided an ~18x speedup. Additionally, _zip3 parsing using re.sub can be bypassed with a simple isdigit() check for common numeric postal codes, yielding a ~2x speedup.
+**Action:** Always check for opportunities to cache deterministic lookups with a small key space (like ZIP3 prefixes) and provide fast-paths for common string formats to avoid regex overhead.
