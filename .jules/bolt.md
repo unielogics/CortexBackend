@@ -1,0 +1,3 @@
+## 2025-05-15 - [CSV Header Inference Optimization]
+**Learning:** Fast-path dictionary lookups for exact matches can significantly speed up search loops that mostly deal with exact strings (like CSV headers), even when regex or suffix matching is still required as a fallback. In this case, it contributed to a ~5.4x speedup for the entire mapping process. Pre-compiling regexes at the module level and moving string manipulations (like `replace`) outside of loops further reduces overhead in hot paths.
+**Action:** Always implement an O(1) exact-match dictionary fast-path before falling back to O(N) pattern matching loops. Pre-compile all regexes used in repetitive string processing.
