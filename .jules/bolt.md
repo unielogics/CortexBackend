@@ -1,0 +1,3 @@
+## 2026-07-05 - Datetime Consistency in Performance Optimizations
+**Learning:** When optimizing date parsing (e.g., using `fromisoformat` as a fast-path), it is critical to ensure that the returned `datetime` objects match the "naive vs. aware" status of the rest of the codebase. Mixing naive and aware datetimes in Python leads to `TypeError` during comparisons and sorting. This codebase generally expects naive UTC datetimes.
+**Action:** Always normalize optimized datetime outputs to match the existing codebase pattern. For naive UTC, use `.astimezone(timezone.utc).replace(tzinfo=None)` if the parser returns an aware object.
