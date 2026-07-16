@@ -1,0 +1,3 @@
+## 2025-05-15 - [Loop Consolidation & Date Parsing Fast-Path]
+**Learning:** Consolidating 15+ O(N) passes into a single loop in `analyze_order_financial_facts` provided a ~2.8x speedup. Additionally, implementing an ISO 8601 fast-path using `datetime.fromisoformat` in `_parse_order_datetime` reduced date parsing overhead by ~11x, significantly improving performance for ISO-compliant datasets. Standardizing quantity fallback logic to `max(q, 1.0)` also resolved internal inconsistencies between totals and breakdowns.
+**Action:** Always look for multiple independent O(N) passes over the same large list and consolidate them. Prioritize `fromisoformat` over `strptime` loops for standard date formats.

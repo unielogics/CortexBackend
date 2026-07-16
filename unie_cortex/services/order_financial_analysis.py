@@ -54,6 +54,13 @@ def _order_financial_row_get(row: dict[str, Any], key: str) -> Any:
     return None
 
 
+def _safe_float(x: Any) -> float:
+    try:
+        return float(x or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def compute_fbm_planning_amazon_selling_fees_basis(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Dollar basis for **FBM** planning matrix Amazon fee line: selling/referral-class fees only,
@@ -65,16 +72,10 @@ def compute_fbm_planning_amazon_selling_fees_basis(rows: list[dict[str, Any]]) -
       (Keepa/SP-API category → referral table), capped by CSV marketplace total per row aggregate.
     """
 
-    def _f(x: Any) -> float:
-        try:
-            return float(x or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    mk = sum(_f(r.get("marketplace_fees_usd")) for r in rows)
-    ref = sum(_f(r.get("referral_fees_modeled_usd")) for r in rows)
-    seller = sum(_f(_order_financial_row_get(r, "amazon_seller_fees_usd")) for r in rows)
-    fba = sum(_f(_order_financial_row_get(r, "amazon_fba_fulfillment_fees_usd")) for r in rows)
+    mk = sum(_safe_float(r.get("marketplace_fees_usd")) for r in rows)
+    ref = sum(_safe_float(r.get("referral_fees_modeled_usd")) for r in rows)
+    seller = sum(_safe_float(_order_financial_row_get(r, "amazon_seller_fees_usd")) for r in rows)
+    fba = sum(_safe_float(_order_financial_row_get(r, "amazon_fba_fulfillment_fees_usd")) for r in rows)
 
     if seller > 0:
         basis = seller
@@ -231,12 +232,6 @@ def apply_supplier_cost_overrides_to_order_financial_analysis(
     if not rows:
         return analysis
 
-    def _f(x: Any) -> float:
-        try:
-            return float(x or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
     groups: dict[str, list[int]] = defaultdict(list)
     for i, r in enumerate(rows):
         if isinstance(r, dict):
@@ -245,8 +240,8 @@ def apply_supplier_cost_overrides_to_order_financial_analysis(
     targets: dict[str, float] = {}
     applied_keys: list[str] = []
     for key, idxs in groups.items():
-        q_group = sum(max(_f(rows[i].get("quantity")), 1.0) or 1.0 for i in idxs)
-        csv_cogs = sum(_f(rows[i].get("product_cogs_usd")) for i in idxs)
+        q_group = sum(max(_safe_float(rows[i].get("quantity")), 1.0) or 1.0 for i in idxs)
+        csv_cogs = sum(_safe_float(rows[i].get("product_cogs_usd")) for i in idxs)
         amt, mode = _parse_supplier_cost_override_entry(supplier_cost_by_sku.get(key))
         if amt is None:
             targets[key] = csv_cogs
@@ -260,12 +255,12 @@ def apply_supplier_cost_overrides_to_order_financial_analysis(
     new_cogs_by_idx: dict[int, float] = {}
     for key, idxs in groups.items():
         t = targets[key]
-        weights = [(i, max(_f(rows[i].get("product_cogs_usd")), 0.0)) for i in idxs]
+        weights = [(i, max(_safe_float(rows[i].get("product_cogs_usd")), 0.0)) for i in idxs]
         s = sum(w for _, w in weights)
         if s <= 0:
-            qsum = sum(max(_f(rows[i].get("quantity")), 1.0) or 1.0 for i in idxs)
+            qsum = sum(max(_safe_float(rows[i].get("quantity")), 1.0) or 1.0 for i in idxs)
             for i in idxs:
-                qi = max(_f(rows[i].get("quantity")), 1.0) or 1.0
+                qi = max(_safe_float(rows[i].get("quantity")), 1.0) or 1.0
                 new_cogs_by_idx[i] = (t * (qi / qsum)) if qsum > 0 else 0.0
         else:
             for i, w in weights:
@@ -279,12 +274,12 @@ def apply_supplier_cost_overrides_to_order_financial_analysis(
         if not isinstance(r, dict):
             continue
         a = str(r.get("asin") or "").strip() or "unknown"
-        cg = new_cogs_by_idx.get(i, _f(r.get("product_cogs_usd")))
-        by_asin[a]["revenue_usd"] += _f(r.get("revenue_usd"))
+        cg = new_cogs_by_idx.get(i, _safe_float(r.get("product_cogs_usd")))
+        by_asin[a]["revenue_usd"] += _safe_float(r.get("revenue_usd"))
         by_asin[a]["product_cogs_usd"] += cg
-        by_asin[a]["other_expenses_usd"] += _f(r.get("other_expenses_usd"))
-        by_asin[a]["profit_usd"] += _f(r.get("profit_usd"))
-        by_asin[a]["units"] += _f(r.get("quantity")) or 1.0
+        by_asin[a]["other_expenses_usd"] += _safe_float(r.get("other_expenses_usd"))
+        by_asin[a]["profit_usd"] += _safe_float(r.get("profit_usd"))
+        by_asin[a]["units"] += _safe_float(r.get("quantity")) or 1.0
 
     per_asin = []
     for a, d in sorted(by_asin.items(), key=lambda x: -x[1]["revenue_usd"])[:200]:
@@ -375,53 +370,78 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
             },
         }
 
-    def _f(x: Any) -> float:
-        try:
-            return float(x or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
     tot: dict[str, float] = defaultdict(float)
-    tot["revenue_usd"] = sum(_f(r.get("revenue_usd")) for r in rows)
-    tot["marketplace_fees_usd"] = sum(_f(r.get("marketplace_fees_usd")) for r in rows)
-    tot["other_expenses_usd"] = sum(_f(r.get("other_expenses_usd")) for r in rows)
-    tot["total_fees_usd"] = sum(_f(r.get("total_fees_usd")) for r in rows)
-    tot["profit_usd"] = sum(_f(r.get("profit_usd")) for r in rows)
-    tot["product_cogs_usd"] = sum(_f(r.get("product_cogs_usd")) for r in rows)
-    tot["prep_cost_usd"] = sum(_f(r.get("prep_cost_usd")) for r in rows)
-    tot["inbound_cost_usd"] = sum(_f(r.get("inbound_cost_usd")) for r in rows)
-    quantity_units_in_csv = sum(max(_f(r.get("quantity")), 1.0) or 1.0 for r in rows)
-    tot["quantity_units_in_csv"] = round(quantity_units_in_csv, 4)
-    rows_with_cogs = sum(1 for r in rows if _f(r.get("product_cogs_usd")) > 0)
-    tot["referral_fees_modeled_usd"] = sum(_f(r.get("referral_fees_modeled_usd")) for r in rows)
-    tot["implied_non_referral_marketplace_usd"] = sum(
-        max(0.0, _f(r.get("marketplace_fees_usd")) - _f(r.get("referral_fees_modeled_usd"))) for r in rows
-    )
-    tot["fba_fulfillment_fee_audit_line_total_usd"] = sum(
-        _f(_order_financial_row_get(r, "fba_fulfillment_fee_audit_line_total_usd")) for r in rows
-    )
-
-    tf_2026 = []
-    for r in rows:
-        v = r.get("total_fees_2026_csv_usd")
-        if v is not None:
-            tf_2026.append(_f(v))
-        else:
-            v2 = r.get("total_fees_2026_synthetic_usd")
-            if v2 is not None:
-                tf_2026.append(_f(v2))
-            else:
-                tf_2026.append(_f(r.get("total_fees_usd")))
-    tot["total_fees_2026_view_usd"] = sum(tf_2026)
-
+    rows_with_cogs = 0
+    quantity_units_in_csv = 0.0
     by_asin: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    by_state: dict[str, float] = defaultdict(float)
+    src_counts: dict[str, int] = defaultdict(int)
+    referral_src_counts: dict[str, int] = defaultdict(int)
+    total_fees_2026_view_usd = 0.0
+    vel_rows = []
+
     for r in rows:
-        a = r.get("asin") or "unknown"
-        by_asin[a]["revenue_usd"] += _f(r.get("revenue_usd"))
-        by_asin[a]["product_cogs_usd"] += _f(r.get("product_cogs_usd"))
-        by_asin[a]["other_expenses_usd"] += _f(r.get("other_expenses_usd"))
-        by_asin[a]["profit_usd"] += _f(r.get("profit_usd"))
-        by_asin[a]["units"] += _f(r.get("quantity")) or 1.0
+        rev = _safe_float(r.get("revenue_usd"))
+        vel_rows.append(
+            {
+                "order_date_iso": r.get("order_date_iso"),
+                "sku": r.get("sku"),
+                "asin": r.get("asin"),
+                "quantity": r.get("quantity"),
+            }
+        )
+        mk = _safe_float(r.get("marketplace_fees_usd"))
+        oth = _safe_float(r.get("other_expenses_usd"))
+        tf = _safe_float(r.get("total_fees_usd"))
+        prof = _safe_float(r.get("profit_usd"))
+        cg = _safe_float(r.get("product_cogs_usd"))
+        prep = _safe_float(r.get("prep_cost_usd"))
+        inb = _safe_float(r.get("inbound_cost_usd"))
+        qty = max(_safe_float(r.get("quantity")), 1.0) or 1.0
+        ref = _safe_float(r.get("referral_fees_modeled_usd"))
+        fba = _safe_float(_order_financial_row_get(r, "fba_fulfillment_fee_audit_line_total_usd"))
+
+        tot["revenue_usd"] += rev
+        tot["marketplace_fees_usd"] += mk
+        tot["other_expenses_usd"] += oth
+        tot["total_fees_usd"] += tf
+        tot["profit_usd"] += prof
+        tot["product_cogs_usd"] += cg
+        tot["prep_cost_usd"] += prep
+        tot["inbound_cost_usd"] += inb
+        quantity_units_in_csv += qty
+        if cg > 0:
+            rows_with_cogs += 1
+        tot["referral_fees_modeled_usd"] += ref
+        tot["implied_non_referral_marketplace_usd"] += max(0.0, mk - ref)
+        tot["fba_fulfillment_fee_audit_line_total_usd"] += fba
+
+        v2026 = r.get("total_fees_2026_csv_usd")
+        if v2026 is not None:
+            total_fees_2026_view_usd += _safe_float(v2026)
+        else:
+            v2026s = r.get("total_fees_2026_synthetic_usd")
+            if v2026s is not None:
+                total_fees_2026_view_usd += _safe_float(v2026s)
+            else:
+                total_fees_2026_view_usd += tf
+
+        asin = r.get("asin") or "unknown"
+        ba = by_asin[asin]
+        ba["revenue_usd"] += rev
+        ba["product_cogs_usd"] += cg
+        ba["other_expenses_usd"] += oth
+        ba["profit_usd"] += prof
+        ba["units"] += qty
+
+        st = r.get("ship_to_state") or "unknown"
+        by_state[st] += rev
+
+        src_counts[str(r.get("inflation_source") or "unknown")] += 1
+        referral_src_counts[str(r.get("referral_fee_source") or "unknown")] += 1
+
+    tot["quantity_units_in_csv"] = round(quantity_units_in_csv, 4)
+    tot["total_fees_2026_view_usd"] = total_fees_2026_view_usd
 
     per_asin = []
     for a, d in sorted(by_asin.items(), key=lambda x: -x[1]["revenue_usd"])[:200]:
@@ -438,41 +458,18 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
         per_asin.append(row)
 
-    by_state: dict[str, float] = defaultdict(float)
-    for r in rows:
-        st = r.get("ship_to_state") or "unknown"
-        by_state[st] += _f(r.get("revenue_usd"))
     ship_roll = [{"ship_to_state": s, "revenue_usd": round(v, 2)} for s, v in sorted(by_state.items(), key=lambda x: -x[1])[:60]]
 
     modeled_ops = (
         settings.economics_default_inbound_receiving_per_unit_usd
         + settings.economics_default_outbound_handling_per_unit_usd
     )
-    units = sum(max(_f(r.get("quantity")), 1.0) or 1.0 for r in rows)
-    modeled_network_usd = modeled_ops * units
+    modeled_network_usd = modeled_ops * quantity_units_in_csv
 
     hints = [
         "other_expenses_usd captures unmapped spend columns — compare to Cortex inbound/outbound defaults (not Amazon fees).",
         f"Sum other_expenses_usd={tot['other_expenses_usd']:.2f} vs rough modeled 3PL handling (defaults) ~{modeled_network_usd:.2f} on {len(rows)} rows.",
         "referral_fee_source_counts: default/unknown spikes mean missing ASIN or SP-API/Keepa resolution failure — use real ASINs in production (avoid demo ASIN randomization scripts).",
-    ]
-
-    src_counts: dict[str, int] = defaultdict(int)
-    for r in rows:
-        src_counts[str(r.get("inflation_source") or "unknown")] += 1
-
-    referral_src_counts: dict[str, int] = defaultdict(int)
-    for r in rows:
-        referral_src_counts[str(r.get("referral_fee_source") or "unknown")] += 1
-
-    vel_rows = [
-        {
-            "order_date_iso": r.get("order_date_iso"),
-            "sku": r.get("sku"),
-            "asin": r.get("asin"),
-            "quantity": r.get("quantity"),
-        }
-        for r in rows
     ]
     order_velocity_enrichment = build_batch_velocity_enrichment(vel_rows)
 
@@ -568,12 +565,6 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def rollup_order_financial_facts_by_sku(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Distinct SKU (or ASIN-only) rollup for seller origin UI and planning hints."""
 
-    def _f(x: Any) -> float:
-        try:
-            return float(x or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
     acc: dict[str, dict[str, Any]] = {}
     for r in rows:
         if not isinstance(r, dict):
@@ -594,10 +585,10 @@ def rollup_order_financial_facts_by_sku(rows: list[dict[str, Any]]) -> dict[str,
                 "line_count": 0,
             }
         row = acc[key]
-        qline = max(_f(r.get("quantity")), 1.0) or 1.0
+        qline = max(_safe_float(r.get("quantity")), 1.0) or 1.0
         row["quantity_total"] += qline
-        row["revenue_usd_total"] += _f(r.get("revenue_usd"))
-        row["product_cogs_usd_total"] += _f(r.get("product_cogs_usd"))
+        row["revenue_usd_total"] += _safe_float(r.get("revenue_usd"))
+        row["product_cogs_usd_total"] += _safe_float(r.get("product_cogs_usd"))
         row["line_count"] += 1
         if not row.get("line_title") and r.get("line_title"):
             row["line_title"] = r.get("line_title")
