@@ -165,7 +165,12 @@ def _greedy_rebalance(per_warehouse: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 async def run_inter_warehouse_transfer_engine(
-    tenant_id: str, *, model_version: str = "transfer-v1"
+    tenant_id: str,
+    *,
+    model_version: str = "transfer-v1",
+    client_id: str | None = None,
+    origin: str | None = None,
+    owning_warehouse_code: str | None = None,
 ) -> list[str]:
     by_sku = await fetch_sku_imbalance(tenant_id)
     if not by_sku:
@@ -216,6 +221,9 @@ async def run_inter_warehouse_transfer_engine(
                     "model_version": model_version,
                 },
                 model_version=model_version,
+                client_id=client_id,
+                origin=origin,
+                owning_warehouse_code=owning_warehouse_code,
             )
         )
 

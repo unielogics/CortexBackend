@@ -58,6 +58,45 @@ class DecisionOutcomeBody(BaseModel):
     warehouse_code: str | None = None
 
 
+class ClientOptimizeBody(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    client_id: str = Field(..., min_length=1)
+    origin: str | None = None  # 'warehouse_invited' | 'direct'
+    owning_warehouse_code: str | None = None
+
+
+@router.post("/client-optimize")
+async def post_client_optimize(body: ClientOptimizeBody):
+    """On-demand per-client network optimization.
+
+    Runs the (box-integrity) inter-warehouse transfer engine for a tenant and
+    stamps the resulting decisions with client_id/origin/owning_warehouse_code so
+    the WMS per-client Cortex tab and the OMS relay can scope to this client.
+    Returns the published decision ids (may be empty when there is no rebalanceable
+    imbalance yet — that is a valid, non-error result).
+    """
+    from unie_cortex.services.macro_decisions.inter_warehouse_transfer import (
+        run_inter_warehouse_transfer_engine,
+    )
+
+    try:
+        ids = await run_inter_warehouse_transfer_engine(
+            body.tenant_id,
+            client_id=body.client_id,
+            origin=body.origin,
+            owning_warehouse_code=body.owning_warehouse_code,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("client-optimize failed for %s", body.client_id)
+        raise HTTPException(status_code=502, detail=f"optimization run failed: {exc}")
+    return {
+        "ok": True,
+        "client_id": body.client_id,
+        "decision_ids": ids,
+        "count": len(ids),
+    }
+
+
 @router.post("/decision-feedback")
 async def post_decision_feedback(body: DecisionFeedbackBody):
     sf = _get_session_factory()
