@@ -1,0 +1,3 @@
+## 2026-03-05 - [ZIP3 State Geo Lookup Optimization]
+**Learning:** High-frequency spatial functions (like Haversine distance computations against static hub locations) often suffer from redundant calculations inside hot loops, such as repeatedly converting coordinates to radians and computing cosines of static points. Combining pre-computation of static coordinates in radians with `functools.lru_cache` yields massive gains. Since 3-digit ZIP codes have a finite domain (max 1000 combinations), a small bounded cache size (e.g. 1024) can fully cache all possible inputs.
+**Action:** Always pre-compute static elements of mathematical formulas at the module scope, and check if bounded input domains can be fully cached with `lru_cache` to achieve O(1) performance.
