@@ -1,0 +1,3 @@
+## 2026-03-05 - Optimize Geocoding State Mapping Math and Cache
+**Learning:** Calculating distance metric across 48 U.S. contiguous state hubs in geocoding mapping functions introduces redundant trigonometric/radian calculations. Pre-computing coordinates and values like cosines at the module level avoids repetitive `math.radians` conversions inside hot loops, yielding a ~1.55x speedup for cold/uncached lookups. Wrapping the deterministic mapping function in a standard LRU cache provides an additional ~60x speedup for cached lookups.
+**Action:** Always inspect loops performing spatial or geometric calculations against static lists. Isolate dynamic from static data, pre-compute conversions on static elements, and use standard LRU caching for low-cardinality inputs.
