@@ -4,12 +4,24 @@ Map destination ZIP3 to contiguous U.S. state via nearest mock-grid hub metro.
 
 from __future__ import annotations
 
+import functools
 import math
 
 from unie_cortex.services.warehouse_mock_rate_grid import (
     CONTIGUOUS_STATE_HUB_DESTINATIONS_48,
     _zip5_to_latlon,
 )
+
+# Pre-compute static contiguous US state hubs in radians and cosines for faster distance math
+_STATE_HUBS = [
+    {
+        "state": str(m["state"]),
+        "lat_rad": math.radians(float(m["lat"])),
+        "lon_rad": math.radians(float(m["lon"])),
+        "cos_lat": math.cos(math.radians(float(m["lat"]))),
+    }
+    for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48
+]
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -20,7 +32,20 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(min(1.0, h)))
 
 
+def _haversine_km_precomputed(
+    la1: float, lo1: float, cos_la1: float, la2: float, lo2: float, cos_la2: float
+) -> float:
+    """Fast-path haversine using pre-computed radians and cosines."""
+    r = 6371.0
+    dlat = la2 - la1
+    dlon = lo2 - lo1
+    h = math.sin(dlat / 2) ** 2 + cos_la1 * cos_la2 * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(min(1.0, h)))
+
+
+@functools.lru_cache(maxsize=1024)
 def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
+    """Optimized mapping of destination ZIP3 to contiguous US state via fast distance math and LRU caching."""
     z = (zip3 or "").strip()
     if not z.isdigit():
         z = "".join(c for c in z if c.isdigit())
@@ -32,11 +57,19 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     if not ll:
         return None
     la, lo = ll
+
+    la_rad = math.radians(la)
+    lo_rad = math.radians(lo)
+    cos_la = math.cos(la_rad)
+
     best_st: str | None = None
     best_km = float("inf")
-    for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48:
-        km = _haversine_km(la, lo, float(m["lat"]), float(m["lon"]))
+    for hub in _STATE_HUBS:
+        km = _haversine_km_precomputed(
+            la_rad, lo_rad, cos_la,
+            hub["lat_rad"], hub["lon_rad"], hub["cos_lat"]
+        )
         if km < best_km:
             best_km = km
-            best_st = str(m["state"])
+            best_st = hub["state"]
     return best_st
