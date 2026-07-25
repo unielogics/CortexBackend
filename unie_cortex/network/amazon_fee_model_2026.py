@@ -22,9 +22,26 @@ def amazon_fee_model_metadata(settings: Settings) -> dict[str, Any]:
 
 
 def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
-    if not order_date_iso or not str(order_date_iso).strip():
+    # Performance Optimization: Introduce fast-paths for common ISO and slash-based formats
+    # to bypass expensive regex match and datetime.strptime loop overhead.
+    if not order_date_iso:
         return None
     s = str(order_date_iso).strip()
+    if not s:
+        return None
+
+    # Fast-path 1: starts with a 4-digit year (e.g., "YYYY-MM-DD" or "YYYY")
+    if len(s) >= 4 and s[:4].isdigit():
+        if len(s) == 4 or s[4] in ("-", "T", " ", "/"):
+            return int(s[:4])
+
+    # Fast-path 2: slash-delimited dates like "MM/DD/YYYY" or "DD/MM/YYYY" (slashes at index 2 and 5)
+    if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+        y_part = s[6:10]
+        if y_part.isdigit():
+            return int(y_part)
+
+    # Fallback to slower regex and strptime loop for maximum compatibility
     m = re.match(r"^(\d{4})", s)
     if m:
         try:
