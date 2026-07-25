@@ -79,8 +79,24 @@ def test_fba_tier_delta():
 
 
 def test_parse_order_year():
+    # Test standard ISO date formats (fast-path 1)
     assert parse_order_year_from_iso("2025-03-01") == 2025
     assert parse_order_year_from_iso("2026-01-15T12:00:00") == 2026
+    assert parse_order_year_from_iso("2024") == 2024
+    assert parse_order_year_from_iso("2023 05 12") == 2023
+    assert parse_order_year_from_iso("2022/10/11") == 2022
+
+    # Test slash-delimited dates like MM/DD/YYYY or DD/MM/YYYY (fast-path 2)
+    assert parse_order_year_from_iso("05/14/2026") == 2026
+    assert parse_order_year_from_iso("14/05/2026") == 2026
+    assert parse_order_year_from_iso("12/31/1999") == 1999
+
+    # Test fallback & edge cases
+    assert parse_order_year_from_iso(None) is None
+    assert parse_order_year_from_iso("") is None
+    assert parse_order_year_from_iso("   ") is None
+    assert parse_order_year_from_iso("invalid-date") is None
+    assert parse_order_year_from_iso("abc/de/fghij") is None
 
 
 def test_2025_cortex_inflation_source():
