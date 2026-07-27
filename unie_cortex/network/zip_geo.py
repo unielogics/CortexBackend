@@ -4,6 +4,7 @@ Map destination ZIP3 to contiguous U.S. state via nearest mock-grid hub metro.
 
 from __future__ import annotations
 
+import functools
 import math
 
 from unie_cortex.services.warehouse_mock_rate_grid import (
@@ -11,16 +12,26 @@ from unie_cortex.services.warehouse_mock_rate_grid import (
     _zip5_to_latlon,
 )
 
+# Precompute the hub coordinates in radians and pre-calculate their trigonometric values
+# to avoid expensive conversions and function calls in hot loops.
+_STATE_HUBS_RAD = [
+    {
+        "state": str(m["state"]),
+        "sin_lat": math.sin(math.radians(float(m["lat"]))),
+        "cos_lat": math.cos(math.radians(float(m["lat"]))),
+        "sin_lon": math.sin(math.radians(float(m["lon"]))),
+        "cos_lon": math.cos(math.radians(float(m["lon"]))),
+    }
+    for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48
+]
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat, dlon = la2 - la1, lo2 - lo1
-    h = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(min(1.0, h)))
 
-
+@functools.lru_cache(maxsize=1024)
 def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
+    """
+    Returns the closest contiguous state for the given ZIP3.
+    Uses an LRU cache and a high-performance distance check via the spherical law of cosines.
+    """
     z = (zip3 or "").strip()
     if not z.isdigit():
         z = "".join(c for c in z if c.isdigit())
@@ -31,12 +42,27 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     ll = _zip5_to_latlon(z5)
     if not ll:
         return None
-    la, lo = ll
+
+    # Convert query coordinates to radians
+    la1 = math.radians(ll[0])
+    lo1 = math.radians(ll[1])
+
+    sin_la1 = math.sin(la1)
+    cos_la1 = math.cos(la1)
+    sin_lo1 = math.sin(lo1)
+    cos_lo1 = math.cos(lo1)
+
     best_st: str | None = None
-    best_km = float("inf")
-    for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48:
-        km = _haversine_km(la, lo, float(m["lat"]), float(m["lon"]))
-        if km < best_km:
-            best_km = km
-            best_st = str(m["state"])
+    best_cos_d = -2.0  # Cosine of distance ranges from -1 to 1; -2.0 is a safe initial minimum
+
+    for hub in _STATE_HUBS_RAD:
+        # Using spherical law of cosines: cos(d) = sin(lat1)sin(lat2) + cos(lat1)cos(lat2)cos(lon1 - lon2)
+        # Expanding cos(lon1 - lon2) as cos(lon1)cos(lon2) + sin(lon1)sin(lon2)
+        cos_d = sin_la1 * hub["sin_lat"] + cos_la1 * hub["cos_lat"] * (
+            cos_lo1 * hub["cos_lon"] + sin_lo1 * hub["sin_lon"]
+        )
+        if cos_d > best_cos_d:
+            best_cos_d = cos_d
+            best_st = hub["state"]
+
     return best_st
