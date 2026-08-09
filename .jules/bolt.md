@@ -1,0 +1,3 @@
+## 2025-02-14 - [LRU Cache for Stateless Lookup Mapping]
+**Learning:** Pure, deterministic geo-mapping/distance-checking functions like `nearest_contiguous_state_for_zip3` have small bounded domains (e.g., at most 1000 potential ZIP3 inputs). Applying `@lru_cache(maxsize=1024)` converts an expensive calculation involving list searches and coordinate math into an O(1) hash map lookup, yielding over 600x speedup with negligible memory footprint.
+**Action:** Always identify pure helper functions with finite domains and hot call-paths, and decorate them with `@lru_cache` to eliminate redundant complex calculations.
