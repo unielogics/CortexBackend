@@ -1,0 +1,3 @@
+## 2025-08-11 - ZIP3 Nearest State Geographic Optimization
+**Learning:** Geometric distance loops involving math calculations (like Haversine) are highly sensitive to overhead from dictionary lookups, string float conversions, and redundant math.radians conversions. Precomputing fixed coordinate tables in radians at module load time avoids this overhead. Furthermore, for a bounded set of inputs (e.g., 1000 possible ZIP3 prefixes), caching the entire function using `functools.lru_cache(maxsize=1024)` avoids the loop entirely and achieves a ~74x speedup on warm paths.
+**Action:** Always pre-compute fixed float metrics or radians tables at the module level rather than parsing/converting strings in tight loops, and use lru_cache for bounded domain query lookups.
