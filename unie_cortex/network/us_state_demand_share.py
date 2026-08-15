@@ -23,7 +23,7 @@ _RAW_PCT: dict[str, float] = {
 _CONTIGUOUS_STATES: frozenset[str] = frozenset(m["state"] for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48)
 
 
-def contiguous_state_demand_shares_normalized() -> dict[str, float]:
+def _compute_normalized_contiguous_shares() -> dict[str, float]:
     merged = dict(_RAW_PCT)
     dc = float(merged.pop("DC", 0.0))
     merged["MD"] = float(merged.get("MD", 0.0)) + dc
@@ -33,6 +33,15 @@ def contiguous_state_demand_shares_normalized() -> dict[str, float]:
         u = 1.0 / len(_CONTIGUOUS_STATES)
         return {m["state"]: u for m in CONTIGUOUS_STATE_HUB_DESTINATIONS_48}
     return {st: v / total for st, v in raw_contiguous.items()}
+
+
+# Bolt optimization: Pre-compute static normalized 48-state shares to avoid re-normalization on hot paths.
+_NORMALIZED_CONTIGUOUS_SHARES: dict[str, float] = _compute_normalized_contiguous_shares()
+
+
+def contiguous_state_demand_shares_normalized() -> dict[str, float]:
+    """Return a shallow copy of the pre-computed contiguous 48-state demand shares dictionary."""
+    return _NORMALIZED_CONTIGUOUS_SHARES.copy()
 
 
 def label_rollup_hot_state_attachment(rollup: dict[str, Any]) -> dict[str, Any]:
