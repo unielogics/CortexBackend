@@ -1,0 +1,3 @@
+## 2026-03-30 - CSV Column Mapping Inference Optimization
+**Learning:** `normalize_header` and `_match_canonical` in `csv_column_inference.py` were re-allocating synonym lists on every call and compiling inline regexes. Replacing dynamic allocations with pre-computed top-level structures (`_SYNONYM_EXACT_MAP`, `_SYNONYM_EXACT_HELPERS`, `_SYNONYM_REGEX_DATA`) and direct dict lookups reduced 500-header batch processing time from ~19.65s to ~2.03s (~9.7x speedup).
+**Action:** Always extract static mapping tables and regexes to module constants when string matching functions are invoked in hot loops or CSV row processing.

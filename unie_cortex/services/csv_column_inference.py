@@ -69,89 +69,118 @@ _SKIP_OTHER_EXPENSE = frozenset({
 })
 
 
+# Pre-compiled regex patterns for normalize_header to eliminate per-call regex overhead
+_RE_NON_ALPHANUM = re.compile(r"[^a-z0-9_]+")
+_RE_MULTIPLE_UNDERSCORES = re.compile(r"_+")
+
+
 def _is_regex_pat(pat: str) -> bool:
     return pat.startswith("^") or pat.endswith("$") or ".*" in pat or "|" in pat
 
 
 def normalize_header(h: str) -> str:
     s = (h or "").strip().lower().replace(" ", "_")
-    s = re.sub(r"[^a-z0-9_]+", "_", s)
-    return re.sub(r"_+", "_", s).strip("_")
+    s = _RE_NON_ALPHANUM.sub("_", s)
+    return _RE_MULTIPLE_UNDERSCORES.sub("_", s).strip("_")
+
+
+# Pre-computed static synonym tuples for O(1) dictionary lookups and fast iteration
+_SYNONYM_EXACT_DATA: list[tuple[str, str, float]] = [
+    ("orderid", "order_external_id", 1.0),
+    ("order_id", "order_external_id", 1.0),
+    ("amazon_order_id", "order_external_id", 1.0),
+    ("email", "email", 1.0),
+    ("orderdate", "order_date", 1.0),
+    ("order_date", "order_date", 1.0),
+    ("purchasedate", "order_date", 0.9),
+    ("revenue", "revenue_usd", 1.0),
+    ("item_price", "revenue_usd", 0.85),
+    ("sales", "revenue_usd", 0.8),
+    ("marketplace_fees", "marketplace_fees_usd", 1.0),
+    ("referral_fee", "marketplace_fees_usd", 0.85),
+    ("amazon_fees", "marketplace_fees_usd", 0.85),
+    ("seller_fees", "amazon_seller_fees_usd", 1.0),
+    ("seller_fee", "amazon_seller_fees_usd", 0.95),
+    ("selling_fees", "amazon_seller_fees_usd", 0.9),
+    ("amazon_seller_fees", "amazon_seller_fees_usd", 1.0),
+    ("fba_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
+    ("fba_fee", "amazon_fba_fulfillment_fees_usd", 0.95),
+    ("amazon_fba_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
+    ("fulfillment_fees", "amazon_fba_fulfillment_fees_usd", 0.95),
+    ("fulfillment_fee", "amazon_fba_fulfillment_fees_usd", 0.9),
+    ("amazon_fulfillment_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
+    ("item_weight_lb", "package_weight_lb", 0.95),
+    ("package_weight", "package_weight_lb", 0.95),
+    ("shipping_weight_lb", "package_weight_lb", 0.9),
+    ("item_length_in", "package_length_in", 0.9),
+    ("item_width_in", "package_width_in", 0.9),
+    ("item_height_in", "package_height_in", 0.9),
+    ("package_length", "package_length_in", 0.9),
+    ("package_width", "package_width_in", 0.9),
+    ("package_height", "package_height_in", 0.9),
+    ("cogs", "product_cogs_usd", 0.95),
+    ("product_cogs", "product_cogs_usd", 1.0),
+    ("prep_cost", "prep_cost_usd", 1.0),
+    ("inbound_cost", "inbound_cost_usd", 1.0),
+    ("total_fees", "total_fees_usd", 1.0),
+    ("profit", "profit_usd", 1.0),
+    ("qty", "quantity", 1.0),
+    ("quantity", "quantity", 1.0),
+    ("units", "quantity", 0.9),
+    ("asin", "asin", 1.0),
+    ("sku", "sku", 1.0),
+    ("seller_sku", "sku", 1.0),
+    ("merchant_sku", "sku", 0.95),
+    ("seller_sku_id", "sku", 0.9),
+    ("referral_fee_category_override", "referral_fee_category_override", 1.0),
+    ("referral_category", "referral_fee_category_override", 0.95),
+    ("amazon_category", "referral_fee_category_override", 0.9),
+    ("product_category", "referral_fee_category_override", 0.85),
+    ("title", "line_title", 0.85),
+    ("product_title", "line_title", 1.0),
+    ("shipto_city", "ship_to_city", 1.0),
+    ("ship_to_city", "ship_to_city", 1.0),
+    ("shipto_state", "ship_to_state", 1.0),
+    ("ship_to_state", "ship_to_state", 1.0),
+    ("shipto_postal", "ship_to_postal", 1.0),
+    ("ship_to_postal", "ship_to_postal", 1.0),
+    ("shipto_zip", "ship_to_postal", 0.95),
+    ("shipto_country", "ship_to_country", 1.0),
+    ("ship_to_country", "ship_to_country", 1.0),
+]
+
+_SYNONYM_REGEX_DATA: list[tuple[re.Pattern[str], str, float]] = [
+    (re.compile(r"^marketplace_fees_2026"), "marketplace_fees_2026_csv_usd", 1.0),
+    (re.compile(r"^total_fees_2026"), "total_fees_2026_csv_usd", 1.0),
+    (re.compile(r"^profit_2026"), "profit_2026_csv_usd", 1.0),
+    (re.compile(r"_2026_.*fee"), "marketplace_fees_2026_csv_usd", 0.7),
+]
+
+# Pre-compiled list returned by _synonym_rows() for backward compatibility without allocation
+_SYNONYM_ROWS_CACHE: list[tuple[str, str, float]] = [
+    *_SYNONYM_EXACT_DATA,
+    (r"^marketplace_fees_2026", "marketplace_fees_2026_csv_usd", 1.0),
+    (r"^total_fees_2026", "total_fees_2026_csv_usd", 1.0),
+    (r"^profit_2026", "profit_2026_csv_usd", 1.0),
+    (r"_2026_.*fee", "marketplace_fees_2026_csv_usd", 0.7),
+]
+
+# Fast O(1) dictionary lookup for exact header synonyms
+_SYNONYM_EXACT_MAP: dict[str, tuple[str, float]] = {}
+for _pat, _canon, _conf in _SYNONYM_EXACT_DATA:
+    if _pat not in _SYNONYM_EXACT_MAP or _conf > _SYNONYM_EXACT_MAP[_pat][1]:
+        _SYNONYM_EXACT_MAP[_pat] = (_canon, _conf)
+
+# Pre-computed string helpers for suffix / no-underscore checks in fallback loop
+_SYNONYM_EXACT_HELPERS: list[tuple[str, str, str, str, float]] = [
+    (pat, "_" + pat, pat.replace("_", ""), canon, conf)
+    for pat, canon, conf in _SYNONYM_EXACT_DATA
+]
 
 
 def _synonym_rows() -> list[tuple[str, str, float]]:
     """(pattern_regex_or_empty_for_exact, canonical, confidence) — first match wins per header."""
-    exact = [
-        ("orderid", "order_external_id", 1.0),
-        ("order_id", "order_external_id", 1.0),
-        ("amazon_order_id", "order_external_id", 1.0),
-        ("email", "email", 1.0),
-        ("orderdate", "order_date", 1.0),
-        ("order_date", "order_date", 1.0),
-        ("purchasedate", "order_date", 0.9),
-        ("revenue", "revenue_usd", 1.0),
-        ("item_price", "revenue_usd", 0.85),
-        ("sales", "revenue_usd", 0.8),
-        ("marketplace_fees", "marketplace_fees_usd", 1.0),
-        ("referral_fee", "marketplace_fees_usd", 0.85),
-        ("amazon_fees", "marketplace_fees_usd", 0.85),
-        ("seller_fees", "amazon_seller_fees_usd", 1.0),
-        ("seller_fee", "amazon_seller_fees_usd", 0.95),
-        ("selling_fees", "amazon_seller_fees_usd", 0.9),
-        ("amazon_seller_fees", "amazon_seller_fees_usd", 1.0),
-        ("fba_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
-        ("fba_fee", "amazon_fba_fulfillment_fees_usd", 0.95),
-        ("amazon_fba_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
-        ("fulfillment_fees", "amazon_fba_fulfillment_fees_usd", 0.95),
-        ("fulfillment_fee", "amazon_fba_fulfillment_fees_usd", 0.9),
-        ("amazon_fulfillment_fees", "amazon_fba_fulfillment_fees_usd", 1.0),
-        ("item_weight_lb", "package_weight_lb", 0.95),
-        ("package_weight", "package_weight_lb", 0.95),
-        ("shipping_weight_lb", "package_weight_lb", 0.9),
-        ("item_length_in", "package_length_in", 0.9),
-        ("item_width_in", "package_width_in", 0.9),
-        ("item_height_in", "package_height_in", 0.9),
-        ("package_length", "package_length_in", 0.9),
-        ("package_width", "package_width_in", 0.9),
-        ("package_height", "package_height_in", 0.9),
-        ("cogs", "product_cogs_usd", 0.95),
-        ("product_cogs", "product_cogs_usd", 1.0),
-        ("prep_cost", "prep_cost_usd", 1.0),
-        ("inbound_cost", "inbound_cost_usd", 1.0),
-        ("total_fees", "total_fees_usd", 1.0),
-        ("profit", "profit_usd", 1.0),
-        ("qty", "quantity", 1.0),
-        ("quantity", "quantity", 1.0),
-        ("units", "quantity", 0.9),
-        ("asin", "asin", 1.0),
-        ("sku", "sku", 1.0),
-        ("seller_sku", "sku", 1.0),
-        ("merchant_sku", "sku", 0.95),
-        ("seller_sku_id", "sku", 0.9),
-        ("referral_fee_category_override", "referral_fee_category_override", 1.0),
-        ("referral_category", "referral_fee_category_override", 0.95),
-        ("amazon_category", "referral_fee_category_override", 0.9),
-        ("product_category", "referral_fee_category_override", 0.85),
-        ("title", "line_title", 0.85),
-        ("product_title", "line_title", 1.0),
-        ("shipto_city", "ship_to_city", 1.0),
-        ("ship_to_city", "ship_to_city", 1.0),
-        ("shipto_state", "ship_to_state", 1.0),
-        ("ship_to_state", "ship_to_state", 1.0),
-        ("shipto_postal", "ship_to_postal", 1.0),
-        ("ship_to_postal", "ship_to_postal", 1.0),
-        ("shipto_zip", "ship_to_postal", 0.95),
-        ("shipto_country", "ship_to_country", 1.0),
-        ("ship_to_country", "ship_to_country", 1.0),
-    ]
-    rows: list[tuple[str, str, float]] = [(a, b, c) for a, b, c in exact]
-    rows += [
-        (r"^marketplace_fees_2026", "marketplace_fees_2026_csv_usd", 1.0),
-        (r"^total_fees_2026", "total_fees_2026_csv_usd", 1.0),
-        (r"^profit_2026", "profit_2026_csv_usd", 1.0),
-        (r"_2026_.*fee", "marketplace_fees_2026_csv_usd", 0.7),
-    ]
-    return rows
+    return _SYNONYM_ROWS_CACHE
 
 
 # Never map these to canonical financial fields (audit / derived / misleading names)
@@ -165,20 +194,41 @@ _ORDER_FINANCIAL_UNMAPPABLE_NORM = frozenset(
 
 
 def _match_canonical(norm: str, original_lower: str) -> tuple[str | None, float]:
+    """
+    Match normalized header string to canonical field name with confidence score.
+    Uses O(1) exact-match dictionary fast-path followed by pre-computed helper iterations.
+    """
     if norm in _ORDER_FINANCIAL_UNMAPPABLE_NORM:
         return (None, 0.0)
-    best: tuple[str | None, float] = (None, 0.0)
-    for pat, canon, conf in _synonym_rows():
-        if _is_regex_pat(pat):
-            if re.search(pat, norm) or re.search(pat, original_lower.replace(" ", "_")):
-                if conf > best[1]:
-                    best = (canon, conf)
-        else:
-            if pat == "cogs" and norm.endswith("_cogs") and norm.startswith("profit_before"):
-                continue
-            if norm == pat or norm.endswith("_" + pat) or norm == pat.replace("_", ""):
-                if conf > best[1]:
-                    best = (canon, conf)
+
+    # Fast-path 1: Direct exact match in dictionary map
+    if norm in _SYNONYM_EXACT_MAP:
+        canon, conf = _SYNONYM_EXACT_MAP[norm]
+        if conf == 1.0:
+            return (canon, conf)
+        best: tuple[str | None, float] = (canon, conf)
+    else:
+        best = (None, 0.0)
+
+    # Fast-path 2: Check suffix and no-underscore variations using static helpers
+    for pat, pat_suffix, pat_nounderscore, canon, conf in _SYNONYM_EXACT_HELPERS:
+        if pat == "cogs" and norm.endswith("_cogs") and norm.startswith("profit_before"):
+            continue
+        if norm == pat or norm.endswith(pat_suffix) or norm == pat_nounderscore:
+            if conf > best[1]:
+                best = (canon, conf)
+                if best[1] == 1.0:
+                    return best
+
+    # Fast-path 3: Check pre-compiled regex patterns
+    orig_replace = original_lower.replace(" ", "_")
+    for rx, canon, conf in _SYNONYM_REGEX_DATA:
+        if rx.search(norm) or rx.search(orig_replace):
+            if conf > best[1]:
+                best = (canon, conf)
+                if best[1] == 1.0:
+                    return best
+
     return best
 
 
