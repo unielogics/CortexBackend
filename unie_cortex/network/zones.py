@@ -14,15 +14,25 @@ from typing import Literal
 CarrierCode = Literal["usps", "ups", "fedex"]
 
 
+_NOTE_USPS = "mock_usps_zip3_step_40"
+_NOTE_UPS = "mock_ups_zip3_step_45"
+_NOTE_FEDEX = "mock_fedex_zip3_step_55"
+
+
 def normalize_zip5(postal: str | None) -> str | None:
     if not postal:
         return None
-    digits = re.sub(r"\D", "", postal.strip())[:5]
+    s = postal.strip()
+    n = len(s)
+    # Fast paths for common 5-digit, ZIP+4, and 9-digit formats
+    if n == 5 and s.isdigit():
+        return s
+    if n == 10 and s[5] == "-" and s[:5].isdigit() and s[6:].isdigit():
+        return s[:5]
+    if n == 9 and s.isdigit():
+        return s[:5]
+    digits = re.sub(r"\D", "", s)[:5]
     return digits.zfill(5) if len(digits) >= 3 else None
-
-
-def _zip3(z5: str) -> int:
-    return int(z5[:3])
 
 
 def mock_zone_id(carrier: CarrierCode, origin_postal: str, dest_postal: str) -> tuple[int, str]:
@@ -35,17 +45,15 @@ def mock_zone_id(carrier: CarrierCode, origin_postal: str, dest_postal: str) -> 
     if not o or not d:
         return 5, f"{carrier}:missing_zip_default"
 
-    delta = abs(_zip3(o) - _zip3(d))
+    # Fast direct slice & integer conversion
+    delta = abs(int(o[:3]) - int(d[:3]))
     if carrier == "usps":
         # USPS-style: more granular steps (mock)
-        z = 1 + min(8, delta // 40)
-        return z, "mock_usps_zip3_step_40"
+        return 1 + min(8, delta // 40), _NOTE_USPS
     if carrier == "ups":
-        z = 1 + min(7, delta // 45)
-        return z, "mock_ups_zip3_step_45"
+        return 1 + min(7, delta // 45), _NOTE_UPS
     # fedex
-    z = 1 + min(6, delta // 55)
-    return z, "mock_fedex_zip3_step_55"
+    return 1 + min(6, delta // 55), _NOTE_FEDEX
 
 
 def list_supported_carriers() -> list[CarrierCode]:

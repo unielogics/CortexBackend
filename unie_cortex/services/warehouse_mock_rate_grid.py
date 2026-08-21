@@ -298,6 +298,7 @@ def build_warehouse_mock_placement_grids(
 
     # Full O–D mock parcel matrix (48 × N) for min-cost–per-state routing and demand-weighted metrics.
     parcel_usd_by_warehouse_by_state: dict[str, dict[str, float]] = {wid: {} for wid in wh_ids}
+    parcel_quotes_cache: dict[tuple[str, str], tuple[dict, list[dict]]] = {}
     for m in pool_use:
         st = str(m["state"])
         z5 = str(m["postal"])
@@ -312,6 +313,7 @@ def build_warehouse_mock_placement_grids(
                 width_in=default_width_in,
                 height_in=default_height_in,
             )
+            parcel_quotes_cache[(wid, z5)] = (best, _allq)
             parcel_usd_by_warehouse_by_state[wid][st] = float(best.get("total_usd") or 0.0)
 
     if state_demand_weights:
@@ -459,15 +461,19 @@ def build_warehouse_mock_placement_grids(
         dists: list[float] = []
 
         for z5, km, sh, meta in picked[:n_use]:
-            best, _allq = best_mock_parcel_among_carriers(
-                cars,
-                origin_postal=ozip,
-                dest_postal=z5,
-                weight_lb=default_weight_lb,
-                length_in=default_length_in,
-                width_in=default_width_in,
-                height_in=default_height_in,
-            )
+            cached_quote = parcel_quotes_cache.get((wid, z5))
+            if cached_quote is not None:
+                best, _allq = cached_quote
+            else:
+                best, _allq = best_mock_parcel_among_carriers(
+                    cars,
+                    origin_postal=ozip,
+                    dest_postal=z5,
+                    weight_lb=default_weight_lb,
+                    length_in=default_length_in,
+                    width_in=default_width_in,
+                    height_in=default_height_in,
+                )
             usd = float(best["total_usd"])
             znum = int(best.get("zone") or 0)
             costs.append(usd)
