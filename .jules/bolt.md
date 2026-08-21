@@ -1,0 +1,3 @@
+## 2026-03-30 - Eliminate Redundant Carrier Rate Shopping in Placement Grids
+**Learning:** In multi-pass network placement heuristics like `build_warehouse_mock_placement_grids`, origin-destination mock carrier quote evaluations (`best_mock_parcel_among_carriers`) were being executed twice per warehouse/hub pair—once to build the matrix and once to build per-DC grids. Caching quotes by `(warehouse_id, destination_postal)` tuple eliminates 50% of mock rate quote evaluations.
+**Action:** When building O/D grid metrics across network nodes, cache intermediate quotes computed in prior loops to avoid redundant carrier calculations on identical origin/destination parameters.
