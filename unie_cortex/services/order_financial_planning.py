@@ -28,6 +28,9 @@ from unie_cortex.services.order_financial_velocity import build_batch_velocity_e
 from unie_cortex.services.smart_warehouse_network import recommend_warehouse_network
 
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
+
 def candidate_pool_from_engagement_network(network_context: dict[str, Any] | None) -> list[dict[str, Any]] | None:
     """
     Normalize ``network_context.candidate_warehouses`` (Intelligence Network / Prep Center dock)
@@ -72,7 +75,18 @@ def candidate_pool_from_engagement_network(network_context: dict[str, Any] | Non
 
 
 def _norm_postal_5(z: str) -> str:
-    d = re.sub(r"\D", "", str(z or ""))
+    """Normalize a postal code to 5 digits with fast paths for standard 5-digit and ZIP+4 formats."""
+    if not z:
+        return "10001"
+    sz = str(z)
+    # Fast path for standard 5-digit ZIPs
+    if len(sz) == 5 and sz.isdigit():
+        return sz
+    # Fast path for standard ZIP+4 (#####-####)
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:5]
+    # Fallback to pre-compiled regex substitution
+    d = _RE_NON_DIGIT.sub("", sz)
     if len(d) >= 5:
         return d[:5]
     if d:
