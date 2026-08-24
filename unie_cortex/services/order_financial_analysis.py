@@ -465,16 +465,7 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for r in rows:
         referral_src_counts[str(r.get("referral_fee_source") or "unknown")] += 1
 
-    vel_rows = [
-        {
-            "order_date_iso": r.get("order_date_iso"),
-            "sku": r.get("sku"),
-            "asin": r.get("asin"),
-            "quantity": r.get("quantity"),
-        }
-        for r in rows
-    ]
-    order_velocity_enrichment = build_batch_velocity_enrichment(vel_rows)
+    order_velocity_enrichment = build_batch_velocity_enrichment(rows)
 
     demand_qty = rollup_order_financial_demand(rows, hot_pct=0.33, cold_pct=0.33, weight_mode="quantity")
     demand_rev = rollup_order_financial_demand(rows, hot_pct=0.33, cold_pct=0.33, weight_mode="revenue")
