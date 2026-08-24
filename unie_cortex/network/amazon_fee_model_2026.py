@@ -25,6 +25,12 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
     if not order_date_iso or not str(order_date_iso).strip():
         return None
     s = str(order_date_iso).strip()
+    # Fast path: extract 4-digit year prefix directly if valid ISO/date string
+    # and valid year range (1900-2100), bypassing regex match overhead.
+    if len(s) >= 4 and s[:4].isdigit() and (len(s) == 4 or s[4] in ("-", "T", " ", "/")):
+        val = int(s[:4])
+        if 1900 <= val <= 2100:
+            return val
     m = re.match(r"^(\d{4})", s)
     if m:
         try:
