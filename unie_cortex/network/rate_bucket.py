@@ -53,10 +53,33 @@ def rate_cache_key_parts(
     return fp, h
 
 
-def normalize_postal_5(z: str) -> str:
-    import re
+import re
 
-    d = re.sub(r"\D", "", (z or "").strip())[:5]
+_RE_NON_DIGIT = re.compile(r"\D")
+
+
+def normalize_postal_5(z: str) -> str:
+    """Normalize postal/ZIP input to 5-digit string representation.
+
+    Optimized with fast-path string checks to bypass regex compilation and evaluation on common formats.
+    """
+    if not z:
+        return "00000"
+    sz = z.strip()
+    # Fast path: 5-digit ZIP (e.g., '90210')
+    if len(sz) == 5 and sz.isdigit():
+        return sz
+    # Fast path: ZIP+4 (e.g., '90210-1234')
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:5]
+    # Fast path: 9-digit unhyphenated (e.g., '902101234')
+    if len(sz) == 9 and sz.isdigit():
+        return sz[:5]
+    # Fast path: 3 or 4-digit ZIP (e.g., '7001' -> '07001')
+    if 3 <= len(sz) <= 4 and sz.isdigit():
+        return sz.zfill(5)
+
+    d = _RE_NON_DIGIT.sub("", sz)[:5]
     if len(d) >= 5:
         return d[:5]
     if len(d) >= 3:
