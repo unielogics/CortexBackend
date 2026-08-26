@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import Any
 
@@ -17,15 +18,19 @@ CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE = 0.00012
 
 def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Geodesic distance on WGS84 sphere, statute miles."""
-    r_km = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    # Fast haversine implementation avoiding map() overhead and exponentiation
+    la1, lo1, la2, lo2 = math.radians(lat1), math.radians(lon1), math.radians(lat2), math.radians(lon2)
     dlat, dlon = la2 - la1, lo2 - lo1
-    h = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
-    km = 2 * r_km * math.asin(math.sqrt(min(1.0, h)))
+    sin_dlat = math.sin(dlat * 0.5)
+    sin_dlon = math.sin(dlon * 0.5)
+    h = sin_dlat * sin_dlat + math.cos(la1) * math.cos(la2) * sin_dlon * sin_dlon
+    km = 12742.0 * math.asin(math.sqrt(min(1.0, h)))
     return round(km * STATUTE_MILES_PER_KM, 4)
 
 
+@functools.lru_cache(maxsize=16384)
 def geodesic_miles_zip5(zip_a: str, zip_b: str) -> float | None:
+    """Calculates geodesic miles between 2 ZIP5 centroids with LRU caching."""
     ll1 = _zip5_to_latlon(zip_a)
     ll2 = _zip5_to_latlon(zip_b)
     if not ll1 or not ll2:
@@ -33,8 +38,9 @@ def geodesic_miles_zip5(zip_a: str, zip_b: str) -> float | None:
     return haversine_miles(ll1[0], ll1[1], ll2[0], ll2[1])
 
 
+@functools.lru_cache(maxsize=16384)
 def road_miles_zip5_pair(zip_a: str, zip_b: str) -> tuple[float | None, str | None]:
-    """Driving-distance proxy between ZIP centroids (OSRM when configured, else haversine fallback)."""
+    """Driving-distance proxy between ZIP centroids (OSRM when configured, else haversine fallback) with LRU caching."""
     ll1 = _zip5_to_latlon(zip_a)
     ll2 = _zip5_to_latlon(zip_b)
     if not ll1 or not ll2:
