@@ -20,6 +20,9 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(min(1.0, h)))
 
 
+_ZIP3_STATE_CACHE: dict[str, str | None] = {}
+
+
 def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     z = (zip3 or "").strip()
     if not z.isdigit():
@@ -27,9 +30,14 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     if len(z) < 3:
         return None
     z3 = z[:3].zfill(3)
+
+    if z3 in _ZIP3_STATE_CACHE:
+        return _ZIP3_STATE_CACHE[z3]
+
     z5 = z3 + "01"
     ll = _zip5_to_latlon(z5)
     if not ll:
+        _ZIP3_STATE_CACHE[z3] = None
         return None
     la, lo = ll
     best_st: str | None = None
@@ -39,4 +47,6 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
         if km < best_km:
             best_km = km
             best_st = str(m["state"])
+
+    _ZIP3_STATE_CACHE[z3] = best_st
     return best_st
