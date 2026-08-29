@@ -19,6 +19,20 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast-path for ISO 8601 (e.g. 2023-10-27T10:00:00Z)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            # fromisoformat handles 'Z' suffix in Python 3.11+
+            # Replacing Z with +00:00 for robust cross-version support if needed,
+            # but 3.11+ is safe.
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
