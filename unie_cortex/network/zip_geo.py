@@ -5,6 +5,7 @@ Map destination ZIP3 to contiguous U.S. state via nearest mock-grid hub metro.
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 from unie_cortex.services.warehouse_mock_rate_grid import (
     CONTIGUOUS_STATE_HUB_DESTINATIONS_48,
@@ -20,6 +21,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(min(1.0, h)))
 
 
+@lru_cache(maxsize=1000)
 def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     z = (zip3 or "").strip()
     if not z.isdigit():
