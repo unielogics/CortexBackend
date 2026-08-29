@@ -16,9 +16,24 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
+    if not s:
+        return None
+
+    # Fast-path for ISO 8601 (common in Cortex DB rows)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            # handle 'Z' suffix for fromisoformat (Python 3.11+)
+            iso_s = s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(iso_s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
