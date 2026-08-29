@@ -1,0 +1,3 @@
+## 2025-05-15 - Referral Fee Classification Optimization
+**Learning:** Pre-compiling regex patterns and using dictionary-based fast-paths for string lookups can provide significant performance gains in hot paths like classification heuristics, especially when multiple checks are performed sequentially. In this case, it improved `classification_texts_to_bucket` by ~20% and `normalize_csv_override` by ~37%.
+**Action:** Always check for repeated regex compilation in functions called in loops or for every item in a large dataset. Use dictionaries for exact string mappings instead of iterating over tuples when possible.
