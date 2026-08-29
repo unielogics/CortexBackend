@@ -1,0 +1,3 @@
+## 2025-05-22 - [Optimization of Date Parsing and Batch Processing]
+**Learning:** Found a recurring anti-pattern of truncating ISO strings to 26 characters (e.g., `s[:26]`) then using a `strptime` loop. This is extremely slow and causes precision loss or parsing failures for 'Z' suffixes. Combined with redundant parsing in batch functions (parsing the same rows multiple times), it creates a significant bottleneck.
+**Action:** Use `datetime.fromisoformat` with 'Z' -> '+00:00' replacement as a fast-path. Refactor batch processing functions to parse data once and pass pre-parsed objects to sub-analysis functions using an internal `_pre_parsed_lines` parameter.
