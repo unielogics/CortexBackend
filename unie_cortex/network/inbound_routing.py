@@ -5,11 +5,25 @@ from __future__ import annotations
 import re
 from typing import Any
 
+# Fast-path regex for non-digit removal on non-standard postal formats
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def _zip3(postal: str | None) -> str | None:
     if not postal:
         return None
-    d = re.sub(r"\D", "", postal.strip())[:5]
+    p = postal.strip()
+    lp = len(p)
+    # Fast path for standard 5-digit ZIPs
+    if lp == 5 and p.isdigit():
+        return p[:3]
+    # Fast path for standard ZIP+4 (12345-6789)
+    if lp == 10 and p[5] == "-" and p[:5].isdigit() and p[6:].isdigit():
+        return p[:3]
+    # Fast path for 9-digit unhyphenated ZIPs
+    if lp == 9 and p.isdigit():
+        return p[:3]
+    d = _RE_NON_DIGIT.sub("", p)[:5]
     if len(d) < 3:
         return None
     return d[:3].zfill(3)
@@ -33,12 +47,19 @@ def closest_node_by_postal(
     """
     if not nodes:
         return None
+    # Pre-compute origin ZIP3 once outside node candidate iteration loop
+    za = _zip3(receipt_postal)
+    za_int = int(za) if za else None
     scored: list[tuple[int, dict[str, Any]]] = []
     for n in nodes:
         p = str(n.get("postal") or "").strip()
         if not p:
             continue
-        d = zip3_distance_proxy(receipt_postal, p)
+        zb = _zip3(p)
+        if za_int is None or not zb:
+            d = 9999
+        else:
+            d = abs(za_int - int(zb))
         scored.append((d, n))
     if not scored:
         return None

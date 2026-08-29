@@ -69,3 +69,37 @@ def test_compare_v2_inbound_and_per_unit_fields():
     wctx = {x["warehouse_id"]: x for x in out2["warehouse_nodes_context"]}
     assert wctx["NJ"]["pricing_profile_id"] == "profile_nj_v1"
     assert wctx["NJ"]["pricing_profile_label"]
+
+
+def test_inbound_routing_zip3_and_closest_node():
+    from unie_cortex.network.inbound_routing import _zip3, closest_node_by_postal, zip3_distance_proxy
+
+    # Test _zip3 parsing variants
+    assert _zip3(None) is None
+    assert _zip3("") is None
+    assert _zip3("12") is None
+    assert _zip3("90210") == "902"
+    assert _zip3("90210-1234") == "902"
+    assert _zip3("902101234") == "902"
+    assert _zip3(" 07001 ") == "070"
+    assert _zip3("ABC-123") == "123"
+
+    # Test proxy distance
+    assert zip3_distance_proxy("90210", "90250") == 0
+    assert zip3_distance_proxy("07001", "07101") == 1
+    assert zip3_distance_proxy("invalid", "07001") == 9999
+
+    # Test closest_node_by_postal
+    nodes = [
+        {"warehouse_id": "NJ", "postal": "07001"},
+        {"warehouse_id": "TX", "postal": "75201"},
+    ]
+    res = closest_node_by_postal("07101", nodes)
+    assert res is not None
+    assert res["closest"]["warehouse_id"] == "NJ"
+    assert res["closest"]["zip3_distance_proxy"] == 1
+    assert len(res["candidates_ranked"]) == 2
+
+    # Edge cases
+    assert closest_node_by_postal("90210", []) is None
+    assert closest_node_by_postal("90210", [{"warehouse_id": "NO_POSTAL"}]) is None
