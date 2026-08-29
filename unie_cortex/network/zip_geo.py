@@ -11,6 +11,9 @@ from unie_cortex.services.warehouse_mock_rate_grid import (
     _zip5_to_latlon,
 )
 
+# Cache for nearest_contiguous_state_for_zip3 to avoid redundant haversine / lat-lon lookups.
+_ZIP3_STATE_CACHE: dict[str, str | None] = {}
+
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
@@ -27,6 +30,10 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
     if len(z) < 3:
         return None
     z3 = z[:3].zfill(3)
+
+    if z3 in _ZIP3_STATE_CACHE:
+        return _ZIP3_STATE_CACHE[z3]
+
     z5 = z3 + "01"
     ll = _zip5_to_latlon(z5)
     if not ll:
@@ -39,4 +46,6 @@ def nearest_contiguous_state_for_zip3(zip3: str) -> str | None:
         if km < best_km:
             best_km = km
             best_st = str(m["state"])
+
+    _ZIP3_STATE_CACHE[z3] = best_st
     return best_st
