@@ -19,10 +19,20 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast-path for ISO 8601 (most common in our ingest pipeline)
+    if "T" in s:
+        try:
+            # fromisoformat handles 'Z' and fractional seconds in Python 3.11+
+            # Replacing Z with +00:00 for broader compatibility if needed, but 3.12 is guaranteed here.
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d",
         "%m/%d/%Y",
@@ -74,19 +84,29 @@ def _order_date_raw(row: dict[str, Any]) -> str | None:
     return str(v).strip() if v not in (None, "") else None
 
 
-def _lines_for_group(rows: list[dict[str, Any]]) -> list[_Line]:
+def _build_line(row: dict[str, Any]) -> _Line | None:
+    dt = _parse_order_datetime(_order_date_raw(row))
+    if dt is None:
+        return None
+    return _Line(
+        dt=dt,
+        units=_qty(row),
+        order_id=(row.get("order_external_id") or row.get("order_id")),
+    )
+
+
+def _lines_for_group(
+    rows: list[dict[str, Any]], _pre_parsed_lines: list[_Line] | None = None
+) -> list[_Line]:
+    if _pre_parsed_lines is not None:
+        # Caller guarantees these lines belong to this group and are sorted if needed
+        return _pre_parsed_lines
+
     out: list[_Line] = []
     for row in rows:
-        dt = _parse_order_datetime(_order_date_raw(row))
-        if dt is None:
-            continue
-        out.append(
-            _Line(
-                dt=dt,
-                units=_qty(row),
-                order_id=(row.get("order_external_id") or row.get("order_id")),
-            )
-        )
+        ln = _build_line(row)
+        if ln:
+            out.append(ln)
     out.sort(key=lambda x: x.dt)
     return out
 
@@ -118,8 +138,9 @@ def analyze_velocity_group(
     group_key: str,
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
+    _pre_parsed_lines: list[_Line] | None = None,
 ) -> dict[str, Any]:
-    lines = _lines_for_group(rows)
+    lines = _lines_for_group(rows, _pre_parsed_lines=_pre_parsed_lines)
     if not lines:
         return {
             "group_key": group_key,
@@ -197,23 +218,33 @@ def build_batch_velocity_enrichment(
     """
     One pass: per-SKU/ASIN velocity + batch-level monthly totals for network gates.
     """
-    by_g: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # Pre-parse all lines once
+    all_parsed: list[tuple[str, _Line]] = []
     for row in canonical_rows:
-        by_g[order_financial_line_group_key(row)].append(row)
+        ln = _build_line(row)
+        if ln:
+            gk = order_financial_line_group_key(row)
+            all_parsed.append((gk, ln))
+
+    # Group and sort
+    by_g_lines: dict[str, list[_Line]] = defaultdict(list)
+    for gk, ln in all_parsed:
+        by_g_lines[gk].append(ln)
 
     by_group: dict[str, Any] = {}
-    for gk, grows in by_g.items():
+    for gk, glines in by_g_lines.items():
+        glines.sort(key=lambda x: x.dt)
         by_group[gk] = analyze_velocity_group(
-            grows,
+            [],  # rows not needed if _pre_parsed_lines is provided
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
+            _pre_parsed_lines=glines,
         )
 
     # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
     batch_by_month: dict[str, float] = defaultdict(float)
-    for ln in all_lines:
+    for _, ln in all_parsed:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
         batch_by_month[k] += ln.units
     sorted_bm = sorted(batch_by_month.keys())
