@@ -10,18 +10,22 @@ from typing import Any
 def _parse_iso_to_date(raw: str | None) -> date | None:
     if not raw or not str(raw).strip():
         return None
-    s = str(raw).strip().replace("Z", "+00:00")
+    s = str(raw).strip()
+    # Replace 'Z' for fromisoformat compatibility in older Python 3.x
+    iso_s = s.replace("Z", "+00:00")
     try:
-        dt = datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(iso_s)
         if dt.tzinfo is not None:
+            # Normalize to naive UTC date if it was offset-aware
             dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
         return dt.date()
     except ValueError:
         pass
-    m = s[:10]
-    if len(m) >= 10 and m[4] == "-" and m[7] == "-":
+
+    # Fallback for YYYY-MM-DD prefix if full ISO parse failed
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         try:
-            return datetime.strptime(m[:10], "%Y-%m-%d").date()
+            return date.fromisoformat(s[:10])
         except ValueError:
             pass
     return None
