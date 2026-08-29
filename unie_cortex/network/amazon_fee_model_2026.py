@@ -25,17 +25,36 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
     if not order_date_iso or not str(order_date_iso).strip():
         return None
     s = str(order_date_iso).strip()
+
+    # Fast-path for ISO layout (YYYY-MM-DD... or YYYY/MM/DD...)
+    if len(s) >= 4 and s[:4].isdigit():
+        if len(s) == 4 or s[4] in ("-", "T", " ", "/"):
+            return int(s[:4])
+
+    # Check for slash-based dates (e.g. MM/DD/YYYY or DD/MM/YYYY)
+    if "/" in s:
+        for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(s[:19], fmt).year
+            except ValueError:
+                continue
+        return None
+
+    # General fallback
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(s[:19], fmt).year
+        except ValueError:
+            continue
+
+    # Regex fallback if prefix matching was not triggered
     m = re.match(r"^(\d{4})", s)
     if m:
         try:
             return int(m.group(1))
         except ValueError:
             pass
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(s[:19], fmt).year
-        except ValueError:
-            continue
+
     return None
 
 
