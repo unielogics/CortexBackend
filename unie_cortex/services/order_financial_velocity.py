@@ -16,31 +16,48 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-        "%d/%m/%Y",
-    ):
+    if not s:
+        return None
+
+    # Fast-path for ISO-like (starting with YYYY-MM-DD)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        # 1. Try full ISO parse (handles 'T', 'Z', space, and various precisions)
         try:
-            dt = datetime.strptime(s[:26], fmt)
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
         except ValueError:
-            continue
-    m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
-    if m:
-        try:
-            return datetime.strptime(m.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except ValueError:
             pass
+
+        # 2. Try prefix matches if full parse failed (e.g. "2025-03-01 12:34:56.extra")
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                # Truncate to match format length
+                prefix_len = 19 if " " in fmt else 10
+                return datetime.strptime(s[:prefix_len], fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+
+        # 3. Regex fallback for "YYYY-MM-DD extra" (as in original)
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
+        if m:
+            try:
+                return datetime.strptime(m.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+
+    # Fast-path for MM/DD/YYYY or DD/MM/YYYY
+    if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+        for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(s[:10], fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+
     return None
 
 
@@ -118,8 +135,9 @@ def analyze_velocity_group(
     group_key: str,
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
+    _pre_parsed_lines: list[_Line] | None = None,
 ) -> dict[str, Any]:
-    lines = _lines_for_group(rows)
+    lines = _pre_parsed_lines if _pre_parsed_lines is not None else _lines_for_group(rows)
     if not lines:
         return {
             "group_key": group_key,
@@ -197,21 +215,37 @@ def build_batch_velocity_enrichment(
     """
     One pass: per-SKU/ASIN velocity + batch-level monthly totals for network gates.
     """
-    by_g: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # Optimized: Parse all lines once and group them
+    parsed_by_group: dict[str, list[_Line]] = defaultdict(list)
+    rows_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
     for row in canonical_rows:
-        by_g[order_financial_line_group_key(row)].append(row)
+        gk = order_financial_line_group_key(row)
+        rows_by_group[gk].append(row)
+        dt = _parse_order_datetime(_order_date_raw(row))
+        if dt:
+            parsed_by_group[gk].append(
+                _Line(
+                    dt=dt,
+                    units=_qty(row),
+                    order_id=(row.get("order_external_id") or row.get("order_id")),
+                )
+            )
 
     by_group: dict[str, Any] = {}
-    for gk, grows in by_g.items():
+    all_lines: list[_Line] = []
+    for gk, grows in rows_by_group.items():
+        glines = sorted(parsed_by_group[gk], key=lambda x: x.dt)
+        all_lines.extend(glines)
         by_group[gk] = analyze_velocity_group(
             grows,
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
+            _pre_parsed_lines=glines,
         )
 
-    # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
+    # Batch-wide units by calendar month (all groups) - Reuse pre-parsed lines
     batch_by_month: dict[str, float] = defaultdict(float)
     for ln in all_lines:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
