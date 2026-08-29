@@ -16,29 +16,45 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    """
+    Optimized date parser using fromisoformat for speed, with fallback for slash-dates and regex.
+    Avoids expensive strptime loops when possible.
+    """
+    if not raw:
         return None
     s = str(raw).strip()
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-        "%d/%m/%Y",
-    ):
+    if not s:
+        return None
+
+    # Fast path: ISO 8601 (most common)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         try:
-            dt = datetime.strptime(s[:26], fmt)
+            # fromisoformat handles YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, and space separator
+            # We replace 'Z' with '+00:00' for Python version compatibility with ISO strings
+            iso_s = s[:26].replace("Z", "+00:00")
+            dt = datetime.fromisoformat(iso_s)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
         except ValueError:
-            continue
+            pass
+
+    # Fast path: Slash dates (common in some CSVs)
+    # MM/DD/YYYY or DD/MM/YYYY
+    if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+        # We still use strptime here as there's no fromisoformat equivalent for slashes,
+        # but we only call it if we see slashes.
+        for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(s[:10], fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+
+    # Regex fallback for dirty strings starting with YYYY-MM-DD
     m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
     if m:
         try:
-            return datetime.strptime(m.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc)
         except ValueError:
             pass
     return None

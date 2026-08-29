@@ -21,7 +21,7 @@ def _parse_iso_to_date(raw: str | None) -> date | None:
     m = s[:10]
     if len(m) >= 10 and m[4] == "-" and m[7] == "-":
         try:
-            return datetime.strptime(m[:10], "%Y-%m-%d").date()
+            return date.fromisoformat(m[:10])
         except ValueError:
             pass
     return None
