@@ -19,6 +19,21 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+
+    # Fast-path for ISO 8601 strings (most common)
+    if (len(s) >= 10 and s[4] == "-" and s[7] == "-") or "T" in s:
+        try:
+            # fromisoformat is ~90% faster than strptime for ISO strings.
+            # Replace 'Z' with '+00:00' for Python < 3.11 compatibility if needed,
+            # though 3.11+ handles 'Z' directly.
+            norm = s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(norm)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
@@ -105,10 +120,14 @@ def _max_gap_days(sorted_dts: list[datetime]) -> int | None:
 def _units_in_window(lines: list[_Line], end: date, days: int) -> float:
     start = end - timedelta(days=days - 1)
     s = 0.0
-    for ln in lines:
+    # lines are sorted chronologically. Iterate backwards for O(window) instead of O(N).
+    for ln in reversed(lines):
         d = ln.dt.date()
-        if start <= d <= end:
-            s += ln.units
+        if d > end:
+            continue
+        if d < start:
+            break
+        s += ln.units
     return s
 
 
@@ -118,8 +137,9 @@ def analyze_velocity_group(
     group_key: str,
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
+    _pre_parsed_lines: list[_Line] | None = None,
 ) -> dict[str, Any]:
-    lines = _lines_for_group(rows)
+    lines = _pre_parsed_lines if _pre_parsed_lines is not None else _lines_for_group(rows)
     if not lines:
         return {
             "group_key": group_key,
@@ -198,8 +218,27 @@ def build_batch_velocity_enrichment(
     One pass: per-SKU/ASIN velocity + batch-level monthly totals for network gates.
     """
     by_g: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_g_lines: dict[str, list[_Line]] = defaultdict(list)
+    all_lines: list[_Line] = []
+
+    # Parse once, group once.
     for row in canonical_rows:
-        by_g[order_financial_line_group_key(row)].append(row)
+        gk = order_financial_line_group_key(row)
+        by_g[gk].append(row)
+        dt = _parse_order_datetime(_order_date_raw(row))
+        if dt:
+            ln = _Line(
+                dt=dt,
+                units=_qty(row),
+                order_id=(row.get("order_external_id") or row.get("order_id")),
+            )
+            by_g_lines[gk].append(ln)
+            all_lines.append(ln)
+
+    # Sort each group once.
+    for gk in by_g_lines:
+        by_g_lines[gk].sort(key=lambda x: x.dt)
+    all_lines.sort(key=lambda x: x.dt)
 
     by_group: dict[str, Any] = {}
     for gk, grows in by_g.items():
@@ -208,10 +247,10 @@ def build_batch_velocity_enrichment(
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
+            _pre_parsed_lines=by_g_lines.get(gk),
         )
 
     # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
     batch_by_month: dict[str, float] = defaultdict(float)
     for ln in all_lines:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
