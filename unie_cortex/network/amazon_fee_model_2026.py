@@ -31,9 +31,15 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
             return int(m.group(1))
         except ValueError:
             pass
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
+    # Performance: Try ISO 8601 fast-path
+    try:
+        return datetime.fromisoformat(s).year
+    except ValueError:
+        pass
+
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
         try:
-            return datetime.strptime(s[:19], fmt).year
+            return datetime.strptime(s, fmt).year
         except ValueError:
             continue
     return None
