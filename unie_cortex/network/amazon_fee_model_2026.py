@@ -25,15 +25,25 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
     if not order_date_iso or not str(order_date_iso).strip():
         return None
     s = str(order_date_iso).strip()
+
+    # Fast path: regex for year
     m = re.match(r"^(\d{4})", s)
     if m:
         try:
             return int(m.group(1))
         except ValueError:
             pass
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%d/%m/%Y"):
+
+    # Secondary fast path: fromisoformat
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).year
+    except ValueError:
+        pass
+
+    # Fallback for non-standard formats (e.g. MM/DD/YYYY)
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
         try:
-            return datetime.strptime(s[:19], fmt).year
+            return datetime.strptime(s, fmt).year
         except ValueError:
             continue
     return None
