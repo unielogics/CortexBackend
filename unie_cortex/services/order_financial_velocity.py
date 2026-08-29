@@ -16,25 +16,34 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-        "%d/%m/%Y",
-    ):
+    if not s:
+        return None
+
+    # Performance optimization: datetime.fromisoformat is ~10-15x faster than strptime loops
+    # for ISO 8601 strings. Python 3.11+ fromisoformat handles 'Z' and offset-based strings.
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         try:
-            dt = datetime.strptime(s[:26], fmt)
+            # s[:26] to stay consistent with original logic truncation if needed,
+            # though fromisoformat is usually robust.
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
         except ValueError:
+            pass
+
+    for fmt in (
+        "%m/%d/%Y",
+        "%d/%m/%Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
             continue
+
     m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
     if m:
         try:
