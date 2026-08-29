@@ -16,9 +16,24 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
+    if not s:
+        return None
+
+    # Bolt Optimization: Try fromisoformat first (significantly faster than strptime loop)
+    # and avoid s[:26] truncation which can break 'Z' suffix parsing.
+    if "-" in s[:5]:
+        try:
+            # Replace 'Z' with +00:00 for robust parsing across Python versions
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
@@ -119,9 +134,26 @@ def analyze_velocity_group(
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
 ) -> dict[str, Any]:
+    # Use helper that returns lines for further batch processing to avoid re-parsing
+    lines, res = analyze_velocity_group_with_lines(
+        rows,
+        group_key=group_key,
+        trailing_days_short=trailing_days_short,
+        trailing_days_long=trailing_days_long,
+    )
+    return res
+
+
+def analyze_velocity_group_with_lines(
+    rows: list[dict[str, Any]],
+    *,
+    group_key: str,
+    trailing_days_short: int = 30,
+    trailing_days_long: int = 60,
+) -> tuple[list[_Line], dict[str, Any]]:
     lines = _lines_for_group(rows)
     if not lines:
-        return {
+        return [], {
             "group_key": group_key,
             "status": "no_parseable_dates",
             "line_count": len(rows),
@@ -162,7 +194,7 @@ def analyze_velocity_group(
 
     sparse = len(lines) < 5 or span_short < 7
 
-    return {
+    return lines, {
         "group_key": group_key,
         "status": "complete",
         "order_lines_used": len(lines),
@@ -201,17 +233,20 @@ def build_batch_velocity_enrichment(
     for row in canonical_rows:
         by_g[order_financial_line_group_key(row)].append(row)
 
+    # Bolt Optimization: Collect all parsed lines during group analysis to avoid re-parsing them for batch totals
+    all_lines: list[_Line] = []
     by_group: dict[str, Any] = {}
     for gk, grows in by_g.items():
-        by_group[gk] = analyze_velocity_group(
+        lines, res = analyze_velocity_group_with_lines(
             grows,
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
         )
+        by_group[gk] = res
+        all_lines.extend(lines)
 
     # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
     batch_by_month: dict[str, float] = defaultdict(float)
     for ln in all_lines:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
