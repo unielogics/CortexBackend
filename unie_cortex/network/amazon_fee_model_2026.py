@@ -25,6 +25,14 @@ def parse_order_year_from_iso(order_date_iso: str | None) -> int | None:
     if not order_date_iso or not str(order_date_iso).strip():
         return None
     s = str(order_date_iso).strip()
+
+    # Fast path: Extract year from common ISO 8601 formats
+    try:
+        # Use fromisoformat for fast parsing
+        return datetime.fromisoformat(s.replace("Z", "+00:00") if s.endswith("Z") else s).year
+    except ValueError:
+        pass
+
     m = re.match(r"^(\d{4})", s)
     if m:
         try:
