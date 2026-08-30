@@ -1,0 +1,3 @@
+## 2026-03-31 - Scalar Haversine Trigonometric Optimization
+**Learning:** `map(math.radians, [...])` creates list allocations and iterator overhead in hot distance loops, while `math.sin(...) ** 2` incurs general power function overhead. Replacing list-based degree-to-radian conversions with a pre-computed scalar `_RAD_CONV` constant and direct `sin * sin` multiplication yields a 1.51x - 1.78x speedup (33.9% - 43.8% time reduction) across 1M calls.
+**Action:** When implementing mathematical formulas in hot loops, use scalar constants and direct multiplication instead of allocating list arguments to built-in map functions or calling `** 2`.

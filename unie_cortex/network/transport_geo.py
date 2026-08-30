@@ -15,13 +15,19 @@ STATUTE_MILES_PER_KM = 0.621371
 CO2E_KG_PER_PACKAGE_MILE_ILLUSTRATIVE = 0.00012
 
 
+_RAD_CONV = math.pi / 180.0
+
+
 def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Geodesic distance on WGS84 sphere, statute miles."""
-    r_km = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat, dlon = la2 - la1, lo2 - lo1
-    h = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
-    km = 2 * r_km * math.asin(math.sqrt(min(1.0, h)))
+    """Geodesic distance on WGS84 sphere, statute miles (optimized scalar implementation)."""
+    la1 = lat1 * _RAD_CONV
+    la2 = lat2 * _RAD_CONV
+    dlat = (lat2 - lat1) * _RAD_CONV
+    dlon = (lon2 - lon1) * _RAD_CONV
+    sin_dlat = math.sin(dlat * 0.5)
+    sin_dlon = math.sin(dlon * 0.5)
+    h = sin_dlat * sin_dlat + math.cos(la1) * math.cos(la2) * sin_dlon * sin_dlon
+    km = 12742.0 * math.asin(math.sqrt(min(1.0, h)))
     return round(km * STATUTE_MILES_PER_KM, 4)
 
 
