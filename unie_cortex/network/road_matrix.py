@@ -20,12 +20,19 @@ def _round_ll(lat: float, lon: float, nd: int = 4) -> tuple[float, float]:
     return round(lat, nd), round(lon, nd)
 
 
+_RAD_CONV = math.pi / 180.0
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat, dlon = la2 - la1, lo2 - lo1
-    h = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(min(1.0, h)))
+    """Geodesic distance on WGS84 sphere, km (optimized scalar implementation)."""
+    la1 = lat1 * _RAD_CONV
+    la2 = lat2 * _RAD_CONV
+    dlat = (lat2 - lat1) * _RAD_CONV
+    dlon = (lon2 - lon1) * _RAD_CONV
+    sin_dlat = math.sin(dlat * 0.5)
+    sin_dlon = math.sin(dlon * 0.5)
+    h = sin_dlat * sin_dlat + math.cos(la1) * math.cos(la2) * sin_dlon * sin_dlon
+    return 12742.0 * math.asin(math.sqrt(min(1.0, h)))
 
 
 def _chain_cache_key(base: str, coords: list[tuple[float, float]]) -> str:
