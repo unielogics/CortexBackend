@@ -1,0 +1,3 @@
+## 2026-03-30 - Fast-path ISO Datetime Parsing in Velocity Analysis
+**Learning:** `datetime.strptime` format loop in Python incurs significant interpreter and locale evaluation overhead for batch data processing. Using `datetime.fromisoformat` after validating ISO date heuristics (`YYYY-MM-DD`) yields a ~10x speedup for string parsing without regex or format iteration overhead. Avoid slicing strings to fixed lengths (e.g. `[:26]`) prior to `fromisoformat` as it truncates explicit timezone offsets (like `+02:00`); instead use `s.replace("Z", "+00:00")` on full strings.
+**Action:** When parsing timestamps on hot batch processing loops, use `datetime.fromisoformat` with `s.replace("Z", "+00:00")` after lightweight character/digit checks.
