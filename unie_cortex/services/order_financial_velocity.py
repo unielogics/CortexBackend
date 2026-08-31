@@ -16,9 +16,26 @@ from typing import Any
 
 
 def _parse_order_datetime(raw: str | None) -> datetime | None:
-    if not raw or not str(raw).strip():
+    if not raw:
         return None
     s = str(raw).strip()
+    if not s:
+        return None
+
+    # Performance optimization: fast path for ISO 8601 strings starting with YYYY-MM-DD.
+    # Uses datetime.fromisoformat which is ~10x faster in C Python 3.11+ than strptime.
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-" and s[:4].isdigit() and s[5:7].isdigit() and s[8:10].isdigit():
+        iso_str = s.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
