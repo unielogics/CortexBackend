@@ -5,11 +5,31 @@ from __future__ import annotations
 import re
 from typing import Any
 
+# Pre-compile non-digit regex to avoid re-compilation in hot postal parsing loops
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def _zip3(postal: str | None) -> str:
+    """Extracts 3-digit ZIP prefix from postal codes with fast-path string checks."""
     if not postal:
         return "UNK"
-    d = re.sub(r"\D", "", str(postal).strip())[:5]
+    s = str(postal).strip()
+    n = len(s)
+    # Fast path for standard 5-digit ZIPs (e.g. "90210")
+    if n == 5 and s.isdigit():
+        return s[:3]
+    # Fast path for standard ZIP+4 formats (e.g. "90210-1234")
+    if n == 10 and s[5] == "-" and s[:5].isdigit() and s[6:].isdigit():
+        return s[:3]
+    # Fast path for unhyphenated 9-digit ZIPs (e.g. "902101234")
+    if n == 9 and s.isdigit():
+        return s[:3]
+    # Fast path for 3 or 4-digit numeric prefixes (e.g. "902" or "0123")
+    if (n == 3 or n == 4) and s.isdigit():
+        return s[:3].zfill(3)
+
+    # Fallback to regex stripping for non-standard postal formats
+    d = _RE_NON_DIGIT.sub("", s)[:5]
     return d[:3].zfill(3) if len(d) >= 3 else "UNK"
 
 
