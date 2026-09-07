@@ -16,8 +16,8 @@ Does not replace cuOpt; produces a repeatable recommendation aligned with fusion
 
 from __future__ import annotations
 
+import functools
 import itertools
-import math
 import re
 from typing import Any, Iterator
 
@@ -42,6 +42,8 @@ from unie_cortex.network.facility_freight_mock_defaults import (
     enrich_warehouse_node_with_regional_fallback,
 )
 from unie_cortex.network.prep_center_loader import prep_center_candidate_warehouses_raw
+
+_RE_NON_DIGIT = re.compile(r"\D")
 
 # Ranked-candidate diagnostics: per-location scoring + subset table (confined to top N ranks).
 NETWORK_LOCATION_INTELLIGENCE_MAX_LOCATIONS = 6
@@ -74,8 +76,15 @@ def default_us_candidate_warehouses() -> list[dict[str, Any]]:
     return [enrich_warehouse_node_dict(dict(w)) for w in base]
 
 
+@functools.lru_cache(maxsize=1024)
 def _zip3_to_sample_zip5(z3: str) -> str:
-    z = re.sub(r"\D", "", str(z3))[:3].zfill(3)
+    # Fast path for 3-digit ZIPs, 5-digit ZIPs, and repeat lookups to bypass regex execution.
+    sz = str(z3) if z3 is not None else ""
+    if len(sz) == 3 and sz.isdigit():
+        return sz + "01"
+    if len(sz) == 5 and sz.isdigit():
+        return sz[:3] + "01"
+    z = _RE_NON_DIGIT.sub("", sz)[:3].zfill(3)
     return z + "01" if len(z) == 3 else "10001"
 
 
