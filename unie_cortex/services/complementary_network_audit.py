@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from typing import Any
 
@@ -28,6 +29,8 @@ from unie_cortex.services.complementary_network_tiers import (
 )
 from unie_cortex.services.smart_warehouse_network import default_us_candidate_warehouses
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def _carrier_code(s: str) -> CarrierCode:
     x = (s or "ups").strip().lower()
@@ -36,8 +39,15 @@ def _carrier_code(s: str) -> CarrierCode:
     return "ups"
 
 
+@functools.lru_cache(maxsize=1024)
 def _zip3_to_sample_zip5(z3: str) -> str:
-    z = re.sub(r"\D", "", str(z3))[:3].zfill(3)
+    # Fast path for 3-digit ZIPs, 5-digit ZIPs, and repeat lookups to bypass regex execution.
+    sz = str(z3) if z3 is not None else ""
+    if len(sz) == 3 and sz.isdigit():
+        return sz + "01"
+    if len(sz) == 5 and sz.isdigit():
+        return sz[:3] + "01"
+    z = _RE_NON_DIGIT.sub("", sz)[:3].zfill(3)
     return z + "01" if len(z) == 3 else "10001"
 
 
