@@ -67,15 +67,26 @@ CSV_OVERRIDE_ALIASES: list[tuple[str, str]] = [
     ("kitchen", "default"),
 ]
 
+# Fast-path exact map for O(1) lookup during CSV override normalization
+CSV_OVER_EXACT_MAP: dict[str, str] = {b: b for b in KNOWN_BUCKETS}
+for needle, bucket in CSV_OVERRIDE_ALIASES:
+    if needle not in CSV_OVER_EXACT_MAP:
+        CSV_OVER_EXACT_MAP[needle] = bucket
+
+# Pre-compiled regexes for hot classification pattern matching
+_RE_WATCHES = re.compile(r"\bwatches\b")
+_RE_PC = re.compile(r"\bpc\b")
+
 
 def normalize_csv_override(raw: str | None) -> str | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
-    if s in KNOWN_BUCKETS:
-        return s
+    matched = CSV_OVER_EXACT_MAP.get(s)
+    if matched is not None:
+        return matched
     for needle, bucket in CSV_OVERRIDE_ALIASES:
-        if needle in s or s == needle:
+        if needle in s:
             return bucket
     return None
 
@@ -86,12 +97,12 @@ def classification_texts_to_bucket(texts: list[str] | None) -> str:
     """
     if not texts:
         return "default"
-    blob = " ".join(t.lower() for t in texts if t).strip()
+    if len(texts) == 1:
+        blob = texts[0].lower().strip() if texts[0] else ""
+    else:
+        blob = " ".join(t for t in texts if t).lower().strip()
     if not blob:
         return "default"
-
-    def has(*words: str) -> bool:
-        return all(w in blob for w in words)
 
     # Media (before generic book)
     if any(
@@ -122,7 +133,7 @@ def classification_texts_to_bucket(texts: list[str] | None) -> str:
     if "automotive" in blob or "powersports" in blob or "motorcycle" in blob or "auto part" in blob:
         return "automotive_powersports"
 
-    if "wristwatch" in blob or "wrist watch" in blob or re.search(r"\bwatches\b", blob):
+    if "wristwatch" in blob or "wrist watch" in blob or _RE_WATCHES.search(blob):
         return "watches"
 
     if "jewelry" in blob or "jewellery" in blob:
@@ -131,7 +142,7 @@ def classification_texts_to_bucket(texts: list[str] | None) -> str:
     if "furniture" in blob:
         return "furniture"
 
-    if "personal computer" in blob or re.search(r"\bpc\b", blob) or "laptop" in blob or "desktop computer" in blob:
+    if "personal computer" in blob or _RE_PC.search(blob) or "laptop" in blob or "desktop computer" in blob:
         if "accessories" in blob and "computer" not in blob.replace("accessories", ""):
             pass
         else:
