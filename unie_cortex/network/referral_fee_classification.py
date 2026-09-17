@@ -8,6 +8,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+# Pre-compile regexes for word boundary checks to avoid re-compiling inside hot loops
+_RE_WATCHES = re.compile(r"\bwatches\b")
+_RE_PC = re.compile(r"\bpc\b")
+
 # Valid bucket ids for CSV override (normalize to these)
 KNOWN_BUCKETS = frozenset(
     {
@@ -27,6 +31,9 @@ KNOWN_BUCKETS = frozenset(
         "media",
     }
 )
+
+# Fast-path dict lookup for exact alias matches in CSV overrides
+_CSV_OVER_EXACT_MAP: dict[str, str] = {}
 
 # Aliases: substring or exact key -> bucket
 CSV_OVERRIDE_ALIASES: list[tuple[str, str]] = [
@@ -67,6 +74,9 @@ CSV_OVERRIDE_ALIASES: list[tuple[str, str]] = [
     ("kitchen", "default"),
 ]
 
+# Populate O(1) exact map after aliases list definition
+_CSV_OVER_EXACT_MAP = {alias: bucket for alias, bucket in CSV_OVERRIDE_ALIASES}
+
 
 def normalize_csv_override(raw: str | None) -> str | None:
     if not raw or not str(raw).strip():
@@ -74,8 +84,12 @@ def normalize_csv_override(raw: str | None) -> str | None:
     s = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
     if s in KNOWN_BUCKETS:
         return s
+    # Fast-path exact match lookup
+    match = _CSV_OVER_EXACT_MAP.get(s)
+    if match:
+        return match
     for needle, bucket in CSV_OVERRIDE_ALIASES:
-        if needle in s or s == needle:
+        if needle in s:
             return bucket
     return None
 
@@ -122,7 +136,7 @@ def classification_texts_to_bucket(texts: list[str] | None) -> str:
     if "automotive" in blob or "powersports" in blob or "motorcycle" in blob or "auto part" in blob:
         return "automotive_powersports"
 
-    if "wristwatch" in blob or "wrist watch" in blob or re.search(r"\bwatches\b", blob):
+    if "wristwatch" in blob or "wrist watch" in blob or _RE_WATCHES.search(blob):
         return "watches"
 
     if "jewelry" in blob or "jewellery" in blob:
@@ -131,7 +145,7 @@ def classification_texts_to_bucket(texts: list[str] | None) -> str:
     if "furniture" in blob:
         return "furniture"
 
-    if "personal computer" in blob or re.search(r"\bpc\b", blob) or "laptop" in blob or "desktop computer" in blob:
+    if "personal computer" in blob or _RE_PC.search(blob) or "laptop" in blob or "desktop computer" in blob:
         if "accessories" in blob and "computer" not in blob.replace("accessories", ""):
             pass
         else:
