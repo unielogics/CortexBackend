@@ -13,11 +13,33 @@ from typing import Literal
 
 CarrierCode = Literal["usps", "ups", "fedex"]
 
+# Pre-compiled regex for fallback non-digit stripping
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def normalize_zip5(postal: str | None) -> str | None:
+    """Normalize postal string into a 5-digit ZIP code.
+
+    Performance note: Uses fast-path string length and digit checks for common US postal
+    formats (5-digit, ZIP+4, 9-digit unhyphenated) to bypass regex execution in hot loops.
+    """
     if not postal:
         return None
-    digits = re.sub(r"\D", "", postal.strip())[:5]
+    s = postal.strip()
+    if not s:
+        return None
+    n = len(s)
+    # Fast path for standard 5-digit ZIPs (e.g. "08817")
+    if n == 5 and s.isdigit():
+        return s
+    # Fast path for standard ZIP+4 (e.g. "08817-1234")
+    if n == 10 and s[5] == "-" and s[:5].isdigit() and s[6:].isdigit():
+        return s[:5]
+    # Fast path for unhyphenated 9-digit ZIPs (e.g. "088171234")
+    if n == 9 and s.isdigit():
+        return s[:5]
+
+    digits = _RE_NON_DIGIT.sub("", s)[:5]
     return digits.zfill(5) if len(digits) >= 3 else None
 
 

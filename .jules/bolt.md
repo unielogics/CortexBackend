@@ -1,0 +1,3 @@
+## 2026-03-31 - Fast-Path ZIP Normalization
+**Learning:** Checking string lengths (`len`) and digit assertions (`.isdigit()`) on clean strings is significantly faster in Python than invoking `re.sub(r"\D", ...)` on every string, even when the regex is pre-compiled. In hot loops like postal code processing, bypassing regex execution for common standard formats (`08817`, `08817-1234`, `088171234`) delivers a ~2.8x speedup.
+**Action:** When working with structured string normalization (ZIPs, phone numbers, date strings), implement explicit string length and digit fast-paths prior to falling back to regex.
