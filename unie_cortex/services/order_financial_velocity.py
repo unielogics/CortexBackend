@@ -19,12 +19,18 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+    # Fast path: datetime.fromisoformat handles standard ISO-8601 strings
+    # (including space/T separators, millisecond precision, and Z/+offset) fast without strptime overhead.
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        pass
+
+    # Fallback path for non-ISO legacy slash formats (e.g. MM/DD/YYYY or DD/MM/YYYY)
     for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
         "%m/%d/%Y",
         "%d/%m/%Y",
     ):
@@ -35,12 +41,6 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
             return dt
         except ValueError:
             continue
-    m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
-    if m:
-        try:
-            return datetime.strptime(m.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except ValueError:
-            pass
     return None
 
 
