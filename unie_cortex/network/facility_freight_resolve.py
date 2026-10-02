@@ -41,18 +41,24 @@ async def build_facility_map_for_propose_routes(
             row = await store.facility_freight_profile_get(tid, lid)
             if row and row.get("profile"):
                 merged[lid] = merge_facility_freight_dicts(merged[lid], row["profile"])
+    # Cache model dumps per FacilityFreightProfile instance to avoid repeated serialization in batch loops
+    dump_cache: dict[int, dict[str, Any]] = {}
     for s in shipments:
         oid, did = shipment_origin_dest_keys(s)
         if oid and s.origin_address.facility_freight:
-            merged[oid] = merge_facility_freight_dicts(
-                merged.get(oid, {}),
-                s.origin_address.facility_freight.model_dump(exclude_none=True),
-            )
+            fid = id(s.origin_address.facility_freight)
+            if fid not in dump_cache:
+                dump_cache[fid] = s.origin_address.facility_freight.model_dump(exclude_none=True)
+            ff_dict = dump_cache[fid]
+            if ff_dict:
+                merged[oid] = merge_facility_freight_dicts(merged.get(oid, {}), ff_dict)
         if did and s.destination_address.facility_freight:
-            merged[did] = merge_facility_freight_dicts(
-                merged.get(did, {}),
-                s.destination_address.facility_freight.model_dump(exclude_none=True),
-            )
+            fid = id(s.destination_address.facility_freight)
+            if fid not in dump_cache:
+                dump_cache[fid] = s.destination_address.facility_freight.model_dump(exclude_none=True)
+            ff_dict = dump_cache[fid]
+            if ff_dict:
+                merged[did] = merge_facility_freight_dicts(merged.get(did, {}), ff_dict)
     return merged
 
 
