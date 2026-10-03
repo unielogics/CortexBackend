@@ -19,6 +19,16 @@ def _parse_order_datetime(raw: str | None) -> datetime | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+    # Fast path for standard ISO-8601 strings (e.g. 2026-01-15T12:34:56Z, 2026-01-15)
+    s_iso = s.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        pass
+
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
@@ -118,8 +128,10 @@ def analyze_velocity_group(
     group_key: str,
     trailing_days_short: int = 30,
     trailing_days_long: int = 60,
+    lines: list[_Line] | None = None,
 ) -> dict[str, Any]:
-    lines = _lines_for_group(rows)
+    if lines is None:
+        lines = _lines_for_group(rows)
     if not lines:
         return {
             "group_key": group_key,
@@ -202,16 +214,18 @@ def build_batch_velocity_enrichment(
         by_g[order_financial_line_group_key(row)].append(row)
 
     by_group: dict[str, Any] = {}
+    all_lines: list[_Line] = []
     for gk, grows in by_g.items():
+        glines = _lines_for_group(grows)
+        all_lines.extend(glines)
         by_group[gk] = analyze_velocity_group(
             grows,
             group_key=gk,
             trailing_days_short=trailing_days_short,
             trailing_days_long=trailing_days_long,
+            lines=glines,
         )
-
-    # Batch-wide units by calendar month (all groups)
-    all_lines = _lines_for_group(canonical_rows)
+    all_lines.sort(key=lambda x: x.dt)
     batch_by_month: dict[str, float] = defaultdict(float)
     for ln in all_lines:
         k = f"{ln.dt.year:04d}-{ln.dt.month:02d}"
