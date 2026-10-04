@@ -7,6 +7,8 @@ Uses mock ZIP→latlon from warehouse rate grid; not a substitute for carrier co
 
 from __future__ import annotations
 
+import functools
+import math
 import re
 from typing import Any
 
@@ -18,9 +20,28 @@ from unie_cortex.services.warehouse_mock_rate_grid import _latlon_for_warehouse_
 _KM_TO_MI = 0.621371192
 DEFAULT_AMAZON_INBOUND_FC_POSTAL = "41048"
 
+_RE_NON_DIGIT = re.compile(r"\D")
+_RAD_CONV = math.pi / 180.0
 
+
+@functools.lru_cache(maxsize=4096)
 def _norm_zip5(z: str) -> str:
-    d = re.sub(r"\D", "", str(z or ""))
+    # Bolt optimization: fast-path string checks and pre-compiled regex with LRU caching
+    if not z:
+        return ""
+    sz = str(z).strip()
+    if not sz:
+        return ""
+    if len(sz) == 5 and sz.isdigit():
+        return sz
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:5]
+    if len(sz) == 9 and sz.isdigit():
+        return sz[:5]
+    if 1 <= len(sz) <= 4 and sz.isdigit():
+        return sz.zfill(5)
+
+    d = _RE_NON_DIGIT.sub("", sz)
     if len(d) >= 5:
         return d[:5]
     if d:
@@ -29,13 +50,15 @@ def _norm_zip5(z: str) -> str:
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    import math
-
-    r = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat, dlon = la2 - la1, lo2 - lo1
-    h = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(min(1.0, h)))
+    # Bolt optimization: scalar conversion and direct sin*sin math bypassing map/radians allocation
+    la1 = lat1 * _RAD_CONV
+    la2 = lat2 * _RAD_CONV
+    dlat = (lat2 - lat1) * _RAD_CONV
+    dlon = (lon2 - lon1) * _RAD_CONV
+    sin_dlat = math.sin(dlat * 0.5)
+    sin_dlon = math.sin(dlon * 0.5)
+    h = sin_dlat * sin_dlat + math.cos(la1) * math.cos(la2) * sin_dlon * sin_dlon
+    return 12742.0 * math.asin(math.sqrt(min(1.0, h)))
 
 
 def postal_great_circle_distance_miles(supplier_postal: str, dest_postal: str) -> tuple[float | None, str | None]:
