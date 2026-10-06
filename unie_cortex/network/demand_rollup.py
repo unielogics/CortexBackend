@@ -10,10 +10,30 @@ from unie_cortex.network.zip_geo import nearest_contiguous_state_for_zip3
 from unie_cortex.services.warehouse_mock_rate_grid import CONTIGUOUS_STATE_HUB_DESTINATIONS_48
 
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
+
 def _zip3(postal: str | None) -> str | None:
+    """Extract 3-digit ZIP prefix from postal code.
+
+    Optimized with fast paths for standard 5-digit, ZIP+4, 9-digit, and 3-digit formats
+    to bypass regex overhead on common inputs.
+    """
     if not postal:
         return None
-    d = re.sub(r"\D", "", str(postal).strip())[:5]
+    s = str(postal).strip()
+    if not s:
+        return None
+    sz = len(s)
+    if sz == 5 and s.isdigit():
+        return s[:3]
+    if sz == 10 and s[5] == "-" and s[:5].isdigit() and s[6:].isdigit():
+        return s[:3]
+    if sz == 9 and s.isdigit():
+        return s[:3]
+    if sz == 3 and s.isdigit():
+        return s
+    d = _RE_NON_DIGIT.sub("", s)[:5]
     if len(d) < 3:
         return None
     return d[:3].zfill(3)
