@@ -201,20 +201,23 @@ def append_parallel_route_alerts(routes_out: list[dict[str, Any]]) -> None:
     """Mutates each route: alert for other destination-state routes in the same response."""
     if len(routes_out) <= 1:
         return
+    # Performance Optimization: Pre-compute sorted shipment ID tuples and route summaries
+    # in a single O(N) pass to avoid redundant O(N^2) sorting and dictionary allocations in the nested loop.
+    route_meta: list[tuple[tuple[str, ...], dict[str, Any]]] = []
     for r in routes_out:
+        s_ids = tuple(sorted(r.get("wms_shipment_ids") or []))
+        summary = {
+            "destination_region": r.get("destination_region"),
+            "wms_shipment_ids": r.get("wms_shipment_ids"),
+        }
+        route_meta.append((s_ids, summary))
+
+    for i, r in enumerate(routes_out):
         my_dest = (r.get("destination_region") or "").strip().upper()
-        my_ids = tuple(sorted(r.get("wms_shipment_ids") or []))
-        others: list[dict[str, Any]] = []
-        for x in routes_out:
-            x_ids = tuple(sorted(x.get("wms_shipment_ids") or []))
-            if x_ids == my_ids:
-                continue
-            others.append(
-                {
-                    "destination_region": x.get("destination_region"),
-                    "wms_shipment_ids": x.get("wms_shipment_ids"),
-                }
-            )
+        my_ids = route_meta[i][0]
+        others = [
+            summary for j, (x_ids, summary) in enumerate(route_meta) if j != i and x_ids != my_ids
+        ]
         if not others:
             continue
         r.setdefault("opportunity_alerts", []).append(
