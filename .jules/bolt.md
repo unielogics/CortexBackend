@@ -1,0 +1,3 @@
+## 2026-03-31 - Spatial Lookup Optimization in ZIP3 State Mapping
+**Learning:** Outer function `@lru_cache` decoration coupled with pre-computed radian tuple constants (`_STATE_HUBS_RAD`) dramatically speeds up distance-matching algorithms over bounded spatial spaces (such as 1000 US ZIP3 prefixes). Comparing raw Haversine $h$ parameters directly avoids unnecessary $2r \arcsin \sqrt{h}$ trigonometric math in inner loop comparisons.
+**Action:** Always pre-compute static coordinate tuples in radians at module scope and compare monotonic distance parameters directly when finding nearest geographic neighbors.
