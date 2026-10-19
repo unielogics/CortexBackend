@@ -45,7 +45,7 @@ from unie_cortex.services.warehouse_mock_rate_grid import (
 )
 from unie_cortex.network.road_matrix import haversine_km
 from unie_cortex.network.ltl_mock import mock_ltl_quote_usd
-from unie_cortex.services.physical_similarity import attach_signature_to_catalog_row, physical_signature
+from unie_cortex.services.physical_similarity import attach_signature_to_catalog_row
 from unie_cortex.network.us_state_demand_share import (
     build_blended_state_demand_weights_from_labels,
     demand_share_metadata,
@@ -58,6 +58,7 @@ from unie_cortex.services.smart_warehouse_network import (
     trim_client_warehouse_network_to_demand,
 )
 from unie_cortex.services.sku_intelligence_merge import (
+    build_labels_by_sku,
     compute_own_shipping_stats,
     merge_shipping_intelligence,
     pick_donor,
@@ -824,16 +825,17 @@ async def run_item_intelligence(
         tasks = await store.task_facts_list(tenant_id=tenant_id, warehouse_id=warehouse_id)
     velocity = rollup_velocity(labels, tasks, warehouse_id=warehouse_id)
 
+    labels_by_sku = build_labels_by_sku(labels)
     sku_to_stats: dict[str, dict[str, Any]] = {}
     for row in catalog:
         sku = row["sku"]
-        sku_to_stats[sku] = compute_own_shipping_stats(sku, labels)
+        sku_to_stats[sku] = compute_own_shipping_stats(sku, labels_by_sku)
 
     merged_intel = []
     for row in catalog:
         sku = row["sku"]
         sig = row.get("physical_signature") or ""
-        own = sku_to_stats.get(sku) or compute_own_shipping_stats(sku, labels)
+        own = sku_to_stats.get(sku) or compute_own_shipping_stats(sku, labels_by_sku)
         donor_sku = pick_donor(sku, sig, sku_to_stats, sig_to_skus)
         donor_stats = sku_to_stats.get(donor_sku) if donor_sku else None
         merged_intel.append(merge_shipping_intelligence(sku, own, donor_stats))
