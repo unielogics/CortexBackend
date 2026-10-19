@@ -27,6 +27,7 @@ from unie_cortex.services.item_intel_slim_artifact import (
     extract_product_research_fba_fbm_for_sku,
 )
 from unie_cortex.services.sku_intelligence_merge import (
+    build_labels_by_sku,
     compute_own_shipping_stats,
     merge_shipping_intelligence,
     pick_donor,
@@ -549,6 +550,33 @@ def test_compute_own_stats_filters_sku():
     sx = compute_own_shipping_stats("X", labels)
     assert sx["label_line_count"] == 1
     assert sx["avg_label_amount_usd"] == 10.0
+
+
+def test_build_labels_by_sku_and_dict_lookup_parity():
+    labels = [
+        {"sku": " SKU_1 ", "line_amount_usd": 15.0, "weight_lb": 2.5, "carrier": "UPS"},
+        {"sku": "SKU_1", "label_amount_usd": 25.0, "weight_lb": 3.5, "carrier": "FedEx"},
+        {"sku": "SKU_2", "line_amount_usd": 30.0, "weight_lb": 4.0, "carrier": "DHL"},
+        {"sku": None, "line_amount_usd": 5.0, "weight_lb": 1.0, "carrier": "USPS"},
+        {"sku": "   ", "line_amount_usd": 5.0, "weight_lb": 1.0, "carrier": "USPS"},
+    ]
+    by_sku = build_labels_by_sku(labels)
+    assert "SKU_1" in by_sku
+    assert len(by_sku["SKU_1"]) == 2
+    assert "SKU_2" in by_sku
+    assert None not in by_sku
+    assert "" not in by_sku
+
+    # Parity check between passing raw list vs pre-grouped dict
+    for sku in ["SKU_1", "SKU_2", "NON_EXISTENT"]:
+        stats_from_list = compute_own_shipping_stats(sku, labels)
+        stats_from_dict = compute_own_shipping_stats(sku, by_sku)
+        assert stats_from_list == stats_from_dict
+
+    assert compute_own_shipping_stats("SKU_1", by_sku)["label_line_count"] == 2
+    assert compute_own_shipping_stats("SKU_1", by_sku)["avg_label_amount_usd"] == 20.0
+    assert compute_own_shipping_stats("SKU_1", by_sku)["avg_weight_lb"] == 3.0
+    assert compute_own_shipping_stats("NON_EXISTENT", by_sku)["label_line_count"] == 0
 
 def test_fulfillment_coverage_vs_inventory_reconciliation():
     alloc = allocate_skus(
