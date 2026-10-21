@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import functools
+
 from unie_cortex.network.zones import CarrierCode, mock_zone_id
 
 
-def mock_parcel_quote_usd(
+@functools.lru_cache(maxsize=8192)
+def _mock_parcel_quote_usd_cached(
     carrier: CarrierCode,
-    *,
     origin_postal: str,
     dest_postal: str,
     weight_lb: float,
@@ -15,9 +17,6 @@ def mock_parcel_quote_usd(
     width_in: float | None = None,
     height_in: float | None = None,
 ) -> dict:
-    """
-    Returns components + total_usd. Dims optional (small dim surcharge mock).
-    """
     zone, zone_model = mock_zone_id(carrier, origin_postal, dest_postal)
     w = max(0.01, float(weight_lb))
 
@@ -53,6 +52,41 @@ def mock_parcel_quote_usd(
         },
         "total_usd": total,
         "source": "network_parcel_mock_v1",
+    }
+
+
+def mock_parcel_quote_usd(
+    carrier: CarrierCode,
+    *,
+    origin_postal: str,
+    dest_postal: str,
+    weight_lb: float,
+    length_in: float | None = None,
+    width_in: float | None = None,
+    height_in: float | None = None,
+) -> dict:
+    """
+    Returns components + total_usd. Dims optional (small dim surcharge mock).
+    Uses _mock_parcel_quote_usd_cached with @lru_cache and returns a fresh dictionary copy
+    to preserve caller immutability and prevent cross-contamination.
+    """
+    q = _mock_parcel_quote_usd_cached(
+        carrier,
+        origin_postal,
+        dest_postal,
+        weight_lb,
+        length_in,
+        width_in,
+        height_in,
+    )
+    return {
+        "carrier": q["carrier"],
+        "zone": q["zone"],
+        "zone_model": q["zone_model"],
+        "weight_lb": q["weight_lb"],
+        "components_usd": dict(q["components_usd"]),
+        "total_usd": q["total_usd"],
+        "source": q["source"],
     }
 
 
