@@ -21,8 +21,11 @@ def _states_from_zip3_tier_list(zip3_list: list[Any] | None) -> list[str]:
     out: list[str] = []
     for z in zip3_list or []:
         zraw = str(z).strip()
-        digits = "".join(c for c in zraw if c.isdigit())
-        z3 = digits[:3] if len(digits) >= 3 else ""
+        if len(zraw) == 3 and zraw.isdigit():
+            z3 = zraw
+        else:
+            digits = "".join(c for c in zraw if c.isdigit())
+            z3 = digits[:3] if len(digits) >= 3 else ""
         if len(z3) < 3:
             continue
         st = nearest_contiguous_state_for_zip3(z3)
@@ -54,7 +57,14 @@ def _order_financial_row_get(row: dict[str, Any], key: str) -> Any:
     return None
 
 
-def compute_fbm_planning_amazon_selling_fees_basis(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def compute_fbm_planning_amazon_selling_fees_basis(
+    rows: list[dict[str, Any]],
+    *,
+    mk_sum: float | None = None,
+    ref_sum: float | None = None,
+    seller_sum: float | None = None,
+    fba_sum: float | None = None,
+) -> dict[str, Any]:
     """
     Dollar basis for **FBM** planning matrix Amazon fee line: selling/referral-class fees only,
     excluding FBA pick/pack and other fulfillment that CSVs often bundle into ``marketplace_fees_usd``.
@@ -71,10 +81,10 @@ def compute_fbm_planning_amazon_selling_fees_basis(rows: list[dict[str, Any]]) -
         except (TypeError, ValueError):
             return 0.0
 
-    mk = sum(_f(r.get("marketplace_fees_usd")) for r in rows)
-    ref = sum(_f(r.get("referral_fees_modeled_usd")) for r in rows)
-    seller = sum(_f(_order_financial_row_get(r, "amazon_seller_fees_usd")) for r in rows)
-    fba = sum(_f(_order_financial_row_get(r, "amazon_fba_fulfillment_fees_usd")) for r in rows)
+    mk = mk_sum if mk_sum is not None else sum(_f(r.get("marketplace_fees_usd")) for r in rows)
+    ref = ref_sum if ref_sum is not None else sum(_f(r.get("referral_fees_modeled_usd")) for r in rows)
+    seller = seller_sum if seller_sum is not None else sum(_f(_order_financial_row_get(r, "amazon_seller_fees_usd")) for r in rows)
+    fba = fba_sum if fba_sum is not None else sum(_f(_order_financial_row_get(r, "amazon_fba_fulfillment_fees_usd")) for r in rows)
 
     if seller > 0:
         basis = seller
@@ -382,46 +392,88 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
             return 0.0
 
     tot: dict[str, float] = defaultdict(float)
-    tot["revenue_usd"] = sum(_f(r.get("revenue_usd")) for r in rows)
-    tot["marketplace_fees_usd"] = sum(_f(r.get("marketplace_fees_usd")) for r in rows)
-    tot["other_expenses_usd"] = sum(_f(r.get("other_expenses_usd")) for r in rows)
-    tot["total_fees_usd"] = sum(_f(r.get("total_fees_usd")) for r in rows)
-    tot["profit_usd"] = sum(_f(r.get("profit_usd")) for r in rows)
-    tot["product_cogs_usd"] = sum(_f(r.get("product_cogs_usd")) for r in rows)
-    tot["prep_cost_usd"] = sum(_f(r.get("prep_cost_usd")) for r in rows)
-    tot["inbound_cost_usd"] = sum(_f(r.get("inbound_cost_usd")) for r in rows)
-    quantity_units_in_csv = sum(max(_f(r.get("quantity")), 1.0) or 1.0 for r in rows)
-    tot["quantity_units_in_csv"] = round(quantity_units_in_csv, 4)
-    rows_with_cogs = sum(1 for r in rows if _f(r.get("product_cogs_usd")) > 0)
-    tot["referral_fees_modeled_usd"] = sum(_f(r.get("referral_fees_modeled_usd")) for r in rows)
-    tot["implied_non_referral_marketplace_usd"] = sum(
-        max(0.0, _f(r.get("marketplace_fees_usd")) - _f(r.get("referral_fees_modeled_usd"))) for r in rows
-    )
-    tot["fba_fulfillment_fee_audit_line_total_usd"] = sum(
-        _f(_order_financial_row_get(r, "fba_fulfillment_fee_audit_line_total_usd")) for r in rows
-    )
+    rows_with_cogs = 0
+    quantity_units_in_csv = 0.0
+    sum_seller_fees = 0.0
+    sum_fba_fees = 0.0
+    sum_tf_2026 = 0.0
 
-    tf_2026 = []
+    by_asin: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    by_state: dict[str, float] = defaultdict(float)
+    src_counts: dict[str, int] = defaultdict(int)
+    referral_src_counts: dict[str, int] = defaultdict(int)
+    vel_rows: list[dict[str, Any]] = []
+
     for r in rows:
+        rev = _f(r.get("revenue_usd"))
+        mk = _f(r.get("marketplace_fees_usd"))
+        oth = _f(r.get("other_expenses_usd"))
+        tf = _f(r.get("total_fees_usd"))
+        pr = _f(r.get("profit_usd"))
+        cogs = _f(r.get("product_cogs_usd"))
+        prep = _f(r.get("prep_cost_usd"))
+        inbound = _f(r.get("inbound_cost_usd"))
+        q = _f(r.get("quantity"))
+        q_eff = q if q > 0 else 1.0
+        ref = _f(r.get("referral_fees_modeled_usd"))
+        fba_audit = _f(_order_financial_row_get(r, "fba_fulfillment_fee_audit_line_total_usd"))
+        seller_fee = _f(_order_financial_row_get(r, "amazon_seller_fees_usd"))
+        fba_fee = _f(_order_financial_row_get(r, "amazon_fba_fulfillment_fees_usd"))
+
+        tot["revenue_usd"] += rev
+        tot["marketplace_fees_usd"] += mk
+        tot["other_expenses_usd"] += oth
+        tot["total_fees_usd"] += tf
+        tot["profit_usd"] += pr
+        tot["product_cogs_usd"] += cogs
+        tot["prep_cost_usd"] += prep
+        tot["inbound_cost_usd"] += inbound
+        tot["referral_fees_modeled_usd"] += ref
+        tot["implied_non_referral_marketplace_usd"] += max(0.0, mk - ref)
+        tot["fba_fulfillment_fee_audit_line_total_usd"] += fba_audit
+
+        quantity_units_in_csv += q_eff
+        if cogs > 0:
+            rows_with_cogs += 1
+
+        sum_seller_fees += seller_fee
+        sum_fba_fees += fba_fee
+
         v = r.get("total_fees_2026_csv_usd")
         if v is not None:
-            tf_2026.append(_f(v))
+            sum_tf_2026 += _f(v)
         else:
             v2 = r.get("total_fees_2026_synthetic_usd")
             if v2 is not None:
-                tf_2026.append(_f(v2))
+                sum_tf_2026 += _f(v2)
             else:
-                tf_2026.append(_f(r.get("total_fees_usd")))
-    tot["total_fees_2026_view_usd"] = sum(tf_2026)
+                sum_tf_2026 += tf
 
-    by_asin: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for r in rows:
         a = r.get("asin") or "unknown"
-        by_asin[a]["revenue_usd"] += _f(r.get("revenue_usd"))
-        by_asin[a]["product_cogs_usd"] += _f(r.get("product_cogs_usd"))
-        by_asin[a]["other_expenses_usd"] += _f(r.get("other_expenses_usd"))
-        by_asin[a]["profit_usd"] += _f(r.get("profit_usd"))
-        by_asin[a]["units"] += _f(r.get("quantity")) or 1.0
+        ba = by_asin[a]
+        ba["revenue_usd"] += rev
+        ba["product_cogs_usd"] += cogs
+        ba["other_expenses_usd"] += oth
+        ba["profit_usd"] += pr
+        ba["units"] += q_eff
+
+        st = r.get("ship_to_state") or "unknown"
+        by_state[st] += rev
+
+        src_counts[str(r.get("inflation_source") or "unknown")] += 1
+        referral_src_counts[str(r.get("referral_fee_source") or "unknown")] += 1
+
+        vel_rows.append(
+            {
+                "order_date_iso": r.get("order_date_iso"),
+                "sku": r.get("sku"),
+                "asin": r.get("asin"),
+                "quantity": r.get("quantity"),
+            }
+        )
+
+    tot["quantity_units_in_csv"] = round(quantity_units_in_csv, 4)
+    tot["total_fees_2026_view_usd"] = sum_tf_2026
 
     per_asin = []
     for a, d in sorted(by_asin.items(), key=lambda x: -x[1]["revenue_usd"])[:200]:
@@ -438,41 +490,19 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
         per_asin.append(row)
 
-    by_state: dict[str, float] = defaultdict(float)
-    for r in rows:
-        st = r.get("ship_to_state") or "unknown"
-        by_state[st] += _f(r.get("revenue_usd"))
     ship_roll = [{"ship_to_state": s, "revenue_usd": round(v, 2)} for s, v in sorted(by_state.items(), key=lambda x: -x[1])[:60]]
 
     modeled_ops = (
         settings.economics_default_inbound_receiving_per_unit_usd
         + settings.economics_default_outbound_handling_per_unit_usd
     )
-    units = sum(max(_f(r.get("quantity")), 1.0) or 1.0 for r in rows)
+    units = quantity_units_in_csv
     modeled_network_usd = modeled_ops * units
 
     hints = [
         "other_expenses_usd captures unmapped spend columns — compare to Cortex inbound/outbound defaults (not Amazon fees).",
         f"Sum other_expenses_usd={tot['other_expenses_usd']:.2f} vs rough modeled 3PL handling (defaults) ~{modeled_network_usd:.2f} on {len(rows)} rows.",
         "referral_fee_source_counts: default/unknown spikes mean missing ASIN or SP-API/Keepa resolution failure — use real ASINs in production (avoid demo ASIN randomization scripts).",
-    ]
-
-    src_counts: dict[str, int] = defaultdict(int)
-    for r in rows:
-        src_counts[str(r.get("inflation_source") or "unknown")] += 1
-
-    referral_src_counts: dict[str, int] = defaultdict(int)
-    for r in rows:
-        referral_src_counts[str(r.get("referral_fee_source") or "unknown")] += 1
-
-    vel_rows = [
-        {
-            "order_date_iso": r.get("order_date_iso"),
-            "sku": r.get("sku"),
-            "asin": r.get("asin"),
-            "quantity": r.get("quantity"),
-        }
-        for r in rows
     ]
     order_velocity_enrichment = build_batch_velocity_enrichment(vel_rows)
 
@@ -510,7 +540,13 @@ def analyze_order_financial_facts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row_count=len(rows),
     )
 
-    fbm_basis = compute_fbm_planning_amazon_selling_fees_basis(rows)
+    fbm_basis = compute_fbm_planning_amazon_selling_fees_basis(
+        rows,
+        mk_sum=tot["marketplace_fees_usd"],
+        ref_sum=tot["referral_fees_modeled_usd"],
+        seller_sum=sum_seller_fees,
+        fba_sum=sum_fba_fees,
+    )
     tot["fbm_planning_amazon_selling_fees_usd"] = fbm_basis["fbm_planning_amazon_selling_fees_usd"]
     tot["sum_amazon_seller_fees_usd"] = fbm_basis["sum_amazon_seller_fees_usd"]
     tot["sum_amazon_fba_fulfillment_fees_usd"] = fbm_basis["sum_amazon_fba_fulfillment_fees_usd"]

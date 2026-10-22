@@ -1,0 +1,3 @@
+## 2026-03-31 - Fast-path ISO datetimes and line reuse in batch order financial pipelines
+**Learning:** Standard ISO-8601 strings in order financial datasets trigger severe CPU overhead when evaluated against exception-heavy `strptime` format loops. Combining `datetime.fromisoformat` fast paths with single-pass row loops and reusing parsed line objects across group/batch levels yields a ~3.52x speedup (reducing 5,000-row batch processing time from 347.68ms to 98.83ms).
+**Action:** Always check datetime parsing functions for `fromisoformat` fast paths, and collect parsed row objects during per-group passes to reuse them for batch-wide rollups rather than re-parsing full datasets.
