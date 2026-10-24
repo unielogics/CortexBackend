@@ -199,22 +199,31 @@ def build_route_opportunity_alerts(
 
 def append_parallel_route_alerts(routes_out: list[dict[str, Any]]) -> None:
     """Mutates each route: alert for other destination-state routes in the same response."""
-    if len(routes_out) <= 1:
+    n = len(routes_out)
+    if n <= 1:
         return
-    for r in routes_out:
+
+    # Pre-compute sorted shipment IDs tuples and route summary dicts in a single pass
+    # to avoid redundant sorting and dictionary allocations in the nested comparison loop.
+    ids_tuples: list[tuple[Any, ...]] = [
+        tuple(sorted(r.get("wms_shipment_ids") or [])) for r in routes_out
+    ]
+    summaries: list[dict[str, Any]] = [
+        {
+            "destination_region": r.get("destination_region"),
+            "wms_shipment_ids": r.get("wms_shipment_ids"),
+        }
+        for r in routes_out
+    ]
+
+    for i, r in enumerate(routes_out):
         my_dest = (r.get("destination_region") or "").strip().upper()
-        my_ids = tuple(sorted(r.get("wms_shipment_ids") or []))
-        others: list[dict[str, Any]] = []
-        for x in routes_out:
-            x_ids = tuple(sorted(x.get("wms_shipment_ids") or []))
-            if x_ids == my_ids:
-                continue
-            others.append(
-                {
-                    "destination_region": x.get("destination_region"),
-                    "wms_shipment_ids": x.get("wms_shipment_ids"),
-                }
-            )
+        my_ids = ids_tuples[i]
+        others = [
+            summaries[j]
+            for j in range(n)
+            if ids_tuples[j] != my_ids
+        ]
         if not others:
             continue
         r.setdefault("opportunity_alerts", []).append(
