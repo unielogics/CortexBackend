@@ -1,0 +1,3 @@
+## 2026-03-30 - Hoisting and Fast-Path ZIP3 Extraction in Inbound Node Search
+**Learning:** In inbound warehouse routing (`closest_node_by_postal`), repeated evaluation of `_zip3(receipt_postal)` inside the loop over all candidate nodes caused unnecessary string manipulation and regex execution $N$ times per lookup. Additionally, standard US ZIP codes (5-digit, 9-digit, ZIP+4) can be sliced directly after length and `.isdigit()` validation without running regular expressions.
+**Action:** Always hoist outer candidate parameters out of distance search loops, and use length/digit fast-paths before defaulting to `re.sub(r"\D", ...)`.
