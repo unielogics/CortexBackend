@@ -5,11 +5,23 @@ from __future__ import annotations
 import re
 from typing import Any
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def _zip3(postal: str | None) -> str | None:
     if not postal:
         return None
-    d = re.sub(r"\D", "", postal.strip())[:5]
+    sz = str(postal).strip()
+    # Fast paths for common US ZIP formats to bypass regex
+    if len(sz) == 5 and sz.isdigit():
+        return sz[:3]
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:3]
+    if len(sz) == 9 and sz.isdigit():
+        return sz[:3]
+    if len(sz) in (3, 4) and sz.isdigit():
+        return sz[:3].zfill(3)
+    d = _RE_NON_DIGIT.sub("", sz)[:5]
     if len(d) < 3:
         return None
     return d[:3].zfill(3)
@@ -33,12 +45,15 @@ def closest_node_by_postal(
     """
     if not nodes:
         return None
+    rz = _zip3(receipt_postal)
+    rz_int = int(rz) if rz else None
     scored: list[tuple[int, dict[str, Any]]] = []
     for n in nodes:
         p = str(n.get("postal") or "").strip()
         if not p:
             continue
-        d = zip3_distance_proxy(receipt_postal, p)
+        pz = _zip3(p)
+        d = 9999 if (rz_int is None or pz is None) else abs(rz_int - int(pz))
         scored.append((d, n))
     if not scored:
         return None
