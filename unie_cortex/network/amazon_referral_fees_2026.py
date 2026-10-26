@@ -20,21 +20,32 @@ INDIVIDUAL_PER_ITEM_FEE_USD = 0.99
 # Common Amazon split for grocery/beauty (confirm on Seller Central)
 GROCERY_BEAUTY_LOW_PRICE_THRESHOLD_USD = 15.0
 
+# Cache metadata dictionary per settings key combination to avoid repeated dict allocations
+_METADATA_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+
 
 def referral_fee_metadata(settings: Settings, *, audit_grade: bool) -> dict[str, Any]:
-    ver = (
-        REFERRAL_FEE_MODEL_VERSION_AUDIT
-        if audit_grade
-        else (settings.amazon_referral_fee_model_version or REFERRAL_FEE_MODEL_VERSION)
-    )
-    return {
-        "version": ver,
-        "source_note": "seller_central_referral_fee_tables",
-        "media_closing_fee_usd": MEDIA_CLOSING_FEE_USD,
-        "individual_per_item_fee_usd": INDIVIDUAL_PER_ITEM_FEE_USD,
-        "audit_grade": bool(audit_grade),
-        "referral_minimum_usd_per_item_default": float(getattr(settings, "amazon_referral_minimum_usd_per_item", 0.30) or 0.0),
-    }
+    ver_setting = getattr(settings, "amazon_referral_fee_model_version", None)
+    min_fee_setting = getattr(settings, "amazon_referral_minimum_usd_per_item", 0.30)
+    key = (ver_setting, min_fee_setting, audit_grade)
+    res = _METADATA_CACHE.get(key)
+    if res is None:
+        ver = (
+            REFERRAL_FEE_MODEL_VERSION_AUDIT
+            if audit_grade
+            else (ver_setting or REFERRAL_FEE_MODEL_VERSION)
+        )
+        res = {
+            "version": ver,
+            "source_note": "seller_central_referral_fee_tables",
+            "media_closing_fee_usd": MEDIA_CLOSING_FEE_USD,
+            "individual_per_item_fee_usd": INDIVIDUAL_PER_ITEM_FEE_USD,
+            "audit_grade": bool(audit_grade),
+            "referral_minimum_usd_per_item_default": float(min_fee_setting or 0.0),
+        }
+        _METADATA_CACHE[key] = res
+    # Shallow copy prevents caller mutations from polluting the shared global cache
+    return res.copy()
 
 
 def _qty(q: float | None) -> float:
@@ -54,17 +65,92 @@ def _unit_price(revenue_usd: float | None, quantity: float | None, line_price_us
 
 def _tiered_referral_unit(
     unit_price: float,
-    *,
     low_rate: float,
     high_rate: float,
     threshold: float,
 ) -> float:
     """Portion at low_rate up to threshold, remainder at high_rate (per unit)."""
     u = max(0.0, float(unit_price))
-    t = max(0.0, float(threshold))
-    base = min(u, t)
-    rest = max(0.0, u - t)
-    return base * low_rate + rest * high_rate
+    if u <= threshold:
+        return u * low_rate
+    return threshold * low_rate + (u - threshold) * high_rate
+
+
+# Rule handler functions for O(1) dictionary dispatch
+def _calc_device_accessories(unit: float) -> tuple[float, str]:
+    return 0.45 * unit, "referral_45pct_device_accessories"
+
+
+def _calc_jewelry(unit: float) -> tuple[float, str]:
+    return _tiered_referral_unit(unit, low_rate=0.20, high_rate=0.05, threshold=250.0), "referral_jewelry_tier_250"
+
+
+def _calc_clothing(unit: float) -> tuple[float, str]:
+    return 0.17 * unit, "referral_17pct_clothing_simplified"
+
+
+def _calc_watches(unit: float) -> tuple[float, str]:
+    return _tiered_referral_unit(unit, low_rate=0.16, high_rate=0.03, threshold=1500.0), "referral_watches_tier_1500"
+
+
+def _calc_tires(unit: float) -> tuple[float, str]:
+    return 0.10 * unit, "referral_10pct_tires"
+
+
+def _calc_powersports(unit: float) -> tuple[float, str]:
+    return 0.12 * unit, "referral_12pct_automotive"
+
+
+def _calc_electronics_consumer(unit: float) -> tuple[float, str]:
+    return 0.08 * unit, "referral_8pct_consumer_electronics"
+
+
+def _calc_pc(unit: float) -> tuple[float, str]:
+    return 0.06 * unit, "referral_6pct_pc"
+
+
+def _calc_grocery(unit: float) -> tuple[float, str]:
+    r = 0.08 if unit <= GROCERY_BEAUTY_LOW_PRICE_THRESHOLD_USD else 0.15
+    return r * unit, f"referral_grocery_{r:.2f}"
+
+
+def _calc_beauty(unit: float) -> tuple[float, str]:
+    r = 0.08 if unit <= GROCERY_BEAUTY_LOW_PRICE_THRESHOLD_USD else 0.15
+    return r * unit, f"referral_beauty_{r:.2f}"
+
+
+def _calc_electronics_accessories(unit: float) -> tuple[float, str]:
+    return _tiered_referral_unit(unit, low_rate=0.15, high_rate=0.08, threshold=100.0), "referral_electronics_accessories_tier_100"
+
+
+def _calc_furniture(unit: float) -> tuple[float, str]:
+    return _tiered_referral_unit(unit, low_rate=0.15, high_rate=0.10, threshold=200.0), "referral_furniture_tier_200"
+
+
+def _calc_media(unit: float) -> tuple[float, str]:
+    return 0.15 * unit, "referral_15pct_media_plus_closing"
+
+
+def _calc_default(unit: float) -> tuple[float, str]:
+    return 0.15 * unit, "referral_15pct_default"
+
+
+_BUCKET_RULES = {
+    "amazon_device_accessories": _calc_device_accessories,
+    "jewelry": _calc_jewelry,
+    "clothing_accessories": _calc_clothing,
+    "watches": _calc_watches,
+    "automotive_tires": _calc_tires,
+    "automotive_powersports": _calc_powersports,
+    "electronics_consumer": _calc_electronics_consumer,
+    "personal_computers": _calc_pc,
+    "grocery_gourmet": _calc_grocery,
+    "beauty_health": _calc_beauty,
+    "electronics_accessories": _calc_electronics_accessories,
+    "furniture": _calc_furniture,
+    "media": _calc_media,
+    "default": _calc_default,
+}
 
 
 def compute_referral_fees_usd(
@@ -77,67 +163,31 @@ def compute_referral_fees_usd(
 ) -> dict[str, Any]:
     """
     Returns referral_usd (line total), components, rule_id, bucket echo.
+    Optimized with O(1) dictionary dispatch and fast paths for standard inputs.
     """
     q = _qty(quantity)
-    rev = float(revenue_usd or 0)
     unit = _unit_price(revenue_usd, quantity, line_price_usd)
-    components: dict[str, Any] = {"bucket": bucket, "quantity": q, "unit_price_basis": round(unit, 4)}
 
-    referral_unit = 0.0
-    rule_id = bucket
-
-    b = (bucket or "default").strip().lower()
-
-    if b == "amazon_device_accessories":
-        referral_unit = 0.45 * unit
-        rule_id = "referral_45pct_device_accessories"
-    elif b == "jewelry":
-        referral_unit = _tiered_referral_unit(unit, low_rate=0.20, high_rate=0.05, threshold=250.0)
-        rule_id = "referral_jewelry_tier_250"
-    elif b == "clothing_accessories":
-        referral_unit = 0.17 * unit
-        rule_id = "referral_17pct_clothing_simplified"
-    elif b == "watches":
-        referral_unit = _tiered_referral_unit(unit, low_rate=0.16, high_rate=0.03, threshold=1500.0)
-        rule_id = "referral_watches_tier_1500"
-    elif b == "automotive_tires":
-        referral_unit = 0.10 * unit
-        rule_id = "referral_10pct_tires"
-    elif b == "automotive_powersports":
-        referral_unit = 0.12 * unit
-        rule_id = "referral_12pct_automotive"
-    elif b == "electronics_consumer":
-        referral_unit = 0.08 * unit
-        rule_id = "referral_8pct_consumer_electronics"
-    elif b == "personal_computers":
-        referral_unit = 0.06 * unit
-        rule_id = "referral_6pct_pc"
-    elif b == "grocery_gourmet":
-        r = 0.08 if unit <= GROCERY_BEAUTY_LOW_PRICE_THRESHOLD_USD else 0.15
-        referral_unit = r * unit
-        rule_id = f"referral_grocery_{r:.2f}"
-    elif b == "beauty_health":
-        r = 0.08 if unit <= GROCERY_BEAUTY_LOW_PRICE_THRESHOLD_USD else 0.15
-        referral_unit = r * unit
-        rule_id = f"referral_beauty_{r:.2f}"
-    elif b == "electronics_accessories":
-        referral_unit = _tiered_referral_unit(unit, low_rate=0.15, high_rate=0.08, threshold=100.0)
-        rule_id = "referral_electronics_accessories_tier_100"
-    elif b == "furniture":
-        referral_unit = _tiered_referral_unit(unit, low_rate=0.15, high_rate=0.10, threshold=200.0)
-        rule_id = "referral_furniture_tier_200"
-    elif b == "media":
-        referral_unit = 0.15 * unit
-        rule_id = "referral_15pct_media_plus_closing"
+    # Fast-path bucket lookup directly from dict before fallback normalization
+    b = bucket if (bucket in _BUCKET_RULES) else (bucket or "default").strip().lower()
+    calc_fn = _BUCKET_RULES.get(b)
+    if calc_fn is not None:
+        referral_unit, rule_id = calc_fn(unit)
     else:
-        referral_unit = 0.15 * unit
-        rule_id = "referral_15pct_default"
+        referral_unit, rule_id = 0.15 * unit, "referral_15pct_default"
         b = "default"
 
     referral_line = referral_unit * q
-    components["referral_percent_components_usd_before_audit"] = round(referral_line, 4)
+    ref_before = round(referral_line, 4)
 
     audit_on = bool(getattr(settings, "amazon_fee_audit_grade", True))
+    components: dict[str, Any] = {
+        "bucket": bucket,
+        "quantity": q,
+        "unit_price_basis": round(unit, 4),
+        "referral_percent_components_usd_before_audit": ref_before,
+    }
+
     if audit_on:
         referral_line, audit_min_detail = apply_referral_percent_minimum_per_unit(
             referral_unit_dollar_from_percent=referral_unit,
@@ -146,16 +196,15 @@ def compute_referral_fees_usd(
             settings=settings,
         )
         components.update(audit_min_detail)
+
     components["referral_percent_components_usd"] = round(referral_line, 4)
 
-    media_closing = 0.0
-    if b == "media":
-        media_closing = MEDIA_CLOSING_FEE_USD * q
+    media_closing = (MEDIA_CLOSING_FEE_USD * q) if b == "media" else 0.0
+    if media_closing:
         components["media_closing_fee_usd"] = round(media_closing, 4)
 
-    individual = 0.0
-    if not settings.amazon_seller_professional_plan:
-        individual = INDIVIDUAL_PER_ITEM_FEE_USD * q
+    individual = (INDIVIDUAL_PER_ITEM_FEE_USD * q) if not settings.amazon_seller_professional_plan else 0.0
+    if individual:
         components["individual_per_item_fee_usd"] = round(individual, 4)
 
     total = round(referral_line + media_closing + individual, 4)
