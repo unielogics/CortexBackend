@@ -9,11 +9,17 @@ from typing import Any
 from unie_cortex.network.zip_geo import nearest_contiguous_state_for_zip3
 from unie_cortex.services.warehouse_mock_rate_grid import CONTIGUOUS_STATE_HUB_DESTINATIONS_48
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
 
 def _zip3(postal: str | None) -> str | None:
     if not postal:
         return None
-    d = re.sub(r"\D", "", str(postal).strip())[:5]
+    sz = str(postal).strip()
+    # Fast path for standard 3+ digit postal strings starting with numbers
+    if len(sz) >= 3 and sz[:3].isdigit():
+        return sz[:3]
+    d = _RE_NON_DIGIT.sub("", sz)[:5]
     if len(d) < 3:
         return None
     return d[:3].zfill(3)
