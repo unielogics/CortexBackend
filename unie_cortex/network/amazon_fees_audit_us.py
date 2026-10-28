@@ -15,6 +15,7 @@ Seller Central fee tables: https://sellercentral.amazon.com/help/hub/reference/e
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import Any
 
@@ -140,7 +141,7 @@ def classify_fba_size_tier_us(
 
 
 def fba_fulfillment_fee_per_unit_usd_audit(
-    settings: Settings,
+    settings: Settings | None = None,
     *,
     shipping_weight_lb: float,
     size_tier: str,
@@ -176,6 +177,52 @@ def fba_fulfillment_fee_per_unit_usd_audit(
     }
 
 
+@functools.lru_cache(maxsize=4096)
+def _calc_fba_audit_unit_cached(
+    package_weight_lb: float | None,
+    package_length_in: float | None,
+    package_width_in: float | None,
+    package_height_in: float | None,
+    default_w: float,
+    div: float,
+    tier_default: str,
+) -> tuple[float, dict[str, Any], dict[str, Any]]:
+    """Calculates single-unit FBA fulfillment audit fields using scalar settings values."""
+    use_dim = (
+        package_length_in is not None
+        and package_width_in is not None
+        and package_height_in is not None
+        and min(package_length_in, package_width_in, package_height_in) > 0
+    )
+    pl = package_length_in if use_dim else None
+    pw = package_width_in if use_dim else None
+    ph = package_height_in if use_dim else None
+
+    ship_lb, wmeta = _shipping_weight_lb(
+        actual_weight_lb=package_weight_lb,
+        length_in=pl,
+        width_in=pw,
+        height_in=ph,
+        default_weight_lb=default_w,
+        dim_divisor=div,
+    )
+    dims = sorted([pl, pw, ph], reverse=True) if pl and pw and ph else None
+    if dims:
+        tier = classify_fba_size_tier_us(
+            shipping_weight_lb=ship_lb,
+            longest_in=dims[0],
+            median_in=dims[1],
+            shortest_in=dims[2],
+            default_tier=tier_default,
+        )
+    else:
+        tier = tier_default if ship_lb <= 1.0 else "large_standard"
+
+    per = fba_fulfillment_fee_per_unit_usd_audit(shipping_weight_lb=ship_lb, size_tier=tier)
+    per_unit_usd = float(per["fulfillment_fee_per_unit_usd"])
+    return per_unit_usd, per, wmeta
+
+
 def compute_line_fba_fulfillment_audit_usd(
     settings: Settings,
     *,
@@ -187,44 +234,25 @@ def compute_line_fba_fulfillment_audit_usd(
 ) -> dict[str, Any] | None:
     if not getattr(settings, "amazon_fba_audit_enabled", True):
         return None
+
     q = max(1.0, float(quantity or 1.0))
     default_w = float(getattr(settings, "amazon_fba_audit_default_shipping_weight_lb", 0.5) or 0.5)
-    use_dim = (
-        package_length_in is not None
-        and package_width_in is not None
-        and package_height_in is not None
-        and min(package_length_in, package_width_in, package_height_in) > 0
-    )
-    pl = package_length_in if use_dim else None
-    pw = package_width_in if use_dim else None
-    ph = package_height_in if use_dim else None
     div = float(getattr(settings, "amazon_fba_audit_dimensional_divisor", 139) or 139)
-    ship_lb, wmeta = _shipping_weight_lb(
-        actual_weight_lb=package_weight_lb,
-        length_in=pl,
-        width_in=pw,
-        height_in=ph,
-        default_weight_lb=default_w,
-        dim_divisor=div,
-    )
-    dims = None
-    if pl and pw and ph:
-        dims = sorted([pl, pw, ph], reverse=True)
     tier_default = str(getattr(settings, "amazon_fba_audit_default_size_tier", "small_standard") or "small_standard")
-    if dims:
-        tier = classify_fba_size_tier_us(
-            shipping_weight_lb=ship_lb,
-            longest_in=dims[0],
-            median_in=dims[1],
-            shortest_in=dims[2],
-            default_tier=tier_default,
-        )
-    else:
-        tier = tier_default if ship_lb <= 1.0 else "large_standard"
-    per = fba_fulfillment_fee_per_unit_usd_audit(settings, shipping_weight_lb=ship_lb, size_tier=tier)
-    line_total = float(per["fulfillment_fee_per_unit_usd"]) * q
+
+    w_val = float(package_weight_lb) if package_weight_lb is not None else None
+    l_val = float(package_length_in) if package_length_in is not None else None
+    wi_val = float(package_width_in) if package_width_in is not None else None
+    h_val = float(package_height_in) if package_height_in is not None else None
+
+    per_unit_usd, per, wmeta = _calc_fba_audit_unit_cached(
+        w_val, l_val, wi_val, h_val, default_w, div, tier_default
+    )
+
+    line_total = round(per_unit_usd * q, 2)
+
     return {
-        "fba_fulfillment_fee_audit_line_total_usd": round(line_total, 2),
+        "fba_fulfillment_fee_audit_line_total_usd": line_total,
         "fba_fulfillment_fee_audit_per_unit_usd": per["fulfillment_fee_per_unit_usd"],
-        "fba_fulfillment_audit": {**per, "quantity": q, "weight_meta": wmeta, "tier_rule": tier},
+        "fba_fulfillment_audit": {**per, "quantity": q, "weight_meta": wmeta.copy(), "tier_rule": per["size_tier"]},
     }
