@@ -71,8 +71,18 @@ def candidate_pool_from_engagement_network(network_context: dict[str, Any] | Non
     return out or None
 
 
+_RE_NON_DIGIT = re.compile(r"\D")
+
+
 def _norm_postal_5(z: str) -> str:
-    d = re.sub(r"\D", "", str(z or ""))
+    if not z:
+        return "10001"
+    sz = str(z).strip()
+    if len(sz) == 5 and sz.isdigit():
+        return sz
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:5]
+    d = _RE_NON_DIGIT.sub("", sz)
     if len(d) >= 5:
         return d[:5]
     if d:
@@ -434,18 +444,24 @@ def supplier_anchor_postal_from_engagement(
     """
     if not product_origins_by_sku or not isinstance(product_origins_by_sku, dict):
         return None, {"rule": "no_product_origins_by_sku"}
+
+    sku_to_po5: dict[str, str] = {}
+    for sku_k, o_val in product_origins_by_sku.items():
+        if isinstance(o_val, dict):
+            p5 = _postal5_from_origin_entry(o_val)
+            if p5:
+                sku_to_po5[str(sku_k).strip()] = p5
+
+    if not sku_to_po5:
+        return None, {"rule": "no_valid_postal_in_product_origins_by_sku"}
+
     weights: dict[str, float] = {}
     matched_rows = 0
     for r in rows:
         if not isinstance(r, dict):
             continue
         sku = str(r.get("sku") or "").strip()
-        if not sku or sku not in product_origins_by_sku:
-            continue
-        o = product_origins_by_sku.get(sku)
-        if not isinstance(o, dict):
-            continue
-        po5 = _postal5_from_origin_entry(o)
+        po5 = sku_to_po5.get(sku)
         if not po5:
             continue
         try:
@@ -685,23 +701,21 @@ def destinations_from_order_rows_weighted_zip5(
 ) -> tuple[int, list[dict[str, Any]]]:
     """Cap total scenario units and spread across top ZIP5 hubs (same idea as Blitz script)."""
     total_q = 0
-    zips: list[str] = []
+    zip_counts: dict[str, int] = defaultdict(int)
     for r in rows:
         try:
             q = float(r.get("quantity") or 0)
         except (TypeError, ValueError):
             q = 1.0
-        q = max(1.0, q)
-        total_q += int(q)
+        q_int = max(1, int(q))
+        total_q += q_int
         dest, _ = order_financial_dest_postal_5(r)
         zp = _norm_postal_5(dest or r.get("ship_to_postal") or "")
-        for _ in range(int(q)):
-            zips.append(zp)
-    scenario_qty = min(max_qty, max(1, int(total_q)))
-    from collections import Counter
+        zip_counts[zp] += q_int
 
-    ctr = Counter(zips)
-    top = [z for z, _ in ctr.most_common(max_hubs)]
+    scenario_qty = min(max_qty, max(1, int(total_q)))
+    sorted_zips = sorted(zip_counts.items(), key=lambda x: (-x[1], x[0]))
+    top = [z for z, _ in sorted_zips[:max_hubs]]
     if not top:
         top = ["10001", "75201", "90001", "30309", "07001"]
     n = len(top)
@@ -1076,14 +1090,9 @@ def build_order_financial_planning_four_views(
             return {"status": "skipped", "message": "FBM integrated scenario not complete"}
         qty = max(1, int(s.get("qty") or 0))
         d = s.get("direct") or {}
-        c = s.get("consolidated") or {}
-        chosen = c.get("chosen") or {}
         n_wh, wh_ids = _fbm_ship_from_warehouse_count(s)
         d_all = float(d.get("total_usd") or 0)
-        c_all = float(c.get("total_usd") or 0)
         fbm_pkg = s.get("fbm_full_financial_breakdown") or {}
-        recv_wh = (fbm_pkg.get("consolidated") or {}).get("warehouse_fbm_breakdown") or {}
-        recv_node = recv_wh.get("receive_node") or {}
         return {
             "status": "complete",
             "scenario_qty_units": qty,
@@ -1529,7 +1538,6 @@ def _matrix_line(
 
 
 def _column_grand_total(lines: list[dict[str, Any]]) -> tuple[float, float]:
-    q = 1
     s = 0.0
     for ln in lines:
         if not ln.get("include_in_grand_total", True):
