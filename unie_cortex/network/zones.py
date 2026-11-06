@@ -8,16 +8,30 @@ carrier so tests and demos never conflate USPS zones with UPS/FedEx.
 
 from __future__ import annotations
 
+import functools
 import re
 from typing import Literal
 
 CarrierCode = Literal["usps", "ups", "fedex"]
 
+_RE_NON_DIGIT = re.compile(r"\D")
 
+
+@functools.lru_cache(maxsize=4096)
 def normalize_zip5(postal: str | None) -> str | None:
+    """Fast-path string checks + LRU cache for 5-digit ZIP normalization."""
     if not postal:
         return None
-    digits = re.sub(r"\D", "", postal.strip())[:5]
+    sz = postal.strip()
+    # Fast path for common standard formats
+    if len(sz) == 5 and sz.isdigit():
+        return sz
+    if len(sz) == 10 and sz[5] == "-" and sz[:5].isdigit() and sz[6:].isdigit():
+        return sz[:5]
+    if len(sz) == 9 and sz.isdigit():
+        return sz[:5]
+
+    digits = _RE_NON_DIGIT.sub("", sz)[:5]
     return digits.zfill(5) if len(digits) >= 3 else None
 
 
@@ -25,6 +39,7 @@ def _zip3(z5: str) -> int:
     return int(z5[:3])
 
 
+@functools.lru_cache(maxsize=16384)
 def mock_zone_id(carrier: CarrierCode, origin_postal: str, dest_postal: str) -> tuple[int, str]:
     """
     Returns (zone_int, model_note). Zones are comparable within a carrier only.
